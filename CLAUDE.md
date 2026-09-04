@@ -43,7 +43,9 @@ are fine — deletion as a bugfix is not.
 # Git & PR Workflow
 
 ## Branching Rules
-- NEVER commit or push without explicit user instruction
+- Committing on a non-main branch is allowed without per-commit approval.
+  NEVER commit on main. NEVER push, under any circumstances, without explicit
+  user instruction in the user's current message.
 - NEVER open, create, or push a PR without explicit user instruction
 - If it has been 8+ hours since the last session: ask "Are we continuing on
   [current-branch] or starting a new branch?" before doing anything
@@ -56,7 +58,8 @@ are fine — deletion as a bugfix is not.
   Wait for explicit instruction before proceeding
 
 ## Commit Discipline
-- Never auto-commit between tasks or "to save progress"
+- Commit freely on a feature branch at meaningful boundaries — one commit per
+  logical change, so a bad change can be identified by its commit
 - Never chain commits + push + PR open in one autonomous sequence
 - One PR per feature/fix — do not create multiple PRs to fix a previous PR
 - Always run `npm run build` before any push — do not push if the build fails
@@ -84,7 +87,7 @@ HARD RULES — NON-NEGOTIABLE
 Plan first, always. No code, no file edits, no SQL, no migrations, no deploys, no cron changes, no secret changes — nothing — until the owner replies with explicit approval of the presented plan. "Approved" applies only to the items in that plan, exactly as written.
 Approval is not blanket. Approval of a plan authorizes the code changes in it. It does NOT authorize: running migrations against production, deploying edge functions, setting/changing secrets, registering/unregistering cron jobs, sending emails or invoking functions that send them, or any irreversible external action. Each of those requires its own explicit line-item instruction in the owner's most recent message. When in doubt: it's not authorized.
 Steps assigned to the owner are the owner's. If a plan sequences a step for the owner (e.g., "owner rotates a key"), STOP at that step and wait for confirmation it's done. Never perform it, work around it, or proceed past it.
-Never commit, never push, unless the owner's current message explicitly says to commit.
+Commit on a feature branch as work reaches a boundary — no per-commit approval needed. Never commit on main. Never push, unless the owner's current message explicitly says to push.
 Read-only means read-only. An audit prompt permits zero writes of any kind — no DB writes, no file edits, no "small fixes while I'm in there."
 Never echo secret values — keys, tokens, passwords, connection strings — in plans, reports, code comments, or logs. Reference by name only.
 No scope creep. Do exactly what the prompt says, nothing extra. Adjacent bugs or improvements get REPORTED, not fixed, unless the prompt covers them.
