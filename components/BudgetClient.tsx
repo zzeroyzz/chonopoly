@@ -10,12 +10,14 @@ import {
   ChevronDown, ChevronRight, ChevronLeft, Search, Wallet,
   ShoppingBag, Plane, UtensilsCrossed, Car, House, HeartPulse,
   Sparkles, Zap, Wrench, TrendingUp, Banknote, Building2, Film,
-  CircleDot, ArrowDownLeft, ArrowUpRight, Pencil, Mail, Pause, Play, Target, User, Check, Users, RotateCcw, CreditCard, Settings2, CalendarClock, MoreHorizontal, Receipt, type LucideIcon,
+  CircleDot, ArrowDownLeft, ArrowUpRight, Pencil, Mail, Pause, Play, Target, User, CreditCard, CalendarClock, MoreHorizontal, Receipt, type LucideIcon,
 } from "lucide-react";
 import { ActiveContext, GoalSummary } from "@/lib/goals/types";
 import { loadProfile } from "@/lib/supabase/profile";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
-import { getAvatarColors } from "@/lib/avatar";
+import { AppShell } from "./shell/AppShell";
+import { ContextSwitcher } from "./shell/ContextSwitcher";
+import { type ShellNavItem } from "./shell/types";
 import dynamic from "next/dynamic";
 const SpendingChart = dynamic(() => import("./budget/SpendingChart"), { ssr: false });
 const ActivityChart = dynamic(() => import("./budget/ActivityChart"), { ssr: false });
@@ -2027,12 +2029,12 @@ export default function BudgetClient({ initialConnected, userId }: { initialConn
   const isAccountView = typeof view === "object" && view.type === "account";
   const activeAccountId = isAccountView ? (view as { type: "account"; accountId: string }).accountId : null;
 
-  const navItems = [
-    { id: "overview"     as ViewState, icon: <LayoutDashboard size={16} />, label: "Overview" },
-    { id: "manage"       as ViewState, icon: <LayoutGrid size={16} />,      label: "Manage" },
-    { id: "transactions" as ViewState, icon: <Search size={16} />,          label: "Transactions" },
-    { id: "analytics"    as ViewState, icon: <PieChart size={16} />,        label: "Analytics" },
-    { id: "profile"      as ViewState, icon: <User size={16} />,            label: "Profile" },
+  const navItems: ShellNavItem[] = [
+    { id: "overview",     icon: <LayoutDashboard size={16} />, label: "Overview" },
+    { id: "manage",       icon: <LayoutGrid size={16} />,      label: "Manage" },
+    { id: "transactions", icon: <Search size={16} />,          label: "Transactions" },
+    { id: "analytics",    icon: <PieChart size={16} />,        label: "Analytics" },
+    { id: "profile",      icon: <User size={16} />,            label: "Profile" },
   ];
 
   const panelProps: PanelProps = { transactions, accountMap, categoryOverrides, onChangeCategory: changeCategory, search, onSearch: setSearch };
@@ -2063,262 +2065,120 @@ export default function BudgetClient({ initialConnected, userId }: { initialConn
   }
 
   return (
-    <div className="flex min-h-screen overflow-x-hidden bg-(--color-base) text-(--color-text-primary)">
-
-      {/* Sidebar — desktop only; hidden on mobile (bottom tab bar handles primary nav) */}
-      <aside
-        className="hidden lg:flex lg:flex-col w-56 shrink-0 min-h-screen self-stretch bg-(--color-base) border-r border-(--color-border-subtle) overflow-hidden"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E")`,
-          backgroundSize: "200px 200px",
-        }}
-      >
-        {/* Section label — /finances is the root route, no back arrow */}
-        <div className="px-4 pt-5 pb-3 border-b border-(--color-border-subtle)">
-          <span className="text-[10px] text-(--color-text-disabled) uppercase tracking-[0.1em] font-medium">Finances</span>
-        </div>
-
-        {/* User profile — full area is clickable */}
-        {userProfile && (() => {
-          const c = getAvatarColors(userProfile.avatarColor);
-          const initials = userProfile.name ? userProfile.name.slice(0, 2).toUpperCase() : "··";
-          const showProgress = onboardingCompleted !== null && onboardingCompleted < 5;
-          return (
-            <button
-              onClick={() => navTo("profile")}
-              className="group w-full text-left px-4 py-3 hover:bg-(--color-border-subtle) rounded-[var(--radius-md)] transition-colors"
-            >
-              <div className="flex items-center gap-2.5">
-                <div className={`w-8 h-8 rounded-full shrink-0 border overflow-hidden flex items-center justify-center ${c.bg} ${c.border}`}>
-                  {userProfile.avatarUrl
-                    ? <img src={userProfile.avatarUrl} alt="" className="w-full h-full object-cover" />
-                    : <span className={`${c.text} font-(--font-mono) font-bold text-[10px]`}>{initials}</span>
-                  }
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-(--color-text-primary) font-(--font-body) truncate leading-tight">{userProfile.name || "You"}</p>
-                  {showProgress ? (
-                    <div className="mt-1.5">
-                      <div className="w-12 h-[3px] rounded-full bg-(--color-border-default) overflow-hidden mb-1">
-                        <div className="h-full bg-(--color-accent) rounded-full transition-all" style={{ width: `${((onboardingCompleted ?? 0) / 5) * 100}%` }} />
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <div className="w-[5px] h-[5px] rounded-full bg-(--color-accent) pulse-dot shrink-0" />
-                        <span className="text-[10px] text-(--color-text-tertiary)">{onboardingCompleted} of 5 complete</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-(--color-text-secondary) mt-0.5 group-hover:opacity-0 transition-opacity">All set up</p>
-                  )}
-                </div>
-                <span className="text-[10px] text-(--color-text-tertiary) opacity-0 group-hover:opacity-100 transition-opacity shrink-0">→</span>
-              </div>
-            </button>
-          );
-        })()}
-
-        {/* TODO: mobile — context switcher not accessible on mobile nav; needs a home in ProfilePanel or a mobile sheet */}
-        {/* Context switcher */}
-        <div className="px-4 pt-2 pb-1">
-          <p className="px-0 pt-3 pb-1.5 text-[10px] text-(--color-text-disabled) uppercase tracking-[0.1em]">Context</p>
-          <button
-            data-testid="context-personal"
-            onClick={() => switchContext({ type: "personal", id: userId })}
-            className={`w-full flex items-center justify-between h-9 transition-colors ${
-              activeContext.type === "personal"
-                ? "text-(--color-accent)"
-                : "text-(--color-text-secondary) hover:text-(--color-text-primary)"
-            }`}
-          >
-            <div className="flex items-center gap-[10px] text-[13px]">
-              <User size={16} className="shrink-0" />
-              Personal
-            </div>
-            {activeContext.type === "personal" && <Check size={14} className="text-(--color-accent) shrink-0" />}
-          </button>
-          {teams.map(team => (
-            <button
-              key={team.id}
-              data-testid={`context-team-${team.id}`}
-              onClick={() => switchContext({ type: "team", id: team.id })}
-              className={`w-full flex items-center justify-between h-9 transition-colors rounded-sm pl-1 ${
-                activeContext.type === "team" && activeContext.id === team.id
-                  ? "text-(--color-accent) bg-(--color-accent)/5 border-l-2 border-(--color-accent)"
-                  : "text-(--color-text-secondary) hover:text-(--color-text-primary)"
-              }`}
-            >
-              <div className="flex items-center gap-[10px] text-[13px]">
-                <Users size={16} className="shrink-0" />
-                {team.name}
-              </div>
-              {activeContext.type === "team" && activeContext.id === team.id && (
-                <Check size={14} className="text-(--color-accent) shrink-0" />
-              )}
-            </button>
-          ))}
-          <button
-            onClick={() => setTeamWizardOpen(true)}
-            className="flex items-center gap-[10px] h-9 text-[13px] text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors w-full"
-          >
-            <Plus size={16} className="shrink-0" />
-            New team
-          </button>
-          {activeContext.type === "team" && (
-            <div data-testid="context-banner" className="flex items-center justify-between py-1 mt-0.5">
-              <span className="text-[11px] text-(--color-text-secondary) truncate">{contextLabel}</span>
-              <button
-                data-testid="context-reset"
-                onClick={resetToPersonal}
-                className="text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors ml-2 shrink-0"
-                title="Back to personal"
-              >
-                <RotateCcw size={10} />
-              </button>
-            </div>
-          )}
-          {activeContext.type === "team" && (
-            <button
-              onClick={() => navTo("team-settings")}
-              className="flex items-center gap-[10px] h-8 text-[11px] text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors w-full mt-0.5"
-            >
-              <Settings2 size={13} className="shrink-0" />
-              Team settings
-            </button>
-          )}
-          <hr className="border-(--color-border-subtle) mt-2" />
-        </div>
-
-        {/* Nav items */}
-        <nav className="px-4 py-2">
-          {navItems.map(({ id, icon, label }) => {
-            const isActive = typeof view === "string" && view === id;
-            return (
-              <button
-                key={String(id)}
-                onClick={() => navTo(id)}
-                className={`w-full flex items-center gap-[10px] h-9 text-[13px] transition-colors ${
-                  isActive
-                    ? "text-(--color-accent) font-semibold"
-                    : "text-(--color-text-secondary) font-normal hover:text-(--color-text-primary)"
-                }`}
-              >
-                <span className={isActive ? "text-(--color-accent)" : "text-(--color-text-secondary) group-hover:text-(--color-text-primary)"}>{icon}</span>
-                {label}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Bank accounts — always flex-1 so Zone C stays anchored */}
-        <div className="px-4 flex-1 min-h-0 overflow-y-auto">
-          {bankGroups.length > 0 && (
-            <>
-              <p className="pt-2 pb-1.5 text-[10px] text-(--color-text-disabled) uppercase tracking-[0.1em]">Accounts</p>
-              <div className="flex items-center justify-between px-2 py-1 mb-1">
-                <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary)">Total</span>
-                <span className="text-[12px] font-semibold font-(--font-mono) text-(--color-text-primary)">${formatMoney(totalBalance)}</span>
-              </div>
-              {bankGroups.map((bank, bankIdx) => {
-                const expanded = expandedBanks[bank.itemId] !== false;
-                return (
-                  <div key={bank.itemId} className={bankIdx > 0 ? "mt-2 pt-2 border-t border-(--color-border-subtle)" : ""}>
-                    <button
-                      onClick={() => setExpandedBanks((p) => ({ ...p, [bank.itemId]: !expanded }))}
-                      className="w-full flex items-center justify-between py-1.5 text-[12px] font-medium text-(--color-text-primary) hover:text-(--color-text-primary) transition-colors"
-                    >
-                      <span>{bank.institutionName}</span>
-                      {expanded ? <ChevronDown size={11} className="text-(--color-text-tertiary)" /> : <ChevronRight size={11} className="text-(--color-text-tertiary)" />}
-                    </button>
-                    {expanded && bank.accounts.map((a) => (
-                      <button
-                        key={a.account_id}
-                        onClick={() => { navTo({ type: "account", accountId: a.account_id }); }}
-                        className={`w-full flex items-center justify-between pl-4 pr-0 py-1.5 text-[12px] transition-colors ${
-                          isAccountView && activeAccountId === a.account_id
-                            ? "text-(--color-text-primary) font-medium"
-                            : "text-(--color-text-secondary) hover:text-(--color-text-primary)"
-                        }`}
-                      >
-                        <span className="truncate min-w-0">{a.name}</span>
-                        <span className="font-(--font-mono) text-[11px] ml-2 shrink-0 text-(--color-text-secondary)">${formatMoney(a.balances.current ?? 0)}</span>
-                      </button>
-                    ))}
-                  </div>
-                );
-              })}
-            </>
-          )}
-        </div>
-
-        {/* Bottom actions */}
-        <div className="mt-auto px-4 py-4 border-t border-(--color-border-subtle) space-y-1">
+    <AppShell
+      sectionLabel="Finances"
+      appName="Park Properties"
+      mobileBadge={activeTeamName}
+      userProfile={userProfile}
+      onboardingCompleted={onboardingCompleted}
+      onProfileClick={() => navTo("profile")}
+      navItems={navItems}
+      activeNavId={typeof view === "string" ? view : null}
+      onNavigate={(id) => navTo(id as ViewState)}
+      mobileActions={
+        <>
           {connected.length > 0 && (
-            <button onClick={refresh} disabled={loading || syncing} className="flex items-center gap-2 h-8 text-[12px] text-(--color-text-secondary) hover:text-(--color-text-primary) disabled:opacity-40 transition-colors">
-              <RefreshCw size={14} className={syncing || loading ? "animate-spin text-(--color-accent)" : ""} />
-              Refresh
+            <button
+              onClick={refresh}
+              disabled={loading || syncing}
+              aria-label="Refresh data"
+              className="flex items-center justify-center w-8 h-8 text-(--color-text-secondary) hover:text-(--color-text-primary) disabled:opacity-40 transition-colors"
+            >
+              <RefreshCw size={16} className={syncing || loading ? "animate-spin text-(--color-accent)" : ""} />
             </button>
           )}
-          <PlaidLinkButton onSuccess={() => window.location.reload()} linkToken={linkToken} />
-
-          {/* TODO: remove before deploy */}
-          {/* {process.env.NODE_ENV === 'development' && (
-            <button
-              onClick={() => setUserProfile(prev => prev ? { ...prev, onboardingComplete: false } : prev)}
-              className="w-full text-left px-3 py-2 text-[11px] text-(--color-text-tertiary) hover:text-(--color-text-primary) border border-dashed border-(--color-border-subtle) rounded-md transition-colors"
-            >
-              ⚙ Preview Onboarding
-            </button>
-          )} */}
-        </div>
-      </aside>
-
-      {/* Main content — min-w-0 prevents flex child from overflowing on mobile */}
-      <main className="flex-1 min-w-0 flex flex-col overflow-hidden pt-14 lg:pt-0">
-
-        {/* Mobile top bar — identity + avatar; no hamburger */}
-        <div className="lg:hidden fixed top-0 left-0 right-0 z-30 h-14 bg-(--color-base) border-b border-(--color-border-subtle) flex items-center justify-between px-4 shrink-0">
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[10px] uppercase tracking-[0.12em] text-(--color-text-disabled) font-medium">
-              Park Properties
-            </span>
-            {activeTeamName && (
-              <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full bg-(--color-accent)/15 text-(--color-accent) border border-(--color-accent)/30 self-start">
-                {activeTeamName}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {connected.length > 0 && (
-              <button
-                onClick={refresh}
-                disabled={loading || syncing}
-                aria-label="Refresh data"
-                className="flex items-center justify-center w-8 h-8 text-(--color-text-secondary) hover:text-(--color-text-primary) disabled:opacity-40 transition-colors"
-              >
-                <RefreshCw size={16} className={syncing || loading ? "animate-spin text-(--color-accent)" : ""} />
-              </button>
-            )}
-          {userProfile && (() => {
-            const c = getAvatarColors(userProfile.avatarColor);
-            const initials = userProfile.name ? userProfile.name.slice(0, 2).toUpperCase() : "··";
-            return (
-              <button
-                onClick={() => navTo("profile")}
-                aria-label="Open profile"
-                className="flex items-center"
-              >
-                <div className={`w-8 h-8 rounded-full shrink-0 border overflow-hidden flex items-center justify-center ${c.bg} ${c.border}`}>
-                  {userProfile.avatarUrl
-                    ? <img src={userProfile.avatarUrl} alt="" className="w-full h-full object-cover" />
-                    : <span className={`${c.text} font-(--font-mono) font-bold text-[10px]`}>{initials}</span>
-                  }
+        </>
+      }
+      contextSwitcher={
+        <ContextSwitcher
+          userId={userId}
+          activeContext={activeContext}
+          teams={teams}
+          contextLabel={contextLabel}
+          switchContext={switchContext}
+          resetToPersonal={resetToPersonal}
+          onNewTeam={() => setTeamWizardOpen(true)}
+          onTeamSettings={() => navTo("team-settings")}
+        />
+      }
+      sidebarContent={
+        <>
+        {bankGroups.length > 0 && (
+          <>
+            <p className="pt-2 pb-1.5 text-[10px] text-(--color-text-disabled) uppercase tracking-[0.1em]">Accounts</p>
+            <div className="flex items-center justify-between px-2 py-1 mb-1">
+              <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary)">Total</span>
+              <span className="text-[12px] font-semibold font-(--font-mono) text-(--color-text-primary)">${formatMoney(totalBalance)}</span>
+            </div>
+            {bankGroups.map((bank, bankIdx) => {
+              const expanded = expandedBanks[bank.itemId] !== false;
+              return (
+                <div key={bank.itemId} className={bankIdx > 0 ? "mt-2 pt-2 border-t border-(--color-border-subtle)" : ""}>
+                  <button
+                    onClick={() => setExpandedBanks((p) => ({ ...p, [bank.itemId]: !expanded }))}
+                    className="w-full flex items-center justify-between py-1.5 text-[12px] font-medium text-(--color-text-primary) hover:text-(--color-text-primary) transition-colors"
+                  >
+                    <span>{bank.institutionName}</span>
+                    {expanded ? <ChevronDown size={11} className="text-(--color-text-tertiary)" /> : <ChevronRight size={11} className="text-(--color-text-tertiary)" />}
+                  </button>
+                  {expanded && bank.accounts.map((a) => (
+                    <button
+                      key={a.account_id}
+                      onClick={() => { navTo({ type: "account", accountId: a.account_id }); }}
+                      className={`w-full flex items-center justify-between pl-4 pr-0 py-1.5 text-[12px] transition-colors ${
+                        isAccountView && activeAccountId === a.account_id
+                          ? "text-(--color-text-primary) font-medium"
+                          : "text-(--color-text-secondary) hover:text-(--color-text-primary)"
+                      }`}
+                    >
+                      <span className="truncate min-w-0">{a.name}</span>
+                      <span className="font-(--font-mono) text-[11px] ml-2 shrink-0 text-(--color-text-secondary)">${formatMoney(a.balances.current ?? 0)}</span>
+                    </button>
+                  ))}
                 </div>
-              </button>
-            );
-          })()}
-          </div>
-        </div>
+              );
+            })}
+          </>
+        )}
+        </>
+      }
+      sidebarFooter={
+        <>
+        {connected.length > 0 && (
+          <button onClick={refresh} disabled={loading || syncing} className="flex items-center gap-2 h-8 text-[12px] text-(--color-text-secondary) hover:text-(--color-text-primary) disabled:opacity-40 transition-colors">
+            <RefreshCw size={14} className={syncing || loading ? "animate-spin text-(--color-accent)" : ""} />
+            Refresh
+          </button>
+        )}
+        <PlaidLinkButton onSuccess={() => window.location.reload()} linkToken={linkToken} />
 
+        {/* TODO: remove before deploy */}
+        {/* {process.env.NODE_ENV === 'development' && (
+          <button
+            onClick={() => setUserProfile(prev => prev ? { ...prev, onboardingComplete: false } : prev)}
+            className="w-full text-left px-3 py-2 text-[11px] text-(--color-text-tertiary) hover:text-(--color-text-primary) border border-dashed border-(--color-border-subtle) rounded-md transition-colors"
+          >
+            ⚙ Preview Onboarding
+          </button>
+        )} */}
+        </>
+      }
+      overlays={
+        <>
+  {teamWizardOpen && (
+    <TeamSetupWizard
+      userId={userId}
+      onComplete={(team) => {
+        setTeams(prev => [...prev, team]);
+        switchContext({ type: "team", id: team.id });
+        setTeamWizardOpen(false);
+      }}
+      onClose={() => setTeamWizardOpen(false)}
+    />
+  )}
+        </>
+      }
+    >
         {view === "overview" && connected.length > 0 && !loading ? (
           <>
             {error && <p className="mb-4 shrink-0 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-4 py-3 mx-5 mt-4">{error}</p>}
@@ -2544,45 +2404,6 @@ export default function BudgetClient({ initialConnected, userId }: { initialConn
           </div>
           </div>
         )}
-      </main>
-
-      {/* Mobile bottom tab bar — lg+ uses the sidebar instead */}
-      <nav
-        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-(--color-base) border-t border-(--color-border-subtle)"
-        style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
-      >
-        <div className="h-14 flex items-stretch">
-          {navItems.map(({ id, icon, label }) => {
-            const active = view === id;
-            return (
-              <button
-                key={String(id)}
-                onClick={() => navTo(id)}
-                className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-                  active ? "text-(--color-accent)" : "text-(--color-text-tertiary)"
-                }`}
-              >
-                <div className={`p-1.5 rounded-xl transition-colors ${active ? "bg-(--color-accent)/10" : ""}`}>
-                  {icon}
-                </div>
-                <span className="text-[9px] uppercase tracking-wide font-medium">{label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
-      {teamWizardOpen && (
-        <TeamSetupWizard
-          userId={userId}
-          onComplete={(team) => {
-            setTeams(prev => [...prev, team]);
-            switchContext({ type: "team", id: team.id });
-            setTeamWizardOpen(false);
-          }}
-          onClose={() => setTeamWizardOpen(false)}
-        />
-      )}
-    </div>
+    </AppShell>
   );
 }
