@@ -2,8 +2,10 @@
 "use client";
 
 import { type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { getAvatarColors } from "@/lib/avatar";
 import { type ShellNavItem, type ShellUserProfile } from "./types";
+import { useShellNavigate, isNavItemActive } from "./navigation";
 
 interface Props {
   /** Label shown at the top of the sidebar, e.g. "Finances". */
@@ -18,6 +20,9 @@ interface Props {
    */
   contextSwitcher?: ReactNode;
   navItems: ShellNavItem[];
+  /** Secondary destinations. Listed inline here — the sidebar has the room that
+   *  the mobile tab bar doesn't, so there's no More indirection on desktop. */
+  secondaryNavItems?: ShellNavItem[];
   /** Currently active nav id, or null when the active view isn't a top-level item. */
   activeNavId: string | null;
   onNavigate: (id: string) => void;
@@ -34,11 +39,15 @@ export function ShellSidebar({
   onProfileClick,
   contextSwitcher,
   navItems,
+  secondaryNavItems = [],
   activeNavId,
   onNavigate,
   sidebarContent,
   sidebarFooter,
 }: Props) {
+  const pathname = usePathname();
+  const navigate = useShellNavigate(onNavigate);
+
   return (
     <aside
       className="hidden lg:flex lg:flex-col w-56 shrink-0 min-h-screen self-stretch bg-(--color-base) border-r border-(--color-border-subtle) overflow-hidden"
@@ -96,12 +105,13 @@ export function ShellSidebar({
 
       {/* Nav items */}
       <nav className="px-4 py-2">
-        {navItems.map(({ id, icon, label }) => {
-          const isActive = activeNavId === id;
+        {navItems.map((item) => {
+          const { id, icon, label } = item;
+          const isActive = isNavItemActive(item, activeNavId, pathname);
           return (
             <button
               key={id}
-              onClick={() => onNavigate(id)}
+              onClick={() => navigate(item)}
               className={`w-full flex items-center gap-[10px] h-9 text-[13px] transition-colors ${
                 isActive
                   ? "text-(--color-accent) font-semibold"
@@ -113,6 +123,30 @@ export function ShellSidebar({
             </button>
           );
         })}
+
+        {secondaryNavItems.length > 0 && (
+          <>
+            <hr className="border-(--color-border-subtle) my-2" />
+            {secondaryNavItems.map((item) => {
+              const { id, icon, label } = item;
+              const isActive = isNavItemActive(item, activeNavId, pathname);
+              return (
+                <button
+                  key={id}
+                  onClick={() => navigate(item)}
+                  className={`w-full flex items-center gap-[10px] h-9 text-[13px] transition-colors ${
+                    isActive
+                      ? "text-(--color-accent) font-semibold"
+                      : "text-(--color-text-secondary) font-normal hover:text-(--color-text-primary)"
+                  }`}
+                >
+                  <span className={isActive ? "text-(--color-accent)" : "text-(--color-text-secondary)"}>{icon}</span>
+                  {label}
+                </button>
+              );
+            })}
+          </>
+        )}
       </nav>
 
       {/* Feature-specific body — always flex-1 so the footer stays anchored */}

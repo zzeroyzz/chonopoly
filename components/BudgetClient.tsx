@@ -6,17 +6,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { usePlaidLink } from "react-plaid-link";
 import Link from "next/link";
 import {
-  LayoutDashboard, LayoutGrid, PieChart, Plus, RefreshCw, Trash2,
+  Plus, RefreshCw, Trash2,
   ChevronDown, ChevronRight, ChevronLeft, Search, Wallet,
   ShoppingBag, Plane, UtensilsCrossed, Car, House, HeartPulse,
   Sparkles, Zap, Wrench, TrendingUp, Banknote, Building2, Film,
-  CircleDot, ArrowDownLeft, ArrowUpRight, Pencil, Mail, Pause, Play, Target, User, CreditCard, CalendarClock, MoreHorizontal, Receipt, type LucideIcon,
+  CircleDot, ArrowDownLeft, ArrowUpRight, Pencil, Mail, Pause, Play, Target, CreditCard, CalendarClock, MoreHorizontal, Receipt, type LucideIcon,
 } from "lucide-react";
 import { ActiveContext, GoalSummary } from "@/lib/goals/types";
 import { loadProfile } from "@/lib/supabase/profile";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 import { AppShell } from "./shell/AppShell";
 import { ContextSwitcher } from "./shell/ContextSwitcher";
+import { buildAppNavItems, buildSecondaryNavItems } from "./shell/appNavItems";
 import { type ShellNavItem } from "./shell/types";
 import dynamic from "next/dynamic";
 const SpendingChart = dynamic(() => import("./budget/SpendingChart"), { ssr: false });
@@ -2029,13 +2030,10 @@ export default function BudgetClient({ initialConnected, userId }: { initialConn
   const isAccountView = typeof view === "object" && view.type === "account";
   const activeAccountId = isAccountView ? (view as { type: "account"; accountId: string }).accountId : null;
 
-  const navItems: ShellNavItem[] = [
-    { id: "overview",     icon: <LayoutDashboard size={16} />, label: "Overview" },
-    { id: "manage",       icon: <LayoutGrid size={16} />,      label: "Manage" },
-    { id: "transactions", icon: <Search size={16} />,          label: "Transactions" },
-    { id: "analytics",    icon: <PieChart size={16} />,        label: "Analytics" },
-    { id: "profile",      icon: <User size={16} />,            label: "Profile" },
-  ];
+  // Finances destinations stay view-based here so navTo keeps driving ?tab= and
+  // its own state resets; the calculator item carries a real href.
+  const navItems: ShellNavItem[] = buildAppNavItems({ asRoutes: false });
+  const secondaryNavItems: ShellNavItem[] = buildSecondaryNavItems({ asRoutes: false });
 
   const panelProps: PanelProps = { transactions, accountMap, categoryOverrides, onChangeCategory: changeCategory, search, onSearch: setSearch };
 
@@ -2067,12 +2065,13 @@ export default function BudgetClient({ initialConnected, userId }: { initialConn
   return (
     <AppShell
       sectionLabel="Finances"
-      appName="Park Properties"
+      appName="Park Hawkins Properties"
       mobileBadge={activeTeamName}
       userProfile={userProfile}
       onboardingCompleted={onboardingCompleted}
       onProfileClick={() => navTo("profile")}
       navItems={navItems}
+      secondaryNavItems={secondaryNavItems}
       activeNavId={typeof view === "string" ? view : null}
       onNavigate={(id) => navTo(id as ViewState)}
       mobileActions={

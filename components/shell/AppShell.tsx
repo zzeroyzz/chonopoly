@@ -9,7 +9,7 @@ import { type ShellNavItem, type ShellUserProfile } from "./types";
 interface Props {
   /** Sidebar heading, e.g. "Finances". */
   sectionLabel: string;
-  /** App name in the mobile top bar, e.g. "Park Properties". */
+  /** App name in the mobile top bar, e.g. "Park Hawkins Properties". */
   appName: string;
   /** Optional pill under the app name on mobile — the active team, when one is selected. */
   mobileBadge?: string | null;
@@ -27,6 +27,11 @@ interface Props {
   contextSwitcher?: ReactNode;
 
   navItems: ShellNavItem[];
+  /**
+   * Secondary destinations. The desktop sidebar lists them inline; on mobile
+   * they sit behind the More tab, since the bar holds five items at 375px.
+   */
+  secondaryNavItems?: ShellNavItem[];
   activeNavId: string | null;
   onNavigate: (id: string) => void;
 
@@ -56,6 +61,7 @@ export function AppShell({
   onProfileClick,
   contextSwitcher,
   navItems,
+  secondaryNavItems = [],
   activeNavId,
   onNavigate,
   sidebarContent,
@@ -73,6 +79,7 @@ export function AppShell({
         onProfileClick={onProfileClick}
         contextSwitcher={contextSwitcher}
         navItems={navItems}
+        secondaryNavItems={secondaryNavItems}
         activeNavId={activeNavId}
         onNavigate={onNavigate}
         sidebarContent={sidebarContent}
@@ -91,7 +98,12 @@ export function AppShell({
         {children}
       </main>
 
-      <BottomTabBar navItems={navItems} activeNavId={activeNavId} onNavigate={onNavigate} />
+      <BottomTabBar
+        navItems={navItems}
+        moreItems={secondaryNavItems}
+        activeNavId={activeNavId}
+        onNavigate={onNavigate}
+      />
 
       {overlays}
     </div>
