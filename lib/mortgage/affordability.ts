@@ -75,6 +75,73 @@ function housingPaymentAt(price: number, inputs: MortgageInputs, taxRate: number
   );
 }
 
+export interface RequiredIncome {
+  applicable: boolean;
+  /** Gross monthly income the front-end guideline demands for this payment. */
+  frontEndMonthly: number;
+  /** Same for the back-end guideline, which also carries the other monthly debt. */
+  backEndMonthly: number;
+  /** The one that actually governs — you need to clear both. */
+  requiredMonthly: number;
+  requiredAnnual: number;
+  binding: BindingConstraint;
+  /** How the user's stated income compares. Null when they haven't entered one. */
+  surplusMonthly: number | null;
+  qualifies: boolean | null;
+}
+
+/**
+ * The other direction: given this house and this payment, what income does it
+ * take to qualify?
+ *
+ * The ratios are defined against income, so inverting them is the natural way to
+ * read them — "you need $8,300 a month" is a number you can check against a
+ * payslip, where "25.7% / 28%" is not.
+ */
+export function calculateRequiredIncome(
+  inputs: MortgageInputs,
+  housingPayment: number
+): RequiredIncome {
+  const config = LOAN_TYPE_CONFIG[inputs.loanType];
+
+  if (!config.showDtiRatios || housingPayment <= 0) {
+    return {
+      applicable: config.showDtiRatios,
+      frontEndMonthly: 0,
+      backEndMonthly: 0,
+      requiredMonthly: 0,
+      requiredAnnual: 0,
+      binding: "none",
+      surplusMonthly: null,
+      qualifies: null,
+    };
+  }
+
+  const frontEndMonthly =
+    config.frontEndGuideline !== null ? housingPayment / (config.frontEndGuideline / 100) : 0;
+
+  const backEndMonthly =
+    config.backEndGuideline !== null
+      ? (housingPayment + inputs.otherMonthlyDebt) / (config.backEndGuideline / 100)
+      : 0;
+
+  const requiredMonthly = Math.max(frontEndMonthly, backEndMonthly);
+  const binding: BindingConstraint = frontEndMonthly >= backEndMonthly ? "front" : "back";
+
+  const hasIncome = inputs.grossMonthlyIncome > 0;
+
+  return {
+    applicable: true,
+    frontEndMonthly,
+    backEndMonthly,
+    requiredMonthly,
+    requiredAnnual: requiredMonthly * 12,
+    binding,
+    surplusMonthly: hasIncome ? inputs.grossMonthlyIncome - requiredMonthly : null,
+    qualifies: hasIncome ? inputs.grossMonthlyIncome >= requiredMonthly : null,
+  };
+}
+
 export function calculateAffordability(inputs: MortgageInputs): AffordabilityResult {
   const config = LOAN_TYPE_CONFIG[inputs.loanType];
 

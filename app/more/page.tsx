@@ -1,10 +1,6 @@
-import { Suspense } from "react";
-import { MorePage } from "@/components/shell/MorePage";
+import { redirect } from "next/navigation";
 
+/** The section switcher became the hub. Kept so old links still land somewhere. */
 export default function More() {
-  return (
-    <Suspense>
-      <MorePage />
-    </Suspense>
-  );
+  redirect("/app");
 }

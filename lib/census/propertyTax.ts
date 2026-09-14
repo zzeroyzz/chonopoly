@@ -10,6 +10,14 @@
  * it's a starting estimate — a sourced one rather than an invented one. The
  * field it fills stays editable and a real tax bill always wins.
  *
+ * Known limitation, and it's a real one: in states with assessment caps that
+ * reset on sale (California's Prop 13 is the obvious case), the median mixes
+ * long-held homes carrying decades-old assessments with recently sold ones. A
+ * new buyer reassessed to purchase price pays materially more than this ratio
+ * suggests. Verified against 94110, which returns 0.66% where a new purchase
+ * would be closer to 1.2%. Georgia — the owner's market — has no such cap, so
+ * the estimate holds there.
+ *
  * B25103_001E — median real estate taxes paid (dollars)
  * B25077_001E — median home value (dollars)
  */

@@ -31,13 +31,16 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  const publicPaths = ["/login", "/reset-password", "/setup", "/auth/callback"];
+  // "/" is the public marketing page now — it used to redirect into the app, which
+  // is why everything behaved as though Finances were the front door.
+  const publicPaths = ["/", "/login", "/reset-password", "/setup", "/auth/callback"];
   if (!user && !publicPaths.includes(pathname)) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  // Signed in, the hub is home — not any one module.
   if (user && pathname === "/login") {
-    return NextResponse.redirect(new URL("/", request.url));
+    return NextResponse.redirect(new URL("/app", request.url));
   }
 
   // Forward user ID to server components via request headers — avoids a second getUser() call in each page

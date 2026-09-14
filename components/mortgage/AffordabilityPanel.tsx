@@ -1,127 +1,124 @@
 "use client";
 
-import { type DtiResult, type RatioStatus } from "@/lib/mortgage/types";
-import { type AffordabilityResult } from "@/lib/mortgage/affordability";
+import { type MortgageInputs } from "@/lib/mortgage/types";
+import { type AffordabilityResult, type RequiredIncome } from "@/lib/mortgage/affordability";
+import { LOAN_TYPE_CONFIG } from "@/lib/mortgage/loanTypes";
 import { Card, SectionLabel } from "./fields";
-import { percent, dollars } from "./format";
+import { dollars } from "./format";
 
-const STATUS_COLOR: Record<RatioStatus, string> = {
-  pass: "var(--color-accent)",
-  caution: "var(--color-warning)",
-  fail: "var(--color-danger)",
-};
-
-const STATUS_LABEL: Record<RatioStatus, string> = {
-  pass: "Pass",
-  caution: "Caution",
-  fail: "Over",
-};
-
-function Ratio({
+function Line({
   label,
   value,
-  guideline,
-  status,
+  emphasis,
 }: {
   label: string;
-  value: number;
-  guideline: number | null;
-  status: RatioStatus;
+  value: string;
+  emphasis?: boolean;
 }) {
-  const color = STATUS_COLOR[status];
-  // Scaled against 60% so a ratio well over guideline still reads on screen.
-  const width = Math.min(100, (value / 60) * 100);
-  const marker = guideline === null ? null : Math.min(100, (guideline / 60) * 100);
-
   return (
-    <div className="py-2">
-      <div className="flex items-baseline justify-between mb-1.5">
-        <span className="text-[12px] text-(--color-text-secondary)">{label}</span>
-        <span className="text-[13px] font-(--font-mono)" style={{ color }}>
-          {percent(value)}
-          {guideline !== null && <span className="text-(--color-text-tertiary)"> / {guideline}%</span>}
-        </span>
-      </div>
-      <div className="relative h-1.5 rounded-full bg-(--color-border-default) overflow-hidden">
-        <div className="h-full rounded-full transition-all" style={{ width: `${width}%`, background: color }} />
-      </div>
-      {marker !== null && (
-        <div className="relative h-0">
-          <div className="absolute -top-1.5 w-px h-1.5 bg-(--color-text-tertiary)" style={{ left: `${marker}%` }} />
-        </div>
-      )}
-      <p className="text-[10px] uppercase tracking-widest mt-1.5" style={{ color }}>
-        {STATUS_LABEL[status]}
-      </p>
+    <div className="flex items-baseline justify-between py-1.5 border-b border-(--color-border-subtle) last:border-0">
+      <span className="text-[12px] text-(--color-text-secondary)">{label}</span>
+      <span
+        className={`text-[13px] font-(--font-mono) ${
+          emphasis ? "text-(--color-accent) font-semibold" : "text-(--color-text-primary)"
+        }`}
+      >
+        {value}
+      </span>
     </div>
   );
 }
 
 export function AffordabilityPanel({
-  dti,
+  inputs,
   affordability,
+  required,
 }: {
-  dti: DtiResult;
+  inputs: MortgageInputs;
   affordability: AffordabilityResult;
+  required: RequiredIncome;
 }) {
-  if (!dti.applicable) return null;
+  if (!required.applicable) return null;
 
-  const binding = affordability.binding;
+  const config = LOAN_TYPE_CONFIG[inputs.loanType];
+  const front = config.frontEndGuideline;
+  const back = config.backEndGuideline;
 
   return (
     <>
-      {affordability.maxPurchasePrice > 0 && (
+      {/* Given this house, what income does it take? Dollars, not percentages —
+          a number you can hold against a payslip. */}
+      {required.requiredMonthly > 0 && (
         <Card>
-          <SectionLabel>What you can afford</SectionLabel>
+          <SectionLabel>Income needed for this house</SectionLabel>
           <p className="text-[34px] leading-none font-bold font-(--font-mono) text-(--color-text-primary)">
-            {dollars(affordability.maxPurchasePrice)}
+            {dollars(required.requiredMonthly)}
+            <span className="text-[14px] font-normal text-(--color-text-tertiary)">/mo</span>
           </p>
-          <p className="text-[12px] text-(--color-text-secondary) mt-2">
-            Maximum purchase price at {dollars(affordability.maxHousingPayment)}/mo housing payment,
-            using your income, this rate and term.
+          <p className="text-[12px] text-(--color-text-secondary) mt-1.5">
+            {dollars(required.requiredAnnual)} a year, gross.
           </p>
 
-          {/* Which guideline binds is the actionable part — it says what to change. */}
-          <div className="mt-3 pt-3 border-t border-(--color-border-subtle)">
-            <p className="text-[12px] text-(--color-text-secondary)">
-              {binding === "front" ? (
-                <>
-                  Limited by the <span className="text-(--color-accent)">housing ratio</span> — a
-                  bigger down payment or a cheaper house raises this.
-                </>
-              ) : (
-                <>
-                  Limited by the <span className="text-(--color-accent)">total debt ratio</span> —
-                  paying down your other monthly debt raises this.
-                </>
-              )}
-            </p>
-            <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">
-              Rounded to the nearest $500. Assumes a conservative mortgage insurance rate, since
-              overestimating what you qualify for is the expensive way to be wrong.
-            </p>
+          <div className="mt-4">
+            {front !== null && (
+              <Line
+                label={`Housing ratio (${front}%)`}
+                value={`${dollars(required.frontEndMonthly)}/mo`}
+                emphasis={required.binding === "front"}
+              />
+            )}
+            {back !== null && (
+              <Line
+                label={`With your other debt (${back}%)`}
+                value={`${dollars(required.backEndMonthly)}/mo`}
+                emphasis={required.binding === "back"}
+              />
+            )}
           </div>
+
+          <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">
+            You have to clear both, so the higher one governs.
+          </p>
+
+          {required.qualifies !== null && (
+            <div className="mt-3 pt-3 border-t border-(--color-border-subtle)">
+              <p
+                className="text-[12px]"
+                style={{
+                  color: required.qualifies ? "var(--color-accent)" : "var(--color-danger)",
+                }}
+              >
+                {required.qualifies
+                  ? `Your ${dollars(inputs.grossMonthlyIncome)}/mo clears it by ${dollars(
+                      required.surplusMonthly ?? 0
+                    )}.`
+                  : `Your ${dollars(inputs.grossMonthlyIncome)}/mo is ${dollars(
+                      Math.abs(required.surplusMonthly ?? 0)
+                    )} short.`}
+              </p>
+            </div>
+          )}
         </Card>
       )}
 
-      <Card>
-        <SectionLabel>Your ratios at this price</SectionLabel>
-        <Ratio
-          label="Front-end (housing)"
-          value={dti.frontEnd}
-          guideline={dti.frontGuideline}
-          status={dti.frontStatus}
-        />
-        <Ratio
-          label="Back-end (all debt)"
-          value={dti.backEnd}
-          guideline={dti.backGuideline}
-          status={dti.backStatus}
-        />
-        {dti.note && (
-          <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">{dti.note}</p>
-        )}
-      </Card>
+      {/* And the inverse: given your income, how much house? */}
+      {affordability.maxPurchasePrice > 0 && (
+        <Card>
+          <SectionLabel>What your income supports</SectionLabel>
+          <p className="text-[28px] leading-none font-bold font-(--font-mono) text-(--color-text-primary)">
+            {dollars(affordability.maxPurchasePrice)}
+          </p>
+          <p className="text-[12px] text-(--color-text-secondary) mt-2">
+            Maximum purchase price at {dollars(affordability.maxHousingPayment)}/mo housing payment.
+            {affordability.binding === "front"
+              ? " Limited by the housing ratio — a bigger down payment or a cheaper house raises it."
+              : " Limited by your total debt — paying down other monthly debt raises it."}
+          </p>
+          <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">
+            Rounded to the nearest $500, assuming a conservative mortgage insurance rate.
+          </p>
+        </Card>
+      )}
     </>
   );
 }

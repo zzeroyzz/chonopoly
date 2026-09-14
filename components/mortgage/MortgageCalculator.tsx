@@ -8,8 +8,7 @@ import { useEffect } from "react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
-import { calculateDti } from "@/lib/mortgage/dti";
-import { calculateAffordability } from "@/lib/mortgage/affordability";
+import { calculateAffordability, calculateRequiredIncome } from "@/lib/mortgage/affordability";
 import { InputPanel } from "./InputPanel";
 import { ResultsPanel } from "./ResultsPanel";
 import { AffordabilityPanel } from "./AffordabilityPanel";
@@ -53,8 +52,11 @@ export default function MortgageCalculator() {
   const patch = (p: Partial<MortgageInputs>) => setInputs((prev) => ({ ...prev, ...p }));
 
   const result = useMemo(() => calculateMortgage(inputs), [inputs]);
-  const dti = useMemo(() => calculateDti(inputs, result), [inputs, result]);
   const affordability = useMemo(() => calculateAffordability(inputs), [inputs]);
+  const required = useMemo(
+    () => calculateRequiredIncome(inputs, result.totalMonthlyWithMortgageInsurance),
+    [inputs, result.totalMonthlyWithMortgageInsurance]
+  );
 
 
   return (
@@ -84,7 +86,7 @@ export default function MortgageCalculator() {
 
           <div className="grid gap-4" style={{ alignContent: "start" }}>
             <ResultsPanel inputs={inputs} result={result} />
-            <AffordabilityPanel dti={dti} affordability={affordability} />
+            <AffordabilityPanel inputs={inputs} affordability={affordability} required={required} />
             <RateLookup />
           </div>
         </div>

@@ -1,4 +1,4 @@
-import { calculateAffordability } from "@/lib/mortgage/affordability";
+import { calculateAffordability, calculateRequiredIncome } from "@/lib/mortgage/affordability";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { pmiBandForLtv, suggestedPmiRate, ltvPercent } from "@/lib/mortgage/pmi";
 import { defaultInputs } from "@/lib/mortgage/defaults";
@@ -126,5 +126,64 @@ describe("affordability", () => {
     });
     // The calculator's own (midpoint) payment must fit inside the conservative cap.
     expect(atPrice.totalMonthlyWithMortgageInsurance).toBeLessThanOrEqual(r.maxHousingPayment + 1);
+  });
+});
+
+describe("required income for a given house", () => {
+  it("inverts the conventional guidelines", () => {
+    const i = inputs({ otherMonthlyDebt: 600 });
+    const r = calculateMortgage(i);
+    const req = calculateRequiredIncome(i, r.totalMonthlyWithMortgageInsurance);
+
+    // Front end: payment / 0.28. Back end: (payment + debts) / 0.36.
+    expect(req.frontEndMonthly).toBeCloseTo(r.totalMonthlyWithMortgageInsurance / 0.28, 4);
+    expect(req.backEndMonthly).toBeCloseTo((r.totalMonthlyWithMortgageInsurance + 600) / 0.36, 4);
+  });
+
+  it("uses the FHA guidelines on an FHA loan", () => {
+    const i = inputs({ loanType: "fha", otherMonthlyDebt: 400 });
+    const r = calculateMortgage(i);
+    const req = calculateRequiredIncome(i, r.totalMonthlyWithMortgageInsurance);
+
+    expect(req.frontEndMonthly).toBeCloseTo(r.totalMonthlyWithMortgageInsurance / 0.31, 4);
+    expect(req.backEndMonthly).toBeCloseTo((r.totalMonthlyWithMortgageInsurance + 400) / 0.43, 4);
+  });
+
+  it("requires the higher of the two, since both have to clear", () => {
+    const i = inputs({ otherMonthlyDebt: 2000 });
+    const r = calculateMortgage(i);
+    const req = calculateRequiredIncome(i, r.totalMonthlyWithMortgageInsurance);
+
+    expect(req.requiredMonthly).toBe(Math.max(req.frontEndMonthly, req.backEndMonthly));
+    expect(req.requiredAnnual).toBeCloseTo(req.requiredMonthly * 12, 6);
+  });
+
+  it("lets the back end bind once other debt is large enough", () => {
+    const i = inputs({ otherMonthlyDebt: 3000 });
+    const r = calculateMortgage(i);
+    expect(calculateRequiredIncome(i, r.totalMonthlyWithMortgageInsurance).binding).toBe("back");
+  });
+
+  it("compares against stated income when there is one", () => {
+    const i = inputs({ grossMonthlyIncome: 20000, otherMonthlyDebt: 0 });
+    const r = calculateMortgage(i);
+    const req = calculateRequiredIncome(i, r.totalMonthlyWithMortgageInsurance);
+    expect(req.qualifies).toBe(true);
+    expect(req.surplusMonthly).toBeCloseTo(20000 - req.requiredMonthly, 4);
+  });
+
+  it("reports short when income does not cover it", () => {
+    const i = inputs({ grossMonthlyIncome: 3000 });
+    const r = calculateMortgage(i);
+    const req = calculateRequiredIncome(i, r.totalMonthlyWithMortgageInsurance);
+    expect(req.qualifies).toBe(false);
+    expect(req.surplusMonthly!).toBeLessThan(0);
+  });
+
+  it("does not apply to hard money or DSCR", () => {
+    for (const loanType of ["hardMoney", "dscr"] as const) {
+      const i = inputs({ loanType });
+      expect(calculateRequiredIncome(i, 2000).applicable).toBe(false);
+    }
   });
 });

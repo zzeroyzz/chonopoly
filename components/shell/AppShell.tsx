@@ -54,9 +54,10 @@ interface Props {
  * App frame: desktop sidebar, mobile top bar, mobile bottom tab bar, and the
  * safe-area padding they need.
  *
- * The bottom bar is scoped to the section you're in — which section is derived
- * from the route and nowhere else, so it can't disagree with the URL. Desktop
- * ignores the scoping entirely and lists every section in the sidebar.
+ * The bottom bar is scoped to the module you're in — which module is derived
+ * from the route and nowhere else, so it can't disagree with the URL — and its
+ * fifth slot goes home to the hub. Desktop ignores the scoping and lists every
+ * module in the sidebar.
  */
 export function AppShell({
   sectionLabel,
@@ -80,10 +81,9 @@ export function AppShell({
 
   const sections = buildSections({ asRoutes });
   const section = sectionForPath(pathname, sections);
-  const sectionCount = visibleSections(sections).length;
 
-  // Remember where we were so More can bring the user back here rather than to
-  // the section's front door.
+  // Remember where we were so coming back from the hub returns to this exact
+  // spot rather than the module's front door.
   useEffect(() => {
     const query = searchParams.toString();
     rememberSectionPath(section.id, query ? `${pathname}?${query}` : (pathname ?? ""));
@@ -122,7 +122,7 @@ export function AppShell({
         navItems={section.items}
         activeNavId={activeNavId}
         onNavigate={onNavigate}
-        showMore={sectionCount > 1}
+        showHub
       />
 
       {overlays}

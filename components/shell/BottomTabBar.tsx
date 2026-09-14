@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname } from "next/navigation";
-import { MoreHorizontal } from "lucide-react";
+import { LayoutGrid } from "lucide-react";
 import { type ShellNavItem } from "./types";
 import { useShellNavigate, isNavItemActive } from "./navigation";
 
@@ -11,24 +11,25 @@ interface Props {
   /** Currently active nav id, or null when the active view isn't a top-level item. */
   activeNavId: string | null;
   onNavigate: (id: string) => void;
-  /** Hidden when there's only one section to be in. */
-  showMore?: boolean;
+  /** Hidden when there's nowhere else to go. */
+  showHub?: boolean;
 }
 
 /**
  * Mobile bottom tab bar — lg+ uses the sidebar instead.
  *
- * Five slots is the ceiling at 375px. The bar holds the section you're in, and
- * More is a route to the section switcher rather than a modal: it's a place you
- * navigate to, with a back button, not an overlay that traps you.
+ * Five slots is the ceiling at 375px, so the bar holds the module you're in and
+ * the fifth slot goes home to the hub. No section switcher and no More drawer:
+ * with peer modules you don't need somewhere to put leftovers, you need a way
+ * back to the place you chose from.
  */
-export function BottomTabBar({ navItems, activeNavId, onNavigate, showMore = true }: Props) {
+export function BottomTabBar({ navItems, activeNavId, onNavigate, showHub = true }: Props) {
   const pathname = usePathname();
   const router = useRouter();
   const navigate = useShellNavigate(onNavigate);
 
-  const primary = showMore ? navItems.slice(0, 4) : navItems.slice(0, 5);
-  const moreActive = pathname === "/more";
+  const primary = showHub ? navItems.slice(0, 4) : navItems.slice(0, 5);
+  const hubActive = pathname === "/app";
 
   return (
     <nav
@@ -55,18 +56,18 @@ export function BottomTabBar({ navItems, activeNavId, onNavigate, showMore = tru
           );
         })}
 
-        {showMore && (
+        {showHub && (
           <button
-            data-testid="nav-more"
-            onClick={() => router.push("/more")}
+            data-testid="nav-hub"
+            onClick={() => router.push("/app")}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              moreActive ? "text-(--color-accent)" : "text-(--color-text-tertiary)"
+              hubActive ? "text-(--color-accent)" : "text-(--color-text-tertiary)"
             }`}
           >
-            <div className={`p-1.5 rounded-xl transition-colors ${moreActive ? "bg-(--color-accent)/10" : ""}`}>
-              <MoreHorizontal size={16} />
+            <div className={`p-1.5 rounded-xl transition-colors ${hubActive ? "bg-(--color-accent)/10" : ""}`}>
+              <LayoutGrid size={16} />
             </div>
-            <span className="text-[9px] uppercase tracking-wide font-medium">More</span>
+            <span className="text-[9px] uppercase tracking-wide font-medium">Home</span>
           </button>
         )}
       </div>
