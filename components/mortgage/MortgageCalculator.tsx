@@ -3,13 +3,13 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
-import { buildAppNavItems, buildSecondaryNavItems } from "@/components/shell/appNavItems";
 import { loadProfile } from "@/lib/supabase/profile";
 import { useEffect } from "react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { calculateDti } from "@/lib/mortgage/dti";
+import { calculateAffordability } from "@/lib/mortgage/affordability";
 import { InputPanel } from "./InputPanel";
 import { ResultsPanel } from "./ResultsPanel";
 import { AffordabilityPanel } from "./AffordabilityPanel";
@@ -54,20 +54,17 @@ export default function MortgageCalculator() {
 
   const result = useMemo(() => calculateMortgage(inputs), [inputs]);
   const dti = useMemo(() => calculateDti(inputs, result), [inputs, result]);
+  const affordability = useMemo(() => calculateAffordability(inputs), [inputs]);
 
-  const navItems = buildAppNavItems({ asRoutes: true });
-  const secondaryNavItems = buildSecondaryNavItems({ asRoutes: true });
 
   return (
     <AppShell
-      sectionLabel="Calculator"
       appName="Park Hawkins Properties"
       userProfile={userProfile}
       onboardingCompleted={null}
       onProfileClick={() => router.push("/finances?tab=profile")}
       // No contextSwitcher: the calculator has no scoped data, so nothing to scope.
-      navItems={navItems}
-      secondaryNavItems={secondaryNavItems}
+      asRoutes
       activeNavId="mortgage"
       onNavigate={() => {}}
     >
@@ -87,7 +84,7 @@ export default function MortgageCalculator() {
 
           <div className="grid gap-4" style={{ alignContent: "start" }}>
             <ResultsPanel inputs={inputs} result={result} />
-            <AffordabilityPanel dti={dti} />
+            <AffordabilityPanel dti={dti} affordability={affordability} />
             <RateLookup />
           </div>
         </div>

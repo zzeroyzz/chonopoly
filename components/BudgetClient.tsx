@@ -17,8 +17,6 @@ import { loadProfile } from "@/lib/supabase/profile";
 import { createClient as createSupabaseClient } from "@/lib/supabase/client";
 import { AppShell } from "./shell/AppShell";
 import { ContextSwitcher } from "./shell/ContextSwitcher";
-import { buildAppNavItems, buildSecondaryNavItems } from "./shell/appNavItems";
-import { type ShellNavItem } from "./shell/types";
 import dynamic from "next/dynamic";
 const SpendingChart = dynamic(() => import("./budget/SpendingChart"), { ssr: false });
 const ActivityChart = dynamic(() => import("./budget/ActivityChart"), { ssr: false });
@@ -2030,10 +2028,9 @@ export default function BudgetClient({ initialConnected, userId }: { initialConn
   const isAccountView = typeof view === "object" && view.type === "account";
   const activeAccountId = isAccountView ? (view as { type: "account"; accountId: string }).accountId : null;
 
-  // Finances destinations stay view-based here so navTo keeps driving ?tab= and
-  // its own state resets; the calculator item carries a real href.
-  const navItems: ShellNavItem[] = buildAppNavItems({ asRoutes: false });
-  const secondaryNavItems: ShellNavItem[] = buildSecondaryNavItems({ asRoutes: false });
+  // Nav comes from the shell's section registry. asRoutes={false} keeps the four
+  // finances destinations as internal views so navTo keeps driving ?tab= and its
+  // own state resets.
 
   const panelProps: PanelProps = { transactions, accountMap, categoryOverrides, onChangeCategory: changeCategory, search, onSearch: setSearch };
 
@@ -2070,8 +2067,7 @@ export default function BudgetClient({ initialConnected, userId }: { initialConn
       userProfile={userProfile}
       onboardingCompleted={onboardingCompleted}
       onProfileClick={() => navTo("profile")}
-      navItems={navItems}
-      secondaryNavItems={secondaryNavItems}
+      asRoutes={false}
       activeNavId={typeof view === "string" ? view : null}
       onNavigate={(id) => navTo(id as ViewState)}
       mobileActions={

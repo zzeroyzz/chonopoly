@@ -1,15 +1,18 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { ShellSidebar } from "./ShellSidebar";
 import { MobileTopBar } from "./MobileTopBar";
 import { BottomTabBar } from "./BottomTabBar";
-import { type ShellNavItem, type ShellUserProfile } from "./types";
+import { buildSections, sectionForPath, visibleSections } from "./sections";
+import { rememberSectionPath } from "./sectionMemory";
+import { type ShellUserProfile } from "./types";
 
 interface Props {
-  /** Sidebar heading, e.g. "Finances". */
-  sectionLabel: string;
-  /** App name in the mobile top bar, e.g. "Park Hawkins Properties". */
+  /** Sidebar heading. Defaults to the current section's label. */
+  sectionLabel?: string;
+  /** App name in the mobile top bar. */
   appName: string;
   /** Optional pill under the app name on mobile — the active team, when one is selected. */
   mobileBadge?: string | null;
@@ -26,12 +29,14 @@ interface Props {
    */
   contextSwitcher?: ReactNode;
 
-  navItems: ShellNavItem[];
   /**
-   * Secondary destinations. The desktop sidebar lists them inline; on mobile
-   * they sit behind the More tab, since the bar holds five items at 375px.
+   * False inside /finances, where its four destinations are views the page
+   * switches internally via `?tab=`. True everywhere else, where they have to
+   * be real links.
    */
-  secondaryNavItems?: ShellNavItem[];
+  asRoutes?: boolean;
+
+  /** Active destination id within the current section, when the page tracks one. */
   activeNavId: string | null;
   onNavigate: (id: string) => void;
 
@@ -40,7 +45,6 @@ interface Props {
   /** Feature-specific sidebar footer — e.g. refresh + Plaid connect. */
   sidebarFooter?: ReactNode;
 
-  /** Main content. */
   children: ReactNode;
   /** Modals and wizards that sit above the shell. */
   overlays?: ReactNode;
@@ -48,8 +52,11 @@ interface Props {
 
 /**
  * App frame: desktop sidebar, mobile top bar, mobile bottom tab bar, and the
- * safe-area padding they need. Everything feature-specific arrives through a
- * slot so no single route's data layer ends up in the shared shell.
+ * safe-area padding they need.
+ *
+ * The bottom bar is scoped to the section you're in — which section is derived
+ * from the route and nowhere else, so it can't disagree with the URL. Desktop
+ * ignores the scoping entirely and lists every section in the sidebar.
  */
 export function AppShell({
   sectionLabel,
@@ -60,8 +67,7 @@ export function AppShell({
   onboardingCompleted,
   onProfileClick,
   contextSwitcher,
-  navItems,
-  secondaryNavItems = [],
+  asRoutes = false,
   activeNavId,
   onNavigate,
   sidebarContent,
@@ -69,17 +75,31 @@ export function AppShell({
   children,
   overlays,
 }: Props) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  const sections = buildSections({ asRoutes });
+  const section = sectionForPath(pathname, sections);
+  const sectionCount = visibleSections(sections).length;
+
+  // Remember where we were so More can bring the user back here rather than to
+  // the section's front door.
+  useEffect(() => {
+    const query = searchParams.toString();
+    rememberSectionPath(section.id, query ? `${pathname}?${query}` : (pathname ?? ""));
+  }, [section.id, pathname, searchParams]);
+
   return (
     <div className="flex min-h-screen overflow-x-hidden bg-(--color-base) text-(--color-text-primary)">
 
       <ShellSidebar
-        sectionLabel={sectionLabel}
+        sectionLabel={sectionLabel ?? section.label}
         userProfile={userProfile}
         onboardingCompleted={onboardingCompleted}
         onProfileClick={onProfileClick}
         contextSwitcher={contextSwitcher}
-        navItems={navItems}
-        secondaryNavItems={secondaryNavItems}
+        sections={visibleSections(sections)}
+        activeSectionId={section.id}
         activeNavId={activeNavId}
         onNavigate={onNavigate}
         sidebarContent={sidebarContent}
@@ -99,10 +119,10 @@ export function AppShell({
       </main>
 
       <BottomTabBar
-        navItems={navItems}
-        moreItems={secondaryNavItems}
+        navItems={section.items}
         activeNavId={activeNavId}
         onNavigate={onNavigate}
+        showMore={sectionCount > 1}
       />
 
       {overlays}

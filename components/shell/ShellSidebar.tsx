@@ -4,7 +4,8 @@
 import { type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { getAvatarColors } from "@/lib/avatar";
-import { type ShellNavItem, type ShellUserProfile } from "./types";
+import { type ShellUserProfile } from "./types";
+import { type AppSection } from "./sections";
 import { useShellNavigate, isNavItemActive } from "./navigation";
 
 interface Props {
@@ -19,10 +20,10 @@ interface Props {
    * routes that have no data (the mortgage calculator) pass nothing and render none.
    */
   contextSwitcher?: ReactNode;
-  navItems: ShellNavItem[];
-  /** Secondary destinations. Listed inline here — the sidebar has the room that
-   *  the mobile tab bar doesn't, so there's no More indirection on desktop. */
-  secondaryNavItems?: ShellNavItem[];
+  /** Every section, listed inline. The sidebar has the room the mobile tab bar
+   *  doesn't, so there's no More indirection on desktop. */
+  sections: AppSection[];
+  activeSectionId: string;
   /** Currently active nav id, or null when the active view isn't a top-level item. */
   activeNavId: string | null;
   onNavigate: (id: string) => void;
@@ -38,8 +39,8 @@ export function ShellSidebar({
   onboardingCompleted,
   onProfileClick,
   contextSwitcher,
-  navItems,
-  secondaryNavItems = [],
+  sections,
+  activeSectionId,
   activeNavId,
   onNavigate,
   sidebarContent,
@@ -103,33 +104,24 @@ export function ShellSidebar({
       {/* TODO: mobile — context switcher not accessible on mobile nav; needs a home in ProfilePanel or a mobile sheet */}
       {contextSwitcher}
 
-      {/* Nav items */}
+      {/* Every section, listed. Desktop has the room, so no More indirection. */}
       <nav className="px-4 py-2">
-        {navItems.map((item) => {
-          const { id, icon, label } = item;
-          const isActive = isNavItemActive(item, activeNavId, pathname);
-          return (
-            <button
-              key={id}
-              onClick={() => navigate(item)}
-              className={`w-full flex items-center gap-[10px] h-9 text-[13px] transition-colors ${
-                isActive
-                  ? "text-(--color-accent) font-semibold"
-                  : "text-(--color-text-secondary) font-normal hover:text-(--color-text-primary)"
-              }`}
-            >
-              <span className={isActive ? "text-(--color-accent)" : "text-(--color-text-secondary) group-hover:text-(--color-text-primary)"}>{icon}</span>
-              {label}
-            </button>
-          );
-        })}
-
-        {secondaryNavItems.length > 0 && (
-          <>
-            <hr className="border-(--color-border-subtle) my-2" />
-            {secondaryNavItems.map((item) => {
+        {sections.map((sec, secIndex) => (
+          <div key={sec.id} className={secIndex > 0 ? "mt-3 pt-3 border-t border-(--color-border-subtle)" : ""}>
+            {sections.length > 1 && (
+              <p className="pb-1.5 text-[10px] text-(--color-text-disabled) uppercase tracking-[0.1em]">
+                {sec.label}
+              </p>
+            )}
+            {sec.items.map((item) => {
               const { id, icon, label } = item;
-              const isActive = isNavItemActive(item, activeNavId, pathname);
+              // Only the section you're actually in gets to own the active id —
+              // otherwise two sections with a same-named view both light up.
+              const isActive = isNavItemActive(
+                item,
+                sec.id === activeSectionId ? activeNavId : null,
+                pathname
+              );
               return (
                 <button
                   key={id}
@@ -145,8 +137,8 @@ export function ShellSidebar({
                 </button>
               );
             })}
-          </>
-        )}
+          </div>
+        ))}
       </nav>
 
       {/* Feature-specific body — always flex-1 so the footer stays anchored */}

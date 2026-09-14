@@ -1,4 +1,4 @@
-import { LayoutDashboard, LayoutGrid, Search, PieChart, Calculator, User } from "lucide-react";
+import { LayoutDashboard, LayoutGrid, Search, PieChart, Calculator } from "lucide-react";
 import { type ShellNavItem } from "./types";
 
 /**
@@ -28,17 +28,14 @@ export function buildAppNavItems({ asRoutes }: { asRoutes: boolean }): ShellNavI
  * The tab bar holds five items at 375px and no more, so everything past the
  * four primaries lives here. This is the list the CRM's sections will join.
  *
- * Profile appears here as well as on the top-bar avatar — two paths to the same
- * place, deliberately, because the avatar isn't obvious as navigation.
+ * Profile deliberately isn't in it. Both surfaces already have an avatar that
+ * goes there — the profile block at the top of the desktop sidebar, and the
+ * avatar in the mobile top bar — so listing it again would be a second row
+ * pointing at a place the user can already see a way to.
  */
-export function buildSecondaryNavItems({ asRoutes }: { asRoutes: boolean }): ShellNavItem[] {
+export function buildSecondaryNavItems(_opts: { asRoutes: boolean }): ShellNavItem[] {
+  void _opts;
   return [
     { id: "mortgage", icon: <Calculator size={16} />, label: "Mortgage calculator", href: "/mortgage" },
-    {
-      id: "profile",
-      icon: <User size={16} />,
-      label: "Profile",
-      href: asRoutes ? "/finances?tab=profile" : undefined,
-    },
   ];
 }

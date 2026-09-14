@@ -19,6 +19,8 @@ export interface MortgageInputs {
   propertyTaxYearly: number;
   /** Annual PMI as a percent of the loan amount. Conventional only. */
   pmiRate: number;
+  /** While true, pmiRate is derived from LTV. A user edit sets it false and their number wins. */
+  pmiRateAuto: boolean;
   insuranceYearly: number;
   hoaMonthly: number;
   loanType: LoanType;

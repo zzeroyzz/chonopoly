@@ -5,6 +5,7 @@ import { type MortgageInputs, type LoanType } from "@/lib/mortgage/types";
 import { LOAN_TYPE_CONFIG, LOAN_TYPES } from "@/lib/mortgage/loanTypes";
 import { TERM_PRESETS, HARD_MONEY_TERM_PRESETS } from "@/lib/mortgage/defaults";
 import { baseLoanAmount, downPaymentPercent } from "@/lib/mortgage/calculate";
+import { ltvPercent, pmiBandForLtv, suggestedPmiRate, formatPmiBand } from "@/lib/mortgage/pmi";
 import {
   NumberField,
   SelectField,
@@ -15,6 +16,7 @@ import {
   FieldLabel,
 } from "./fields";
 import { MONTH_OPTIONS } from "./format";
+import { PropertyTaxLookup } from "./PropertyTaxLookup";
 
 interface Props {
   inputs: MortgageInputs;
@@ -162,20 +164,45 @@ export function InputPanel({ inputs, onChange }: Props) {
       </Card>
 
       {/* ── Loan-type specific ─────────────────────────────────────────── */}
-      {config.showPmi && (
-        <Card>
-          <SectionLabel>Mortgage insurance</SectionLabel>
-          <NumberField
-            label="PMI rate"
-            value={inputs.pmiRate}
-            onChange={(pmiRate) => onChange({ pmiRate })}
-            suffix="%/yr"
-            step="0.01"
-            hint={downPercent >= 20 ? "not charged at 20%+ down" : "of loan amount"}
-            min={0}
-          />
-        </Card>
-      )}
+      {config.showPmi && (() => {
+        const ltv = ltvPercent(derivedLoan, inputs.homeValue);
+        const band = pmiBandForLtv(ltv);
+        const shown = inputs.pmiRateAuto ? suggestedPmiRate(ltv) : inputs.pmiRate;
+
+        return (
+          <Card>
+            <SectionLabel>Mortgage insurance</SectionLabel>
+            <NumberField
+              label="PMI rate"
+              value={shown}
+              // Typing sets the rate manually — a real quote always beats a band midpoint.
+              onChange={(pmiRate) => onChange({ pmiRate, pmiRateAuto: false })}
+              suffix="%/yr"
+              step="0.01"
+              hint={downPercent >= 20 ? "not charged at 20%+ down" : "of loan amount"}
+              min={0}
+            />
+            {band && downPercent < 20 && (
+              <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">
+                At {ltv.toFixed(1)}% LTV the typical range is {formatPmiBand(band)}. Rates vary with
+                credit score, so this is an estimate — enter your quoted rate if you have one.
+                {!inputs.pmiRateAuto && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      onClick={() => onChange({ pmiRateAuto: true })}
+                      className="text-(--color-accent)"
+                    >
+                      Use the estimate
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
+          </Card>
+        );
+      })()}
 
       {config.showMip && (
         <Card>
@@ -293,14 +320,20 @@ export function InputPanel({ inputs, onChange }: Props) {
       <Card>
         <SectionLabel>Carrying costs</SectionLabel>
         <div className="grid gap-3.5">
-          <NumberField
-            label="Property tax"
-            value={inputs.propertyTaxYearly}
-            onChange={(propertyTaxYearly) => onChange({ propertyTaxYearly })}
-            prefix="$"
-            hint="per year"
-            min={0}
-          />
+          <div>
+            <NumberField
+              label="Property tax"
+              value={inputs.propertyTaxYearly}
+              onChange={(propertyTaxYearly) => onChange({ propertyTaxYearly })}
+              prefix="$"
+              hint="per year"
+              min={0}
+            />
+            <PropertyTaxLookup
+              homeValue={inputs.homeValue}
+              onApply={(propertyTaxYearly) => onChange({ propertyTaxYearly })}
+            />
+          </div>
           <NumberField
             label="Home insurance"
             value={inputs.insuranceYearly}

@@ -16,6 +16,7 @@ import {
   buildInterestOnlySchedule,
   paymentDate,
 } from "./amortization";
+import { suggestedPmiRate, ltvPercent } from "./pmi";
 
 /** Base loan before any financed fees are rolled in. */
 export function baseLoanAmount(inputs: MortgageInputs): number {
@@ -72,7 +73,12 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
   let mortgageInsuranceMonths: number | null = 0;
 
   if (inputs.loanType === "conventional" && downPercent < 20) {
-    monthlyMortgageInsurance = (loanAmount * (inputs.pmiRate / 100)) / 12;
+    // Rate bands by LTV. Auto by default; a typed value wins, same rule as the
+    // interest rate.
+    const rate = inputs.pmiRateAuto
+      ? suggestedPmiRate(ltvPercent(loanAmount, inputs.homeValue))
+      : inputs.pmiRate;
+    monthlyMortgageInsurance = (loanAmount * (rate / 100)) / 12;
   } else if (inputs.loanType === "fha") {
     monthlyMortgageInsurance = (loanAmount * FHA_ANNUAL_MIP_RATE) / 12;
     mortgageInsuranceMonths =

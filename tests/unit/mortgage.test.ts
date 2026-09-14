@@ -92,7 +92,7 @@ describe("interest-only schedule (hard money)", () => {
 describe("conventional PMI", () => {
   it("applies PMI under 20% down and terminates it at 78% LTV of original value", () => {
     const result = calculateMortgage(
-      inputs({ homeValue: 300000, downPayment: 15000, interestRate: 6, pmiRate: 0.6 })
+      inputs({ homeValue: 300000, downPayment: 15000, interestRate: 6, pmiRate: 0.6, pmiRateAuto: false })
     );
 
     expect(result.monthlyMortgageInsurance).toBeGreaterThan(0);
@@ -112,7 +112,7 @@ describe("conventional PMI", () => {
   });
 
   it("reports a lower payment after PMI drops off", () => {
-    const result = calculateMortgage(inputs({ homeValue: 300000, downPayment: 15000 }));
+    const result = calculateMortgage(inputs({ homeValue: 300000, downPayment: 15000, pmiRateAuto: false }));
     expect(result.totalMonthlyAfterMortgageInsurance).toBeCloseTo(
       result.totalMonthlyWithMortgageInsurance - result.monthlyMortgageInsurance,
       6
@@ -298,7 +298,11 @@ describe("reference case — conventional, 5% down, 10%, 30yr", () => {
     startMonth: 8, // September
     startYear: 2026,
     propertyTaxYearly: 3000,
+    // The external reference was run at a flat 0.5%, so pin the manual rate
+    // rather than the LTV-derived estimate — otherwise this stops comparing
+    // like with like.
     pmiRate: 0.5,
+    pmiRateAuto: false,
     insuranceYearly: 1500,
     hoaMonthly: 0,
   });

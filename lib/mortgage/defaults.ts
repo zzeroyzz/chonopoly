@@ -15,6 +15,7 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
     startYear: now.getFullYear(),
     propertyTaxYearly: 4200,
     pmiRate: 0.5,
+    pmiRateAuto: true,
     insuranceYearly: 1800,
     hoaMonthly: 0,
     loanType: "conventional",
