@@ -80,22 +80,31 @@ export function AffordabilityPanel({
             You have to clear both, so the higher one governs.
           </p>
 
+          {/* Three aligned rows rather than a sentence. "Your $7,000/mo is
+              $12,662 short" puts two different magnitudes in one line and makes
+              the reader do the subtraction to check it. */}
           {required.qualifies !== null && (
-            <div className="mt-3 pt-3 border-t border-(--color-border-subtle)">
-              <p
-                className="text-[12px]"
-                style={{
-                  color: required.qualifies ? "var(--color-accent)" : "var(--color-danger)",
-                }}
-              >
-                {required.qualifies
-                  ? `Your ${dollars(inputs.grossMonthlyIncome)}/mo clears it by ${dollars(
-                      required.surplusMonthly ?? 0
-                    )}.`
-                  : `Your ${dollars(inputs.grossMonthlyIncome)}/mo is ${dollars(
-                      Math.abs(required.surplusMonthly ?? 0)
-                    )} short.`}
-              </p>
+            <div className="mt-4 pt-3 border-t border-(--color-border-subtle)">
+              <Line label="Needed" value={`${dollars(required.requiredMonthly)}/mo`} />
+              <Line label="You have" value={`${dollars(inputs.grossMonthlyIncome)}/mo`} />
+              <div className="flex items-baseline justify-between pt-2">
+                <span
+                  className="text-[12px] font-medium"
+                  style={{
+                    color: required.qualifies ? "var(--color-accent)" : "var(--color-danger)",
+                  }}
+                >
+                  {required.qualifies ? "Over by" : "Short by"}
+                </span>
+                <span
+                  className="text-[15px] font-semibold font-(--font-mono)"
+                  style={{
+                    color: required.qualifies ? "var(--color-accent)" : "var(--color-danger)",
+                  }}
+                >
+                  {dollars(Math.abs(required.surplusMonthly ?? 0))}/mo
+                </span>
+              </div>
             </div>
           )}
         </Card>

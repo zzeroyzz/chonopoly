@@ -6,6 +6,7 @@ import { AppShell } from "@/components/shell/AppShell";
 import { loadProfile } from "@/lib/supabase/profile";
 import { useEffect } from "react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
+import { loadInputs, saveInputs, clearInputs } from "@/lib/mortgage/storage";
 import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { calculateAffordability, calculateRequiredIncome } from "@/lib/mortgage/affordability";
@@ -18,9 +19,25 @@ import { RateLookup } from "./RateLookup";
 export default function MortgageCalculator() {
   const router = useRouter();
 
-  // One serializable object rather than a field per useState — persistence isn't
-  // in scope, but this is the seam it would hang off if it ever is.
+  // One serializable object rather than a field per useState — which is what
+  // makes persisting the whole thing a one-liner.
   const [inputs, setInputs] = useState<MortgageInputs>(() => defaultInputs());
+  const [restored, setRestored] = useState(false);
+
+  // Read on mount rather than in the initializer. localStorage doesn't exist
+  // during the server render, so initializing from it would render different
+  // markup on the server and the client and break hydration. One setState on
+  // mount is the accepted cost of that; the rule below is about cascading
+  // renders, and this fires exactly once.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInputs(loadInputs());
+    setRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (restored) saveInputs(inputs);
+  }, [inputs, restored]);
 
   const [userProfile, setUserProfile] = useState<{
     name: string;
@@ -74,9 +91,21 @@ export default function MortgageCalculator() {
         <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">
           Mortgage calculator
         </h1>
-        <p className="text-[12px] text-(--color-text-secondary) mb-5">
-          Nothing here is saved. Change anything and the numbers update immediately.
-        </p>
+        <div className="flex items-baseline justify-between gap-4 mb-5">
+          <p className="text-[12px] text-(--color-text-secondary)">
+            Your inputs stay put between visits. Nothing is saved to your account yet.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              clearInputs();
+              setInputs(defaultInputs());
+            }}
+            className="text-[12px] text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors shrink-0"
+          >
+            Reset
+          </button>
+        </div>
 
         {/* Mobile stacks inputs first; desktop runs two columns. */}
         <div className="grid gap-4 lg:grid-cols-2 lg:gap-6" style={{ alignContent: "start" }}>

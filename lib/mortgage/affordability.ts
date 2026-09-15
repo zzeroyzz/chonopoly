@@ -1,6 +1,7 @@
 import { type MortgageInputs } from "./types";
 import { LOAN_TYPE_CONFIG, FHA_ANNUAL_MIP_RATE } from "./loanTypes";
 import { monthlyPayment } from "./amortization";
+import { effectiveInsuranceYearly } from "./calculate";
 import { suggestedPmiRate, ltvPercent } from "./pmi";
 
 /**
@@ -69,7 +70,7 @@ function housingPaymentAt(price: number, inputs: MortgageInputs, taxRate: number
   return (
     principalAndInterest +
     monthlyTax +
-    inputs.insuranceYearly / 12 +
+    effectiveInsuranceYearly({ ...inputs, homeValue: price }) / 12 +
     inputs.hoaMonthly +
     mortgageInsurance
   );

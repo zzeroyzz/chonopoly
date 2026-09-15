@@ -1,40 +1,55 @@
 "use client";
 
 import { useState } from "react";
-import { type PropertyTaxEstimate } from "@/lib/census/propertyTax";
+import { type CountyTaxRate } from "@/lib/census/propertyTax";
 import { FieldLabel } from "./fields";
 import { dollars } from "./format";
 
 interface Props {
   homeValue: number;
-  /** Fills the annual property tax field from the looked-up rate. */
+  /** Fills the annual property tax field from the selected county's rate. */
   onApply: (annualTax: number) => void;
+}
+
+interface LookupResponse {
+  zip: string;
+  resolved: CountyTaxRate;
+  counties: CountyTaxRate[];
+  source: string;
+  vintage: string;
 }
 
 type State =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "found"; estimate: PropertyTaxEstimate }
+  | { kind: "found"; data: LookupResponse }
   | { kind: "none" };
 
 /**
- * ZIP-level property tax lookup.
+ * Property tax lookup from a ZIP.
  *
- * Fills the tax field on request and never on its own — same rule as the
- * interest rate. What it writes is an area average, so the copy says so rather
- * than letting a sourced number pass for the parcel's actual bill.
+ * The ZIP resolves to its county and the county's effective rate comes from ACS.
+ * County rather than ZIP because millage is levied there, and because it's the
+ * same figure the public tax calculators publish — DeKalb returns 0.919%, which
+ * matches them to three decimals.
+ *
+ * A ZIP can straddle counties, so the resolved one is shown by name and can be
+ * changed. Same rule as the interest rate and the PMI band: derive a default,
+ * make it visible, let a real answer win.
  */
 export function PropertyTaxLookup({ homeValue, onApply }: Props) {
   const [zip, setZip] = useState("");
   const [state, setState] = useState<State>({ kind: "idle" });
+  const [overrideFips, setOverrideFips] = useState("");
 
   async function lookup() {
     if (!/^\d{5}$/.test(zip)) return;
     setState({ kind: "loading" });
+    setOverrideFips("");
     try {
       const res = await fetch(`/api/property-tax?zip=${zip}`);
       if (res.ok && res.status !== 204) {
-        setState({ kind: "found", estimate: (await res.json()) as PropertyTaxEstimate });
+        setState({ kind: "found", data: (await res.json()) as LookupResponse });
       } else {
         setState({ kind: "none" });
       }
@@ -43,23 +58,36 @@ export function PropertyTaxLookup({ homeValue, onApply }: Props) {
     }
   }
 
-  const annualAtThisValue =
-    state.kind === "found" ? (homeValue * state.estimate.ratePercent) / 100 : 0;
+  const data = state.kind === "found" ? state.data : null;
+  const county =
+    data && overrideFips
+      ? (data.counties.find((c) => c.fips === overrideFips) ?? data.resolved)
+      : (data?.resolved ?? null);
+  const annual = county ? (homeValue * county.ratePercent) / 100 : 0;
+
+  const controlClass =
+    "w-full h-10 rounded-[var(--radius-md)] bg-(--color-elevated) border border-(--color-border-default) " +
+    "px-3 text-[14px] text-(--color-text-primary) focus:outline-none focus:border-(--color-accent) transition-colors";
 
   return (
     <div className="mt-3 pt-3 border-t border-(--color-border-subtle)">
       <div className="flex items-end gap-2">
         <label className="block w-28">
           <FieldLabel hint="tax lookup">ZIP</FieldLabel>
-          {/* Text, not number — a numeric input renders an empty ZIP as 0 and
-              makes the user clear it before typing. */}
+          {/* Text, not number — a numeric input renders an empty ZIP as 0. */}
           <input
             type="text"
             inputMode="numeric"
-            placeholder="30301"
+            placeholder="30096"
             value={zip}
             onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
-            className="w-full h-10 rounded-[var(--radius-md)] bg-(--color-elevated) border border-(--color-border-default) px-3 text-[14px] text-(--color-text-primary) font-(--font-mono) focus:outline-none focus:border-(--color-accent) transition-colors"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                lookup();
+              }
+            }}
+            className={`${controlClass} font-(--font-mono)`}
           />
         </label>
         <button
@@ -72,25 +100,43 @@ export function PropertyTaxLookup({ homeValue, onApply }: Props) {
         </button>
       </div>
 
-      {state.kind === "found" && (
+      {data && county && (
         <div className="mt-2.5">
           <p className="text-[12px] text-(--color-text-secondary)">
-            {state.estimate.zip} averages{" "}
+            {county.name} averages{" "}
             <span className="text-(--color-accent) font-(--font-mono)">
-              {state.estimate.ratePercent.toFixed(2)}%
+              {county.ratePercent.toFixed(3)}%
             </span>{" "}
-            — about {dollars(annualAtThisValue)}/yr at this home value.
+            — {dollars(annual)}/yr at {dollars(homeValue)}.
           </p>
+
           <button
             type="button"
-            onClick={() => onApply(Math.round(annualAtThisValue))}
+            onClick={() => onApply(Math.round(annual))}
             className="text-[12px] text-(--color-accent) mt-1"
           >
             Use this figure
           </button>
-          <p className="text-[10px] text-(--color-text-tertiary) mt-1.5 leading-relaxed">
-            {state.estimate.source}, {state.estimate.vintage}. This is the ZIP-wide median tax over
-            median value, not this property&apos;s bill — exemptions and assessment ratios move it.
+
+          {/* A ZIP can straddle counties, so don't pick silently. */}
+          <div className="mt-2.5">
+            <FieldLabel>County</FieldLabel>
+            <select
+              value={overrideFips || data.resolved.fips}
+              onChange={(e) => setOverrideFips(e.target.value)}
+              className={`${controlClass} appearance-none`}
+            >
+              {data.counties.map((c) => (
+                <option key={c.fips} value={c.fips}>
+                  {c.name} — {c.ratePercent.toFixed(2)}%
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <p className="text-[10px] text-(--color-text-tertiary) mt-2 leading-relaxed">
+            {data.source}, {data.vintage}. County average across owner-occupied homes, many of which
+            carry a homestead exemption — a rental has none, so expect to pay more than this.
           </p>
         </div>
       )}

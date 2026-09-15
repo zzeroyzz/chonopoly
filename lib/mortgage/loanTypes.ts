@@ -127,6 +127,22 @@ export function vaFundingFeeRate(downPaymentPercent: number, subsequentUse: bool
   return subsequentUse ? 0.033 : 0.0215;
 }
 
+/**
+ * Home insurance as a percent of home value per year, used as the default.
+ *
+ * The national average effective rate sits nearer 0.6%. This is deliberately
+ * above it: the owner asked for a conservative figure, and on the affordability
+ * calculation erring high is the safe direction — it lowers the maximum price
+ * rather than sending him shopping above what he can carry. Georgia also runs
+ * above the national average on wind and hail exposure.
+ *
+ * Caveat worth knowing: insurance actually scales with rebuild cost, not market
+ * value, so a percent of value overshoots on expensive land. That's the same
+ * direction as conservative, so it's tolerable here — but it's why the field
+ * stays editable and labeled.
+ */
+export const CONSERVATIVE_INSURANCE_RATE = 0.8;
+
 /** LTV at which conventional PMI terminates automatically, against original value. */
 export const PMI_AUTO_TERMINATION_LTV = 0.78;
 

@@ -21,7 +21,11 @@ export interface MortgageInputs {
   pmiRate: number;
   /** While true, pmiRate is derived from LTV. A user edit sets it false and their number wins. */
   pmiRateAuto: boolean;
+  /** Buyer closing costs as a percent of purchase price. */
+  closingCostPercent: number;
   insuranceYearly: number;
+  /** While true, insuranceYearly is derived from home value. A user edit sets it false. */
+  insuranceRateAuto: boolean;
   hoaMonthly: number;
   loanType: LoanType;
 
@@ -75,6 +79,12 @@ export interface MortgageResult {
   downPaymentPercent: number;
   /** Fees rolled into the loan — FHA UFMIP or the VA funding fee. */
   financedFees: number;
+  /** Buyer closing costs in dollars. One-time, never part of the monthly payment. */
+  closingCosts: number;
+  /** Fees due at closing rather than financed — unfinanced UFMIP or VA funding fee. */
+  feesDueAtClosing: number;
+  /** Everything the buyer writes cheques for at closing. */
+  cashToClose: number;
 
   principalAndInterest: number;
   monthlyTax: number;

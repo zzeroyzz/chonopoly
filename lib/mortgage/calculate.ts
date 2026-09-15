@@ -9,6 +9,7 @@ import {
   FHA_ANNUAL_MIP_RATE,
   FHA_MIP_TERMINATION_MONTHS_AT_10_PERCENT_DOWN,
   PMI_AUTO_TERMINATION_LTV,
+  CONSERVATIVE_INSURANCE_RATE,
   vaFundingFeeRate,
 } from "./loanTypes";
 import {
@@ -22,6 +23,15 @@ import { suggestedPmiRate, ltvPercent } from "./pmi";
 export function baseLoanAmount(inputs: MortgageInputs): number {
   if (inputs.loanAmountOverride !== null) return Math.max(0, inputs.loanAmountOverride);
   return Math.max(0, inputs.homeValue - inputs.downPayment);
+}
+
+/**
+ * Annual home insurance. Derived from home value while on auto, so it scales
+ * when the price changes; a typed figure wins, same rule as the rate and PMI.
+ */
+export function effectiveInsuranceYearly(inputs: MortgageInputs): number {
+  if (!inputs.insuranceRateAuto) return inputs.insuranceYearly;
+  return (inputs.homeValue * CONSERVATIVE_INSURANCE_RATE) / 100;
 }
 
 export function downPaymentPercent(inputs: MortgageInputs): number {
@@ -132,7 +142,8 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
       : 0;
 
   const monthlyTax = inputs.propertyTaxYearly / 12;
-  const monthlyInsurance = inputs.insuranceYearly / 12;
+  const insuranceYearly = effectiveInsuranceYearly(inputs);
+  const monthlyInsurance = insuranceYearly / 12;
   const monthlyHoa = inputs.hoaMonthly;
 
   const totalMonthlyWithMortgageInsurance =
@@ -150,7 +161,7 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
 
   const years = termMonths / 12;
   const totalTax = inputs.propertyTaxYearly * years;
-  const totalInsurance = inputs.insuranceYearly * years;
+  const totalInsurance = insuranceYearly * years;
   const totalHoa = inputs.hoaMonthly * termMonths;
 
   // Everything the borrower pays out over the term, escrow included — not just
@@ -161,11 +172,26 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
     totalInsurance +
     totalHoa;
 
+  // ── Cash at closing ──────────────────────────────────────────────────────
+  // One-time money. Deliberately kept out of the monthly payment and the DTI
+  // ratios — closing costs don't recur, and folding them in would overstate
+  // every month for the life of the loan.
+  const closingCosts = (inputs.homeValue * inputs.closingCostPercent) / 100;
+
+  // A fee that isn't financed has to be paid at the table instead.
+  let feesDueAtClosing = 0;
+  if (ufmip !== undefined && !inputs.fhaUfmipFinanced) feesDueAtClosing += ufmip;
+  if (vaFundingFee !== undefined && !inputs.vaFundingFeeFinanced) feesDueAtClosing += vaFundingFee;
+  if (config.isHardMoney) feesDueAtClosing += loanAmount * (inputs.points / 100);
+
   const result: MortgageResult = {
     loanAmount,
     downPaymentAmount: inputs.downPayment,
     downPaymentPercent: downPercent,
     financedFees,
+    closingCosts,
+    feesDueAtClosing,
+    cashToClose: inputs.downPayment + closingCosts + feesDueAtClosing,
 
     principalAndInterest,
     monthlyTax,

@@ -6,7 +6,8 @@ export const HARD_MONEY_TERM_PRESETS = [6, 12, 18, 24];
 export function defaultInputs(now: Date = new Date()): MortgageInputs {
   return {
     homeValue: 350000,
-    downPayment: 70000,
+    // 3.5% — the FHA minimum, and the case he's usually modelling.
+    downPayment: 350000 * 0.035,
     loanAmountOverride: null,
     interestRate: 6.75,
     termYears: 30,
@@ -16,7 +17,9 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
     propertyTaxYearly: 4200,
     pmiRate: 0.5,
     pmiRateAuto: true,
+    closingCostPercent: 5,
     insuranceYearly: 1800,
+    insuranceRateAuto: true,
     hoaMonthly: 0,
     loanType: "conventional",
 

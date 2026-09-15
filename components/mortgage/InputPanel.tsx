@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { type MortgageInputs, type LoanType } from "@/lib/mortgage/types";
-import { LOAN_TYPE_CONFIG, LOAN_TYPES } from "@/lib/mortgage/loanTypes";
+import { LOAN_TYPE_CONFIG, LOAN_TYPES, CONSERVATIVE_INSURANCE_RATE } from "@/lib/mortgage/loanTypes";
 import { TERM_PRESETS, HARD_MONEY_TERM_PRESETS } from "@/lib/mortgage/defaults";
-import { baseLoanAmount, downPaymentPercent } from "@/lib/mortgage/calculate";
+import { baseLoanAmount, downPaymentPercent, effectiveInsuranceYearly } from "@/lib/mortgage/calculate";
 import { ltvPercent, pmiBandForLtv, suggestedPmiRate, formatPmiBand } from "@/lib/mortgage/pmi";
 import {
   NumberField,
@@ -45,7 +45,13 @@ export function InputPanel({ inputs, onChange }: Props) {
           <NumberField
             label="Home value"
             value={inputs.homeValue}
-            onChange={(homeValue) => onChange({ homeValue })}
+            // Hold the down payment PERCENT steady as the price moves. Keeping the
+            // dollar figure fixed instead makes the percentage jump on every
+            // keystroke, which is what made this annoying to use.
+            onChange={(homeValue) => {
+              const pct = inputs.homeValue > 0 ? inputs.downPayment / inputs.homeValue : 0;
+              onChange({ homeValue, downPayment: Math.round(homeValue * pct) });
+            }}
             prefix="$"
             min={0}
           />
@@ -71,7 +77,7 @@ export function InputPanel({ inputs, onChange }: Props) {
                 value={Math.round(inputs.downPayment)}
                 onChange={(downPayment) => onChange({ downPayment })}
                 prefix="$"
-                hint={`${downPercent.toFixed(1)}% of value`}
+                note={`${downPercent.toFixed(1)}% of $${Math.round(inputs.homeValue).toLocaleString()}`}
                 min={0}
               />
             ) : (
@@ -80,7 +86,7 @@ export function InputPanel({ inputs, onChange }: Props) {
                 value={Number(downPercent.toFixed(2))}
                 onChange={(pct) => onChange({ downPayment: (inputs.homeValue * pct) / 100 })}
                 suffix="%"
-                hint={`$${Math.round(inputs.downPayment).toLocaleString()}`}
+                note={`$${Math.round(inputs.downPayment).toLocaleString()} of $${Math.round(inputs.homeValue).toLocaleString()}`}
                 min={0}
               />
             )}
@@ -97,6 +103,7 @@ export function InputPanel({ inputs, onChange }: Props) {
             onChange={(loanAmountOverride) => onChange({ loanAmountOverride })}
             prefix="$"
             hint={inputs.loanAmountOverride === null ? "auto" : "edited"}
+            note={`${ltvPercent(derivedLoan, inputs.homeValue).toFixed(1)}% loan-to-value`}
             min={0}
           />
           {inputs.loanAmountOverride !== null && (
@@ -334,20 +341,53 @@ export function InputPanel({ inputs, onChange }: Props) {
               onApply={(propertyTaxYearly) => onChange({ propertyTaxYearly })}
             />
           </div>
-          <NumberField
-            label="Home insurance"
-            value={inputs.insuranceYearly}
-            onChange={(insuranceYearly) => onChange({ insuranceYearly })}
-            prefix="$"
-            hint="per year"
-            min={0}
-          />
+          <div>
+            <NumberField
+              label="Home insurance"
+              value={Math.round(effectiveInsuranceYearly(inputs))}
+              onChange={(insuranceYearly) =>
+                onChange({ insuranceYearly, insuranceRateAuto: false })
+              }
+              prefix="$"
+              hint="per year"
+              min={0}
+            />
+            <p className="text-[11px] text-(--color-text-tertiary) mt-1 leading-relaxed">
+              {inputs.insuranceRateAuto ? (
+                <>
+                  Estimated at {CONSERVATIVE_INSURANCE_RATE}% of home value — deliberately on the
+                  high side. Enter your quote to replace it.
+                </>
+              ) : (
+                <>
+                  Your figure.{" "}
+                  <button
+                    type="button"
+                    onClick={() => onChange({ insuranceRateAuto: true })}
+                    className="text-(--color-accent)"
+                  >
+                    Use the estimate
+                  </button>
+                </>
+              )}
+            </p>
+          </div>
           <NumberField
             label="HOA"
             value={inputs.hoaMonthly}
             onChange={(hoaMonthly) => onChange({ hoaMonthly })}
             prefix="$"
             hint="per month"
+            min={0}
+          />
+
+          <NumberField
+            label="Closing costs"
+            value={inputs.closingCostPercent}
+            onChange={(closingCostPercent) => onChange({ closingCostPercent })}
+            suffix="%"
+            hint="of price"
+            note={`$${Math.round((inputs.homeValue * inputs.closingCostPercent) / 100).toLocaleString()} — paid once, not part of the monthly payment`}
             min={0}
           />
         </div>

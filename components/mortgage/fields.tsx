@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 
 /**
  * Local field primitives. The app has no shared Input/Select components — every
@@ -15,15 +15,24 @@ const inputClass =
 
 export function FieldLabel({ children, hint }: { children: ReactNode; hint?: string }) {
   return (
-    <div className="flex items-baseline justify-between mb-1.5">
+    <div className="flex items-baseline gap-2 mb-1">
       <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
         {children}
       </span>
-      {hint && <span className="text-[10px] text-(--color-text-tertiary)">{hint}</span>}
+      {hint && <span className="text-[10px] text-(--color-text-disabled)">{hint}</span>}
     </div>
   );
 }
 
+/**
+ * Numeric input that can actually be emptied.
+ *
+ * A controlled `type="number"` bound straight to a number can't hold an empty
+ * string, so clearing the field snaps it back to 0 and typing "3.5" over a
+ * leading zero gives "03.5". This keeps the raw text while the field is focused
+ * and only reads the model value back on blur, so the field behaves like a text
+ * box and the model still only ever sees numbers.
+ */
 export function NumberField({
   label,
   value,
@@ -31,7 +40,7 @@ export function NumberField({
   prefix,
   suffix,
   hint,
-  step = "any",
+  note,
   min,
 }: {
   label: string;
@@ -39,10 +48,45 @@ export function NumberField({
   onChange: (n: number) => void;
   prefix?: string;
   suffix?: string;
+  /** Short qualifier, sits beside the label. */
   hint?: string;
+  /** Explanatory line under the field, where the eye lands after reading the value. */
+  note?: ReactNode;
+  /** Kept for call-site compatibility; the input is text now, so it's unused. */
   step?: string;
   min?: number;
 }) {
+  // null means "not being edited" — show the model value.
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? (Number.isFinite(value) ? String(value) : "");
+
+  function handle(raw: string) {
+    // Strip rather than reject. Rejecting made pasting impossible — "$350,000"
+    // and "1,250.50" both fail a strict numeric test, so the paste silently did
+    // nothing. Cleaning the input accepts anything a person would realistically
+    // paste out of a listing or a spreadsheet.
+    let cleaned = raw.replace(/[^0-9.-]/g, "");
+
+    // Keep only a leading minus, and only the first decimal point.
+    const negative = cleaned.startsWith("-");
+    cleaned = cleaned.replace(/-/g, "");
+    const firstDot = cleaned.indexOf(".");
+    if (firstDot !== -1) {
+      cleaned =
+        cleaned.slice(0, firstDot + 1) + cleaned.slice(firstDot + 1).replace(/\./g, "");
+    }
+    if (negative) cleaned = "-" + cleaned;
+
+    setDraft(cleaned);
+
+    if (cleaned === "" || cleaned === "-" || cleaned === ".") {
+      onChange(0);
+      return;
+    }
+    const n = Number(cleaned);
+    if (Number.isFinite(n) && (min === undefined || n >= min)) onChange(n);
+  }
+
   return (
     <label className="block">
       <FieldLabel hint={hint}>{label}</FieldLabel>
@@ -53,12 +97,16 @@ export function NumberField({
           </span>
         )}
         <input
-          type="number"
+          type="text"
           inputMode="decimal"
-          step={step}
-          min={min}
-          value={Number.isFinite(value) ? value : ""}
-          onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+          value={shown}
+          onChange={(e) => handle(e.target.value)}
+          onFocus={(e) => {
+            setDraft(e.target.value);
+            // Select on focus so typing replaces rather than appends to the default.
+            e.target.select();
+          }}
+          onBlur={() => setDraft(null)}
           className={`${inputClass} ${prefix ? "pl-7" : ""} ${suffix ? "pr-9" : ""}`}
         />
         {suffix && (
@@ -67,6 +115,9 @@ export function NumberField({
           </span>
         )}
       </div>
+      {note && (
+        <p className="text-[11px] text-(--color-text-tertiary) mt-1 leading-relaxed">{note}</p>
+      )}
     </label>
   );
 }

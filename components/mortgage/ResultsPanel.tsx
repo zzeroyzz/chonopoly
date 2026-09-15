@@ -135,6 +135,26 @@ export function ResultsPanel({ inputs, result }: { inputs: MortgageInputs; resul
         </Card>
       )}
 
+      <Card>
+        <SectionLabel>Cash to close</SectionLabel>
+        <p className="text-[28px] leading-none font-bold font-(--font-mono) text-(--color-text-primary)">
+          {dollars(result.cashToClose)}
+        </p>
+        <div className="mt-3">
+          <Line label="Down payment" value={dollars(result.downPaymentAmount, 0)} />
+          <Line
+            label={`Closing costs (${inputs.closingCostPercent}%)`}
+            value={dollars(result.closingCosts, 0)}
+          />
+          {result.feesDueAtClosing > 0 && (
+            <Line label="Fees due at closing" value={dollars(result.feesDueAtClosing, 0)} />
+          )}
+        </div>
+        <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">
+          One-time. Deliberately excluded from the monthly payment and the income ratios.
+        </p>
+      </Card>
+
       {/* ── Totals ─────────────────────────────────────────────────────── */}
       <Card>
         <SectionLabel>Over the life of the loan</SectionLabel>

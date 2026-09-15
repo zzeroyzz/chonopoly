@@ -304,6 +304,7 @@ describe("reference case — conventional, 5% down, 10%, 30yr", () => {
     pmiRate: 0.5,
     pmiRateAuto: false,
     insuranceYearly: 1500,
+    insuranceRateAuto: false,
     hoaMonthly: 0,
   });
   const result = calculateMortgage(i);
