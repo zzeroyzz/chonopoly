@@ -1,7 +1,7 @@
 import { type MortgageInputs } from "./types";
 import { LOAN_TYPE_CONFIG, FHA_ANNUAL_MIP_RATE } from "./loanTypes";
 import { monthlyPayment } from "./amortization";
-import { effectiveInsuranceYearly } from "./calculate";
+import { effectiveInsuranceYearly, dpaPayment } from "./calculate";
 import { suggestedPmiRate, ltvPercent } from "./pmi";
 
 /**
@@ -72,7 +72,13 @@ function housingPaymentAt(price: number, inputs: MortgageInputs, taxRate: number
     monthlyTax +
     effectiveInsuranceYearly({ ...inputs, homeValue: price }) / 12 +
     inputs.hoaMonthly +
-    mortgageInsurance
+    mortgageInsurance +
+    // An amortizing assistance second is a real payment the borrower carries, so
+    // it has to be inside the solve. It doesn't scale with price — the award is
+    // a fixed dollar amount — so it shifts the whole curve down rather than
+    // changing its shape. Grants and deferred seconds contribute nothing here,
+    // which is exactly the point of asking which structure it is.
+    dpaPayment(inputs)
   );
 }
 

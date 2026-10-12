@@ -46,6 +46,9 @@ export function ResultsPanel({ inputs, result }: { inputs: MortgageInputs; resul
               value={dollars(result.monthlyMortgageInsurance, 0)}
             />
           )}
+          {result.dpaMonthlyPayment > 0 && (
+            <Line label="Assistance second" value={dollars(result.dpaMonthlyPayment, 0)} />
+          )}
         </div>
       </Card>
 
@@ -149,7 +152,27 @@ export function ResultsPanel({ inputs, result }: { inputs: MortgageInputs; resul
           {result.feesDueAtClosing > 0 && (
             <Line label="Fees due at closing" value={dollars(result.feesDueAtClosing, 0)} />
           )}
+          {result.dpaApplied > 0 && (
+            <Line label="Assistance applied" value={`−${dollars(result.dpaApplied, 0)}`} />
+          )}
         </div>
+
+        {/* Say when the award is bigger than the bill. It isn't a rebate, and a
+            silently smaller number would leave the user expecting cash back. */}
+        {result.dpaUnused > 0 && (
+          <p className="text-[11px] text-(--color-warning) mt-2 leading-relaxed">
+            {dollars(result.dpaUnused, 0)} of the award is more than closing requires. Most programs
+            won&apos;t pay out the difference.
+          </p>
+        )}
+
+        {result.dpaApplied > 0 && result.combinedLtv > 100 && (
+          <p className="text-[11px] text-(--color-warning) mt-2 leading-relaxed">
+            Combined LTV is {result.combinedLtv.toFixed(1)}% — the first mortgage plus the assistance
+            exceeds the price. Some programs allow it; many don&apos;t.
+          </p>
+        )}
+
         <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">
           One-time. Deliberately excluded from the monthly payment and the income ratios.
         </p>

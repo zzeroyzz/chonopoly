@@ -393,6 +393,70 @@ export function InputPanel({ inputs, onChange }: Props) {
         </div>
       </Card>
 
+      <Card>
+        <SectionLabel>Down payment assistance</SectionLabel>
+        <div className="grid gap-3.5">
+          <NumberField
+            label="Assistance amount"
+            value={inputs.dpaAmount}
+            onChange={(dpaAmount) => onChange({ dpaAmount })}
+            prefix="$"
+            hint="award"
+            note="Reduces cash at closing. The first mortgage is unchanged, so PMI is unchanged too."
+            min={0}
+          />
+
+          {inputs.dpaAmount > 0 && (
+            <>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
+                    Repayment
+                  </span>
+                  <SegmentedControl
+                    ariaLabel="Assistance structure"
+                    value={inputs.dpaStructure}
+                    onChange={(dpaStructure) => onChange({ dpaStructure })}
+                    options={[
+                      { value: "grant", label: "Forgiven" },
+                      { value: "deferred", label: "Deferred" },
+                      { value: "amortizing", label: "Monthly" },
+                    ]}
+                  />
+                </div>
+                <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
+                  {inputs.dpaStructure === "grant"
+                    ? "Forgiven outright, or after a residency period. No payment, no effect on what you qualify for."
+                    : inputs.dpaStructure === "deferred"
+                      ? "No monthly payment — the balance comes due when you sell, refinance or pay off."
+                      : "A second mortgage with a payment from day one. It counts against your ratios like any other debt."}
+                </p>
+              </div>
+
+              {inputs.dpaStructure === "amortizing" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <NumberField
+                    label="Rate"
+                    value={inputs.dpaRate}
+                    onChange={(dpaRate) => onChange({ dpaRate })}
+                    suffix="%"
+                    hint="0% is common"
+                    min={0}
+                  />
+                  <NumberField
+                    label="Term"
+                    value={inputs.dpaTermYears}
+                    onChange={(dpaTermYears) => onChange({ dpaTermYears })}
+                    suffix="yr"
+                    min={1}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </Card>
+
       {config.showBorrowerIncome && (
         <Card>
           <SectionLabel>Affordability</SectionLabel>

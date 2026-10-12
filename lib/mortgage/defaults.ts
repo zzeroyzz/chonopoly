@@ -23,6 +23,13 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
     hoaMonthly: 0,
     loanType: "conventional",
 
+    // No assistance until the user says otherwise — the calculator shouldn't
+    // assume a program he may not qualify for.
+    dpaAmount: 0,
+    dpaStructure: "grant",
+    dpaRate: 0,
+    dpaTermYears: 10,
+
     grossMonthlyIncome: 9000,
     otherMonthlyDebt: 600,
 

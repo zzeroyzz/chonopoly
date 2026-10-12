@@ -44,6 +44,61 @@ export function downPaymentPercent(inputs: MortgageInputs): number {
  * where the balance reaches 78% of ORIGINAL value. Returns null when the loan
  * starts at or below that threshold, or when PMI never applies.
  */
+/**
+ * Monthly payment on down payment assistance.
+ *
+ * Zero for grants and deferred seconds — they carry no payment, which is the
+ * whole reason the structure has to be an input rather than an assumption. An
+ * amortizing second is a real loan and its payment belongs in the monthly
+ * total and therefore in DTI.
+ *
+ * A 0% amortizing second is common, so the zero-rate branch is the normal case
+ * here, not an edge case.
+ */
+export function dpaPayment(inputs: MortgageInputs): number {
+  if (inputs.dpaStructure !== "amortizing") return 0;
+  const principal = Math.max(0, inputs.dpaAmount);
+  const months = Math.max(1, Math.round(inputs.dpaTermYears * 12));
+  if (principal <= 0) return 0;
+
+  const r = inputs.dpaRate / 100 / 12;
+  if (r === 0) return principal / months;
+  return (principal * r) / (1 - Math.pow(1 + r, -months));
+}
+
+/**
+ * How assistance lands on the closing figures.
+ *
+ * Capped at the cash actually required — assistance beyond that isn't a rebate,
+ * so it's reported as unused rather than quietly turned into a negative bill.
+ *
+ * Combined LTV is left uncapped. Some programs genuinely push past 100%, and
+ * clamping it would hide the one number that says so.
+ */
+function dpaBreakdown(
+  inputs: MortgageInputs,
+  cashBefore: number,
+  loanAmount: number
+): {
+  cashToClose: number;
+  cashToCloseBeforeDpa: number;
+  dpaApplied: number;
+  dpaUnused: number;
+  combinedLtv: number;
+} {
+  const offered = Math.max(0, inputs.dpaAmount);
+  const applied = Math.min(offered, Math.max(0, cashBefore));
+
+  return {
+    cashToCloseBeforeDpa: cashBefore,
+    cashToClose: Math.max(0, cashBefore - applied),
+    dpaApplied: applied,
+    dpaUnused: offered - applied,
+    combinedLtv:
+      inputs.homeValue > 0 ? ((loanAmount + offered) / inputs.homeValue) * 100 : 0,
+  };
+}
+
 function pmiTerminationPeriod(schedule: AmortizationRow[], originalValue: number): number | null {
   if (originalValue <= 0) return null;
   const target = originalValue * PMI_AUTO_TERMINATION_LTV;
@@ -146,8 +201,15 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
   const monthlyInsurance = insuranceYearly / 12;
   const monthlyHoa = inputs.hoaMonthly;
 
+  const dpaMonthlyPayment = dpaPayment(inputs);
+
   const totalMonthlyWithMortgageInsurance =
-    principalAndInterest + monthlyTax + monthlyInsurance + monthlyHoa + monthlyMortgageInsurance;
+    principalAndInterest +
+    monthlyTax +
+    monthlyInsurance +
+    monthlyHoa +
+    monthlyMortgageInsurance +
+    dpaMonthlyPayment;
 
   const miRows = schedule.filter((r) => r.mortgageInsurance > 0);
   const mortgageInsurancePaymentCount = miRows.length;
@@ -191,7 +253,8 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
     financedFees,
     closingCosts,
     feesDueAtClosing,
-    cashToClose: inputs.downPayment + closingCosts + feesDueAtClosing,
+    ...dpaBreakdown(inputs, inputs.downPayment + closingCosts + feesDueAtClosing, loanAmount),
+    dpaMonthlyPayment,
 
     principalAndInterest,
     monthlyTax,

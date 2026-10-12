@@ -384,3 +384,82 @@ describe("totals", () => {
     expect(monthCount).toBe(result.schedule.length);
   });
 });
+
+describe("down payment assistance", () => {
+  it("reduces cash to close without touching the loan or PMI", () => {
+    const base = calculateMortgage(inputs());
+    const withDpa = calculateMortgage(inputs({ dpaAmount: 10_000 }));
+
+    expect(withDpa.cashToClose).toBeCloseTo(base.cashToClose - 10_000, 4);
+    expect(withDpa.cashToCloseBeforeDpa).toBeCloseTo(base.cashToClose, 4);
+
+    // The first mortgage is untouched, so its LTV is untouched, so PMI is too.
+    // Assistance covering the down payment does not make PMI go away — getting
+    // this backwards is the expensive mistake.
+    expect(withDpa.loanAmount).toBeCloseTo(base.loanAmount, 4);
+    expect(withDpa.monthlyMortgageInsurance).toBeCloseTo(base.monthlyMortgageInsurance, 4);
+  });
+
+  it("caps assistance at the cash actually required and reports the remainder", () => {
+    const base = calculateMortgage(inputs());
+    const huge = base.cashToClose + 25_000;
+    const result = calculateMortgage(inputs({ dpaAmount: huge }));
+
+    expect(result.cashToClose).toBe(0);
+    expect(result.dpaApplied).toBeCloseTo(base.cashToClose, 4);
+    expect(result.dpaUnused).toBeCloseTo(25_000, 4);
+  });
+
+  it("adds no monthly payment for a grant or a deferred second", () => {
+    const base = calculateMortgage(inputs());
+    for (const dpaStructure of ["grant", "deferred"] as const) {
+      const result = calculateMortgage(inputs({ dpaAmount: 15_000, dpaStructure }));
+      expect(result.dpaMonthlyPayment).toBe(0);
+      expect(result.totalMonthlyWithMortgageInsurance).toBeCloseTo(
+        base.totalMonthlyWithMortgageInsurance,
+        4
+      );
+    }
+  });
+
+  it("adds a monthly payment for an amortizing second, including at 0%", () => {
+    const base = calculateMortgage(inputs());
+    const result = calculateMortgage(
+      inputs({ dpaAmount: 12_000, dpaStructure: "amortizing", dpaRate: 0, dpaTermYears: 10 })
+    );
+
+    // 0% over 10 years is straight division — $100/mo. A 0% second is common
+    // enough that it's the normal case, not an edge case.
+    expect(result.dpaMonthlyPayment).toBeCloseTo(100, 4);
+    expect(result.totalMonthlyWithMortgageInsurance).toBeCloseTo(
+      base.totalMonthlyWithMortgageInsurance + 100,
+      4
+    );
+  });
+
+  it("charges more per month when the second carries interest", () => {
+    const zero = calculateMortgage(
+      inputs({ dpaAmount: 12_000, dpaStructure: "amortizing", dpaRate: 0, dpaTermYears: 10 })
+    );
+    const charged = calculateMortgage(
+      inputs({ dpaAmount: 12_000, dpaStructure: "amortizing", dpaRate: 5, dpaTermYears: 10 })
+    );
+    expect(charged.dpaMonthlyPayment).toBeGreaterThan(zero.dpaMonthlyPayment);
+  });
+
+  it("reports combined LTV uncapped, including above 100%", () => {
+    // A small down payment plus a large award can genuinely exceed the value.
+    const result = calculateMortgage(
+      inputs({ homeValue: 200_000, downPayment: 7_000, dpaAmount: 20_000 })
+    );
+    expect(result.combinedLtv).toBeGreaterThan(100);
+  });
+
+  it("treats no assistance as a no-op", () => {
+    const base = calculateMortgage(inputs());
+    expect(base.dpaApplied).toBe(0);
+    expect(base.dpaUnused).toBe(0);
+    expect(base.dpaMonthlyPayment).toBe(0);
+    expect(base.cashToClose).toBeCloseTo(base.cashToCloseBeforeDpa, 4);
+  });
+});
