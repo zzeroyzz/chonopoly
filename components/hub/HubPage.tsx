@@ -62,7 +62,7 @@ const MODULES: Module[] = [
     description: "Seller pipeline, contacts, follow-ups and buyers.",
     href: "/crm",
     icon: <Building2 size={20} />,
-    ready: false,
+    ready: true,
   },
 ];
 

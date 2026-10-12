@@ -7,6 +7,8 @@ import {
   Building2,
   Wallet,
   Wrench,
+  ListChecks,
+  CheckSquare,
 } from "lucide-react";
 import { type ShellNavItem } from "./types";
 
@@ -56,6 +58,17 @@ const TOOLS_ITEMS: ShellNavItem[] = [
 ];
 
 /**
+ * CRM destinations. Three, because phase 1 has three screens — the pipeline
+ * list, the tasks due, and the dashboard. Property detail isn't here: it's
+ * reached by tapping a row, not by navigating to it cold.
+ */
+const CRM_ITEMS: ShellNavItem[] = [
+  { id: "pipeline", icon: <ListChecks size={16} />, label: "Pipeline", href: "/crm" },
+  { id: "tasks", icon: <CheckSquare size={16} />, label: "My tasks", href: "/crm/tasks" },
+  { id: "dashboard", icon: <LayoutDashboard size={16} />, label: "Dashboard", href: "/crm/dashboard" },
+];
+
+/**
  * `asRoutes` only affects the finances group: inside /finances those four are
  * views and the shell hands their id back to BudgetClient, which is what keeps
  * its `?tab=` switching and view-local resets working. Seen from anywhere else
@@ -79,14 +92,13 @@ export function buildSections({ asRoutes }: { asRoutes: boolean }): AppSection[]
       defaultHref: "/mortgage",
       items: TOOLS_ITEMS,
     },
-    // The CRM lands here when it exists. Nothing else has to change to make room.
     {
       id: "crm",
       label: "CRM",
       icon: <Building2 size={16} />,
       prefix: "/crm",
       defaultHref: "/crm",
-      items: [],
+      items: CRM_ITEMS,
     },
   ];
 }
