@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from "react";
-import { ChevronLeft, Plus, RefreshCw, Trash2, Pencil, ArrowUp, ArrowDown, AlertTriangle, CreditCard } from "lucide-react";
+import { ChevronLeft, Plus, RefreshCw, Trash2, Pencil, ArrowUp, ArrowDown, AlertTriangle, CreditCard, CheckCircle2, RotateCcw } from "lucide-react";
 import { ActiveContext } from "@/lib/goals/types";
 import { DebtSummary, DebtType, DEBT_TYPE_META } from "@/lib/debts/types";
 import { MiniDebtWizard } from "@/components/debts/MiniDebtWizard";
@@ -56,6 +56,7 @@ const DebtPanel = forwardRef<DebtPanelHandle, Props>(
   const [view, setView]               = useState<"list" | "detail" | "wizard">("list");
   const [detailId, setDetailId]       = useState<string | null>(null);
   const [editingDebt, setEditingDebt] = useState<DebtSummary | null>(null);
+  const [statusSavingId, setStatusSavingId] = useState<string | null>(null);
 
   // Wizard state
   const [step, setStep]                     = useState<1 | 2 | 3 | 4 | 5>(1);
@@ -153,6 +154,31 @@ const DebtPanel = forwardRef<DebtPanelHandle, Props>(
   function deleteDebt(id: string) {
     setPendingDeleteId(id);
     setShowDeleteConfirm(true);
+  }
+
+  /**
+   * Mark a debt paid off, or put it back.
+   *
+   * Only the status changes — the balance is left alone deliberately. The
+   * net worth routes already sum `status === "active"` only, so flipping the
+   * status is enough to take it out of the totals, and leaving the balance
+   * intact is what makes Reopen a real undo rather than a reset.
+   */
+  async function setDebtStatus(id: string, status: "active" | "paid_off") {
+    setStatusSavingId(id);
+    await fetch("/api/debts/update", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        debt_id: id,
+        status,
+        context_type: activeContext.type,
+        context_id: activeContext.id,
+      }),
+    });
+    await load();
+    setStatusSavingId(null);
+    if (status === "paid_off") setView("list");
   }
 
   async function executeDelete() {
@@ -481,6 +507,17 @@ const DebtPanel = forwardRef<DebtPanelHandle, Props>(
                 + Asset
               </button>
             )}
+            {d.status === "active" && (
+              <button
+                onClick={() => setDebtStatus(d.id, "paid_off")}
+                disabled={statusSavingId === d.id}
+                data-testid="mark-paid-off-btn"
+                className="flex items-center gap-1 text-xs text-[#7a7870] hover:text-emerald-400 transition-colors border border-[#2e2e38] hover:border-emerald-400/30 rounded-lg px-2 py-1 disabled:opacity-40"
+              >
+                <CheckCircle2 size={13} />
+                {statusSavingId === d.id ? "Saving…" : "Paid off"}
+              </button>
+            )}
             <button onClick={() => openEdit(d)} className="text-[#7a7870] hover:text-white transition-colors"><Pencil size={14} /></button>
             <button onClick={() => deleteDebt(d.id)} disabled={deleting} className="text-[#7a7870] hover:text-red-400 transition-colors"><Trash2 size={14} /></button>
           </div>
@@ -785,7 +822,19 @@ const DebtPanel = forwardRef<DebtPanelHandle, Props>(
                 <span>{debt.icon}</span>
                 <p className="text-sm text-[#7a7870] line-through">{debt.name}</p>
               </div>
-              <button onClick={() => deleteDebt(debt.id)} className="text-[#55534e] hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+              <div className="flex items-center gap-3">
+                {/* Undo, because marking something paid is one tap and misclicks happen. */}
+                <button
+                  onClick={() => setDebtStatus(debt.id, "active")}
+                  disabled={statusSavingId === debt.id}
+                  data-testid="reopen-debt-btn"
+                  className="flex items-center gap-1 text-[11px] text-[#55534e] hover:text-white transition-colors disabled:opacity-40"
+                >
+                  <RotateCcw size={12} />
+                  {statusSavingId === debt.id ? "Saving…" : "Reopen"}
+                </button>
+                <button onClick={() => deleteDebt(debt.id)} className="text-[#55534e] hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
+              </div>
             </div>
           ))}
         </div>
