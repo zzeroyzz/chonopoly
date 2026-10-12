@@ -23,7 +23,7 @@ type State =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "found"; data: LookupResponse }
-  | { kind: "none" };
+  | { kind: "none"; zip: string };
 
 /**
  * Property tax lookup from a ZIP.
@@ -51,14 +51,23 @@ export function PropertyTaxLookup({ homeValue, onApply }: Props) {
       if (res.ok && res.status !== 204) {
         setState({ kind: "found", data: (await res.json()) as LookupResponse });
       } else {
-        setState({ kind: "none" });
+        setState({ kind: "none", zip });
       }
     } catch {
-      setState({ kind: "none" });
+      setState({ kind: "none", zip });
     }
   }
 
-  const data = state.kind === "found" ? state.data : null;
+  // Was: the result stayed on screen after the ZIP was edited, so a new ZIP sat
+  // above the previous county's rate and looked like the lookup had stopped
+  // working. A result is only shown while it still belongs to the ZIP in the box.
+  // Compared rather than cleared in an effect, so there's no render cascade.
+  const data = state.kind === "found" && state.data.zip === zip ? state.data : null;
+  const noResultForThisZip = state.kind === "none" && state.zip === zip;
+  const isStale =
+    (state.kind === "found" && state.data.zip !== zip) ||
+    (state.kind === "none" && state.zip !== zip);
+
   const county =
     data && overrideFips
       ? (data.counties.find((c) => c.fips === overrideFips) ?? data.resolved)
@@ -141,9 +150,16 @@ export function PropertyTaxLookup({ homeValue, onApply }: Props) {
         </div>
       )}
 
-      {state.kind === "none" && (
+      {noResultForThisZip && (
         <p className="text-[11px] text-(--color-text-tertiary) mt-2">
           No estimate available for that ZIP. Enter the tax amount directly.
+        </p>
+      )}
+
+      {/* Say why the figure vanished, rather than leaving an empty panel. */}
+      {isStale && (
+        <p className="text-[11px] text-(--color-text-tertiary) mt-2">
+          ZIP changed — look up the rate again.
         </p>
       )}
     </div>
