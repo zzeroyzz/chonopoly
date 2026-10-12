@@ -384,3 +384,167 @@ describe("totals", () => {
     expect(monthCount).toBe(result.schedule.length);
   });
 });
+
+describe("down payment assistance", () => {
+  it("reduces cash to close without touching the loan or PMI", () => {
+    const base = calculateMortgage(inputs());
+    const withDpa = calculateMortgage(inputs({ dpaAmount: 10_000 }));
+
+    expect(withDpa.cashToClose).toBeCloseTo(base.cashToClose - 10_000, 4);
+    expect(withDpa.cashToCloseBeforeDpa).toBeCloseTo(base.cashToClose, 4);
+
+    // The first mortgage is untouched, so its LTV is untouched, so PMI is too.
+    // Assistance covering the down payment does not make PMI go away — getting
+    // this backwards is the expensive mistake.
+    expect(withDpa.loanAmount).toBeCloseTo(base.loanAmount, 4);
+    expect(withDpa.monthlyMortgageInsurance).toBeCloseTo(base.monthlyMortgageInsurance, 4);
+  });
+
+  it("caps assistance at the cash actually required and reports the remainder", () => {
+    const base = calculateMortgage(inputs());
+    const huge = base.cashToClose + 25_000;
+    const result = calculateMortgage(inputs({ dpaAmount: huge }));
+
+    expect(result.cashToClose).toBe(0);
+    expect(result.dpaApplied).toBeCloseTo(base.cashToClose, 4);
+    expect(result.dpaUnused).toBeCloseTo(25_000, 4);
+  });
+
+  it("adds no monthly payment for a grant or a deferred second", () => {
+    const base = calculateMortgage(inputs());
+    for (const dpaStructure of ["grant", "deferred"] as const) {
+      const result = calculateMortgage(inputs({ dpaAmount: 15_000, dpaStructure }));
+      expect(result.dpaMonthlyPayment).toBe(0);
+      expect(result.totalMonthlyWithMortgageInsurance).toBeCloseTo(
+        base.totalMonthlyWithMortgageInsurance,
+        4
+      );
+    }
+  });
+
+  it("adds a monthly payment for an amortizing second, including at 0%", () => {
+    const base = calculateMortgage(inputs());
+    const result = calculateMortgage(
+      inputs({ dpaAmount: 12_000, dpaStructure: "amortizing", dpaRate: 0, dpaTermYears: 10 })
+    );
+
+    // 0% over 10 years is straight division — $100/mo. A 0% second is common
+    // enough that it's the normal case, not an edge case.
+    expect(result.dpaMonthlyPayment).toBeCloseTo(100, 4);
+    expect(result.totalMonthlyWithMortgageInsurance).toBeCloseTo(
+      base.totalMonthlyWithMortgageInsurance + 100,
+      4
+    );
+  });
+
+  it("charges more per month when the second carries interest", () => {
+    const zero = calculateMortgage(
+      inputs({ dpaAmount: 12_000, dpaStructure: "amortizing", dpaRate: 0, dpaTermYears: 10 })
+    );
+    const charged = calculateMortgage(
+      inputs({ dpaAmount: 12_000, dpaStructure: "amortizing", dpaRate: 5, dpaTermYears: 10 })
+    );
+    expect(charged.dpaMonthlyPayment).toBeGreaterThan(zero.dpaMonthlyPayment);
+  });
+
+  it("reports combined LTV uncapped, including above 100%", () => {
+    // A small down payment plus a large award can genuinely exceed the value.
+    const result = calculateMortgage(
+      inputs({ homeValue: 200_000, downPayment: 7_000, dpaAmount: 20_000 })
+    );
+    expect(result.combinedLtv).toBeGreaterThan(100);
+  });
+
+  it("treats no assistance as a no-op", () => {
+    const base = calculateMortgage(inputs());
+    expect(base.dpaApplied).toBe(0);
+    expect(base.dpaUnused).toBe(0);
+    expect(base.dpaMonthlyPayment).toBe(0);
+    expect(base.cashToClose).toBeCloseTo(base.cashToCloseBeforeDpa, 4);
+  });
+});
+
+describe("renovation loans", () => {
+  const reno = (over = {}) =>
+    inputs({
+      homeValue: 200_000,
+      downPayment: 200_000 * 0.035,
+      loanType: "fha",
+      renovationProgram: "fha203k",
+      renovationBudget: 50_000,
+      renovationContingencyPct: 10,
+      afterRepairValue: 300_000,
+      ...over,
+    });
+
+  it("rolls budget plus contingency into the acquisition total", () => {
+    const r = calculateMortgage(reno());
+    // 50,000 budget + 10% reserve = 55,000 financed.
+    expect(r.renovationFinanced).toBeCloseTo(55_000, 4);
+    expect(r.renovationContingency).toBeCloseTo(5_000, 4);
+    expect(r.totalAcquisitionCost).toBeCloseTo(255_000, 4);
+  });
+
+  it("sizes the loan on price plus renovation, not price", () => {
+    // UFMIP is a percent of the base loan, so it scales with the renovation.
+    // Unfinanced here so the comparison isolates the renovation itself.
+    const withReno = calculateMortgage(reno({ downPayment: 0, fhaUfmipFinanced: false }));
+    const without = calculateMortgage(
+      reno({ downPayment: 0, fhaUfmipFinanced: false, renovationProgram: "none" })
+    );
+    expect(withReno.loanAmount).toBeCloseTo(without.loanAmount + 55_000, 4);
+  });
+
+  it("measures the down payment against the total, not the purchase price", () => {
+    // 3.5% of 255,000 is 8,925 — not 3.5% of 200,000. Getting this wrong
+    // understates the buyer's cash by thousands.
+    const r = calculateMortgage(reno({ downPayment: 8_925 }));
+    expect(r.downPaymentPercent).toBeCloseTo(3.5, 3);
+  });
+
+  it("reports LTV against after-repair value", () => {
+    const r = calculateMortgage(reno({ downPayment: 0 }));
+    // Against the finished value, and against the actual loan — which includes
+    // the financed UFMIP, so it is deliberately not just 255,000/300,000.
+    expect(r.loanToAfterRepairValue).toBeCloseTo((r.loanAmount / 300_000) * 100, 4);
+    expect(r.loanToAfterRepairValue!).toBeGreaterThan((255_000 / 300_000) * 100);
+  });
+
+  it("prices conventional PMI off the after-repair value, not the as-is price", () => {
+    const base = {
+      loanType: "conventional" as const,
+      renovationProgram: "homestyle" as const,
+      renovationBudget: 50_000,
+      renovationContingencyPct: 0,
+      homeValue: 200_000,
+      downPayment: 25_000,
+    };
+    const withArv = calculateMortgage(inputs({ ...base, afterRepairValue: 300_000 }));
+    const withoutArv = calculateMortgage(inputs({ ...base, afterRepairValue: null }));
+
+    // Same loan either way; only the denominator differs. The finished house is
+    // what secures it, so the ARV case sits in a lower band and costs less.
+    expect(withArv.loanAmount).toBeCloseTo(withoutArv.loanAmount, 4);
+    expect(withArv.monthlyMortgageInsurance).toBeLessThan(withoutArv.monthlyMortgageInsurance);
+  });
+
+  it("falls back to the purchase price when no ARV is given, never upward", () => {
+    // A missing ARV must not make the loan look safer than it is.
+    const r = calculateMortgage(reno({ afterRepairValue: null }));
+    expect(r.loanToAfterRepairValue).toBeNull();
+  });
+
+  it("is a no-op when the program is none", () => {
+    const off = calculateMortgage(inputs({ renovationProgram: "none", renovationBudget: 50_000 }));
+    const bare = calculateMortgage(inputs());
+    expect(off.renovationFinanced).toBe(0);
+    expect(off.loanAmount).toBeCloseTo(bare.loanAmount, 4);
+    expect(off.totalAcquisitionCost).toBeCloseTo(bare.totalAcquisitionCost, 4);
+  });
+
+  it("treats a zero budget as no renovation even with a program selected", () => {
+    const r = calculateMortgage(reno({ renovationBudget: 0 }));
+    expect(r.renovationFinanced).toBe(0);
+    expect(r.loanToAfterRepairValue).toBeNull();
+  });
+});

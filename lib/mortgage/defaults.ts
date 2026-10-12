@@ -23,6 +23,21 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
     hoaMonthly: 0,
     loanType: "conventional",
 
+    renovationProgram: "none",
+    renovationBudget: 0,
+    // Lenders require a contingency reserve on renovation loans. 10% is the
+    // common floor; the figure is editable because the requirement varies by
+    // program, by lender and by the condition of the house.
+    renovationContingencyPct: 10,
+    afterRepairValue: null,
+
+    // No assistance until the user says otherwise — the calculator shouldn't
+    // assume a program he may not qualify for.
+    dpaAmount: 0,
+    dpaStructure: "grant",
+    dpaRate: 0,
+    dpaTermYears: 10,
+
     grossMonthlyIncome: 9000,
     otherMonthlyDebt: 600,
 

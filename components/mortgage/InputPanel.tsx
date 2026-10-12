@@ -393,6 +393,137 @@ export function InputPanel({ inputs, onChange }: Props) {
         </div>
       </Card>
 
+      {(inputs.loanType === "fha" || inputs.loanType === "conventional") && (
+        <Card>
+          <SectionLabel>Renovation financing</SectionLabel>
+          <div className="grid gap-3.5">
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
+                  Program
+                </span>
+                <SegmentedControl
+                  ariaLabel="Renovation program"
+                  value={inputs.renovationProgram}
+                  onChange={(renovationProgram) => onChange({ renovationProgram })}
+                  options={
+                    inputs.loanType === "fha"
+                      ? [
+                          { value: "none", label: "None" },
+                          { value: "fha203k", label: "203(k)" },
+                        ]
+                      : [
+                          { value: "none", label: "None" },
+                          { value: "homestyle", label: "HomeStyle" },
+                        ]
+                  }
+                />
+              </div>
+              <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
+                {inputs.renovationProgram === "none"
+                  ? "Finance the work into the mortgage instead of paying for it separately."
+                  : "The loan is sized on price plus the work, and measured against the finished value."}
+              </p>
+            </div>
+
+            {inputs.renovationProgram !== "none" && (
+              <>
+                <NumberField
+                  label="Renovation budget"
+                  value={inputs.renovationBudget}
+                  onChange={(renovationBudget) => onChange({ renovationBudget })}
+                  prefix="$"
+                  hint="hard costs"
+                  min={0}
+                />
+                <NumberField
+                  label="Contingency reserve"
+                  value={inputs.renovationContingencyPct}
+                  onChange={(renovationContingencyPct) => onChange({ renovationContingencyPct })}
+                  suffix="%"
+                  hint="of budget"
+                  note={`$${Math.round((inputs.renovationBudget * inputs.renovationContingencyPct) / 100).toLocaleString()} held back. Lenders require one; the amount varies by program and condition.`}
+                  min={0}
+                />
+                <NumberField
+                  label="After-repair value"
+                  value={inputs.afterRepairValue ?? 0}
+                  onChange={(n) => onChange({ afterRepairValue: n > 0 ? n : null })}
+                  prefix="$"
+                  hint="as completed"
+                  note="Your number, from comps or an as-completed appraisal. Left blank, the price is used instead — which overstates mortgage insurance rather than understating it."
+                  min={0}
+                />
+              </>
+            )}
+          </div>
+        </Card>
+      )}
+
+      <Card>
+        <SectionLabel>Down payment assistance</SectionLabel>
+        <div className="grid gap-3.5">
+          <NumberField
+            label="Assistance amount"
+            value={inputs.dpaAmount}
+            onChange={(dpaAmount) => onChange({ dpaAmount })}
+            prefix="$"
+            hint="award"
+            note="Reduces cash at closing. The first mortgage is unchanged, so PMI is unchanged too."
+            min={0}
+          />
+
+          {inputs.dpaAmount > 0 && (
+            <>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
+                    Repayment
+                  </span>
+                  <SegmentedControl
+                    ariaLabel="Assistance structure"
+                    value={inputs.dpaStructure}
+                    onChange={(dpaStructure) => onChange({ dpaStructure })}
+                    options={[
+                      { value: "grant", label: "Forgiven" },
+                      { value: "deferred", label: "Deferred" },
+                      { value: "amortizing", label: "Monthly" },
+                    ]}
+                  />
+                </div>
+                <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
+                  {inputs.dpaStructure === "grant"
+                    ? "Forgiven outright, or after a residency period. No payment, no effect on what you qualify for."
+                    : inputs.dpaStructure === "deferred"
+                      ? "No monthly payment — the balance comes due when you sell, refinance or pay off."
+                      : "A second mortgage with a payment from day one. It counts against your ratios like any other debt."}
+                </p>
+              </div>
+
+              {inputs.dpaStructure === "amortizing" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <NumberField
+                    label="Rate"
+                    value={inputs.dpaRate}
+                    onChange={(dpaRate) => onChange({ dpaRate })}
+                    suffix="%"
+                    hint="0% is common"
+                    min={0}
+                  />
+                  <NumberField
+                    label="Term"
+                    value={inputs.dpaTermYears}
+                    onChange={(dpaTermYears) => onChange({ dpaTermYears })}
+                    suffix="yr"
+                    min={1}
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </Card>
+
       {config.showBorrowerIncome && (
         <Card>
           <SectionLabel>Affordability</SectionLabel>
