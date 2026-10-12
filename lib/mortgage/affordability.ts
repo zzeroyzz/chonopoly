@@ -1,7 +1,12 @@
 import { type MortgageInputs } from "./types";
 import { LOAN_TYPE_CONFIG, FHA_ANNUAL_MIP_RATE } from "./loanTypes";
 import { monthlyPayment } from "./amortization";
-import { effectiveInsuranceYearly, dpaPayment } from "./calculate";
+import {
+  effectiveInsuranceYearly,
+  dpaPayment,
+  renovationFinanced,
+  totalAcquisitionCost,
+} from "./calculate";
 import { suggestedPmiRate, ltvPercent } from "./pmi";
 
 /**
@@ -49,9 +54,17 @@ function taxRateOf(inputs: MortgageInputs): number {
 function housingPaymentAt(price: number, inputs: MortgageInputs, taxRate: number): number {
   const config = LOAN_TYPE_CONFIG[inputs.loanType];
 
-  const downPct = inputs.homeValue > 0 ? (inputs.downPayment / inputs.homeValue) * 100 : 0;
-  const downPayment = price * (downPct / 100);
-  const loan = Math.max(0, price - downPayment);
+  // On a renovation loan the rehab rides along at every price — the work costs
+  // what it costs regardless of what the house costs — so it's added to the
+  // acquisition total before the down payment is taken. Zero when there's no
+  // renovation, which leaves the ordinary case untouched.
+  const financedReno = renovationFinanced(inputs);
+  const acquisition = price + financedReno;
+
+  const downBasis = totalAcquisitionCost(inputs);
+  const downPct = downBasis > 0 ? (inputs.downPayment / downBasis) * 100 : 0;
+  const downPayment = acquisition * (downPct / 100);
+  const loan = Math.max(0, acquisition - downPayment);
 
   const principalAndInterest = monthlyPayment(loan, inputs.interestRate, inputs.termYears * 12);
 

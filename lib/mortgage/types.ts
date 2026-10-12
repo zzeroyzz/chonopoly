@@ -13,6 +13,13 @@ export type DpaStructure = "grant" | "deferred" | "amortizing";
 
 export type RepairLevel = "light" | "moderate" | "heavy";
 
+/**
+ * Renovation financing. A modifier on the loan type rather than a type of its
+ * own, because 203(k) *is* FHA and HomeStyle *is* conventional — same mortgage
+ * insurance, same ratios, same minimum down. Only the loan sizing changes.
+ */
+export type RenovationProgram = "none" | "fha203k" | "homestyle";
+
 export interface MortgageInputs {
   homeValue: number;
   /** Down payment in dollars. The percent form is derived, never stored. */
@@ -48,6 +55,29 @@ export interface MortgageInputs {
    * too. Assistance covering the down payment does not make PMI go away, and
    * treating it as if it did understates the payment badly.
    */
+  /**
+   * Renovation financing.
+   *
+   * Three things change when this is on, and all three are easy to get wrong:
+   *   1. The loan is sized on purchase price PLUS the rehab budget, not price.
+   *   2. The down payment is calculated on that total, not on the price.
+   *   3. LTV — and therefore PMI or MIP — is measured against the AFTER-REPAIR
+   *      value, not the purchase price. That's the whole point of the product:
+   *      you're borrowing against the house you're going to have.
+   */
+  renovationProgram: RenovationProgram;
+  /** Hard construction budget, before contingency and fees. */
+  renovationBudget: number;
+  /** Contingency reserve as a percent of the budget. Lenders require one. */
+  renovationContingencyPct: number;
+  /**
+   * After-repair value. The loan ceiling is derived from this, so it is the
+   * single most consequential input in the renovation path — and it is the
+   * user's number, from comps or an as-completed appraisal. Nothing here
+   * estimates it.
+   */
+  afterRepairValue: number | null;
+
   dpaAmount: number;
   dpaStructure: DpaStructure;
   /** Amortizing structures only. Annual rate as a percent; 0 is common. */
@@ -109,6 +139,15 @@ export interface MortgageResult {
   closingCosts: number;
   /** Fees due at closing rather than financed — unfinanced UFMIP or VA funding fee. */
   feesDueAtClosing: number;
+  /** Renovation: contingency reserve in dollars. */
+  renovationContingency: number;
+  /** Renovation: budget + contingency — everything rolled into the loan for the work. */
+  renovationFinanced: number;
+  /** Renovation: price + financed renovation. The basis for the down payment. */
+  totalAcquisitionCost: number;
+  /** Renovation: LTV against after-repair value. Null when ARV isn't known. */
+  loanToAfterRepairValue: number | null;
+
   /** Everything the buyer writes cheques for at closing, after assistance. */
   cashToClose: number;
   /** Cash to close before any assistance is applied. */

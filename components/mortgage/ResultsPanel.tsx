@@ -118,6 +118,12 @@ export function ResultsPanel({ inputs, result }: { inputs: MortgageInputs; resul
           {result.loanToArv !== null && result.loanToArv !== undefined && (
             <Line label="Loan to ARV" value={percent(result.loanToArv)} />
           )}
+          {result.loanToAfterRepairValue !== null && (
+            <Line
+              label="Loan to after-repair value"
+              value={percent(result.loanToAfterRepairValue)}
+            />
+          )}
         </Card>
       )}
 
@@ -144,6 +150,19 @@ export function ResultsPanel({ inputs, result }: { inputs: MortgageInputs; resul
           {dollars(result.cashToClose)}
         </p>
         <div className="mt-3">
+          {result.renovationFinanced > 0 && (
+            <>
+              <Line label="Purchase price" value={dollars(inputs.homeValue, 0)} />
+              <Line
+                label="Renovation + contingency"
+                value={dollars(result.renovationFinanced, 0)}
+              />
+              <Line
+                label="Total acquisition"
+                value={dollars(result.totalAcquisitionCost, 0)}
+              />
+            </>
+          )}
           <Line label="Down payment" value={dollars(result.downPaymentAmount, 0)} />
           <Line
             label={`Closing costs (${inputs.closingCostPercent}%)`}

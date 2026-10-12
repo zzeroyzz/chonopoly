@@ -19,10 +19,50 @@ import {
 } from "./amortization";
 import { suggestedPmiRate, ltvPercent } from "./pmi";
 
+/** Whether renovation financing is in play. */
+export function isRenovationLoan(inputs: MortgageInputs): boolean {
+  return inputs.renovationProgram !== "none" && renovationFinanced(inputs) > 0;
+}
+
+/** Rehab budget plus its contingency reserve — the part rolled into the loan. */
+export function renovationFinanced(inputs: MortgageInputs): number {
+  if (inputs.renovationProgram === "none") return 0;
+  const budget = Math.max(0, inputs.renovationBudget);
+  const contingency = budget * (Math.max(0, inputs.renovationContingencyPct) / 100);
+  return budget + contingency;
+}
+
+/**
+ * Purchase price plus the financed renovation.
+ *
+ * This is the figure the down payment is calculated on, not the price. A 3.5%
+ * FHA down payment on a $200k house with $50k of work is 3.5% of $250k, not of
+ * $200k — getting that wrong understates the cash the buyer needs by thousands.
+ */
+export function totalAcquisitionCost(inputs: MortgageInputs): number {
+  return Math.max(0, inputs.homeValue) + renovationFinanced(inputs);
+}
+
+/**
+ * The value the loan is measured against.
+ *
+ * On a renovation loan that's the after-repair value — the point of the product
+ * is borrowing against the finished house. Falls back to the purchase price
+ * when no ARV has been entered, which keeps the result conservative rather than
+ * optimistic: a smaller denominator means a higher LTV and more mortgage
+ * insurance, never less.
+ */
+export function valuationBasis(inputs: MortgageInputs): number {
+  if (isRenovationLoan(inputs) && inputs.afterRepairValue && inputs.afterRepairValue > 0) {
+    return inputs.afterRepairValue;
+  }
+  return inputs.homeValue;
+}
+
 /** Base loan before any financed fees are rolled in. */
 export function baseLoanAmount(inputs: MortgageInputs): number {
   if (inputs.loanAmountOverride !== null) return Math.max(0, inputs.loanAmountOverride);
-  return Math.max(0, inputs.homeValue - inputs.downPayment);
+  return Math.max(0, totalAcquisitionCost(inputs) - inputs.downPayment);
 }
 
 /**
@@ -35,8 +75,11 @@ export function effectiveInsuranceYearly(inputs: MortgageInputs): number {
 }
 
 export function downPaymentPercent(inputs: MortgageInputs): number {
-  if (inputs.homeValue <= 0) return 0;
-  return (inputs.downPayment / inputs.homeValue) * 100;
+  // Against total acquisition cost, which equals the price when there's no
+  // renovation — so the non-renovation answer is unchanged.
+  const basis = totalAcquisitionCost(inputs);
+  if (basis <= 0) return 0;
+  return (inputs.downPayment / basis) * 100;
 }
 
 /**
@@ -140,8 +183,12 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
   if (inputs.loanType === "conventional" && downPercent < 20) {
     // Rate bands by LTV. Auto by default; a typed value wins, same rule as the
     // interest rate.
+    // LTV against the valuation basis — after-repair value on a renovation
+    // loan, purchase price otherwise. On a HomeStyle the finished house is what
+    // secures the loan, so measuring against the as-is price would overstate
+    // the band and the premium.
     const rate = inputs.pmiRateAuto
-      ? suggestedPmiRate(ltvPercent(loanAmount, inputs.homeValue))
+      ? suggestedPmiRate(ltvPercent(loanAmount, valuationBasis(inputs)))
       : inputs.pmiRate;
     monthlyMortgageInsurance = (loanAmount * (rate / 100)) / 12;
   } else if (inputs.loanType === "fha") {
@@ -253,6 +300,14 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
     financedFees,
     closingCosts,
     feesDueAtClosing,
+    renovationContingency: renovationFinanced(inputs) - Math.max(0, inputs.renovationBudget || 0),
+    renovationFinanced: renovationFinanced(inputs),
+    totalAcquisitionCost: totalAcquisitionCost(inputs),
+    loanToAfterRepairValue:
+      isRenovationLoan(inputs) && inputs.afterRepairValue && inputs.afterRepairValue > 0
+        ? (loanAmount / inputs.afterRepairValue) * 100
+        : null,
+
     ...dpaBreakdown(inputs, inputs.downPayment + closingCosts + feesDueAtClosing, loanAmount),
     dpaMonthlyPayment,
 
