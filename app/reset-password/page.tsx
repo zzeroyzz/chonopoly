@@ -1,4 +1,5 @@
 "use client";
+import Image from "next/image";
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
@@ -70,20 +71,28 @@ function ResetPasswordContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f0f11] flex items-center justify-center px-4">
+    <div className="min-h-screen bg-(--color-base) text-(--color-text-primary) flex items-center justify-center px-5 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <span className="inline-block bg-amber-400 text-black font-mono text-[11px] font-medium px-2.5 py-1 rounded tracking-widest mb-4">
-            GA EXAM PREP
-          </span>
-          <h1 className="font-serif text-2xl font-bold text-white">
+          <Image
+            src="/PH-wht-logo.png"
+            alt="Park Hawkins Properties"
+            width={120}
+            height={94}
+            priority
+            className="mx-auto mb-4"
+          />
+          <p className="text-[13px] uppercase tracking-[0.12em] font-medium">
+            Park Hawkins Properties
+          </p>
+          <h1 className="text-2xl font-bold mt-4">
             {status === "success" ? "Password updated" : "Set a new password"}
           </h1>
         </div>
 
         {/* Exchanging code */}
         {status === "exchanging" && (
-          <p className="text-center text-[#7a7870] text-sm">Verifying your reset link…</p>
+          <p className="text-center text-(--color-text-secondary) text-sm">Verifying your reset link…</p>
         )}
 
         {/* Bad link */}
@@ -94,7 +103,7 @@ function ResetPasswordContent() {
             </div>
             <a
               href="/login"
-              className="text-sm text-[#7a7870] hover:text-[#e8e6df] transition-colors"
+              className="text-sm text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors"
             >
               ← Back to sign in
             </a>
@@ -104,9 +113,9 @@ function ResetPasswordContent() {
         {/* Success */}
         {status === "success" && (
           <div className="text-center">
-            <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-6 py-5">
-              <p className="text-emerald-400 font-medium text-sm">Password updated successfully</p>
-              <p className="text-[#7a7870] text-sm mt-1">Taking you to the study guide…</p>
+            <div className="bg-(--color-accent-glow) border border-(--color-border-default) rounded-xl px-6 py-5">
+              <p className="text-(--color-accent) font-medium text-sm">Password updated successfully</p>
+              <p className="text-(--color-text-secondary) text-sm mt-1">Taking you to your dashboard…</p>
             </div>
           </div>
         )}
@@ -115,7 +124,7 @@ function ResetPasswordContent() {
         {status === "ready" && (
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-[#7a7870] tracking-widest uppercase">
+              <label className="text-xs font-medium text-(--color-text-secondary) tracking-widest uppercase">
                 New password
               </label>
               <div className="relative">
@@ -126,12 +135,12 @@ function ResetPasswordContent() {
                   required
                   autoFocus
                   placeholder="At least 8 characters"
-                  className="w-full bg-[#18181c] border border-[#2e2e38] rounded-lg px-4 py-3 pr-11 text-sm text-[#e8e6df] placeholder-[#4a4a55] focus:outline-none focus:border-amber-500 transition-colors"
+                  className="w-full bg-(--color-elevated) border border-(--color-border-default) rounded-lg px-4 py-3 pr-11 text-sm text-(--color-text-primary) placeholder-(--color-text-tertiary) focus:outline-none focus:border-(--color-accent) transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#7a7870] hover:text-[#e8e6df] transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -140,7 +149,7 @@ function ResetPasswordContent() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-medium text-[#7a7870] tracking-widest uppercase">
+              <label className="text-xs font-medium text-(--color-text-secondary) tracking-widest uppercase">
                 Confirm password
               </label>
               <div className="relative">
@@ -150,12 +159,12 @@ function ResetPasswordContent() {
                   onChange={(e) => setConfirm(e.target.value)}
                   required
                   placeholder="Same password again"
-                  className="w-full bg-[#18181c] border border-[#2e2e38] rounded-lg px-4 py-3 pr-11 text-sm text-[#e8e6df] placeholder-[#4a4a55] focus:outline-none focus:border-amber-500 transition-colors"
+                  className="w-full bg-(--color-elevated) border border-(--color-border-default) rounded-lg px-4 py-3 pr-11 text-sm text-(--color-text-primary) placeholder-(--color-text-tertiary) focus:outline-none focus:border-(--color-accent) transition-colors"
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirm((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#7a7870] hover:text-[#e8e6df] transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-(--color-text-secondary) hover:text-(--color-text-primary) transition-colors"
                   aria-label={showConfirm ? "Hide password" : "Show password"}
                 >
                   {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -172,7 +181,7 @@ function ResetPasswordContent() {
             <button
               type="submit"
               disabled={saving}
-              className="mt-2 bg-amber-400 hover:bg-amber-300 disabled:opacity-50 disabled:cursor-not-allowed text-black font-medium text-sm rounded-lg px-4 py-3 transition-colors"
+              className="mt-2 h-11 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[14px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
             >
               {saving ? "Updating…" : "Update password"}
             </button>
