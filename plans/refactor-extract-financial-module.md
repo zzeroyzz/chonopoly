@@ -29,9 +29,17 @@ mortgage render with no overflow, no dead finance links, no page errors.
 
 ### Known, reported, not fixed
 
-- **The four cron jobs are still live** and still emailing users. The migration
-  exists at `supabase/migrations/20261014000000_unregister_finance_crons.sql`
-  and is the owner's to run.
+- ~~The four cron jobs are still live~~ **Resolved 2026-10-14.** On the owner's
+  explicit instruction, `supabase db push` applied
+  `20261014000000_unregister_finance_crons.sql` to production
+  (`ogkhxgpailxqirwhcsso`). A dry run first confirmed it was the only unapplied
+  migration. Unscheduled: `nightly-snapshot`, `nightly-budget-reset`,
+  `sync-goal-balances`, `weekly-report`. Skipped as absent: `nightly-snapshot-7am`,
+  `morning-report`, `morning_report`. `cron.job` now returns zero rows, so the
+  scheduled emails and balance syncing have stopped. Verified afterwards that
+  `budgets`, `budget_periods`, `savings_goals`, `savings_goal_history` and
+  `plaid_items` are all intact. No table dropped, no edge function undeployed, no
+  Plaid API call made.
 - **Nothing writes the stored active context now**, so the CRM reads personal
   scope only. Re-homing team switching is separate work.
 - **`/profile` overflows horizontally at 390px** when the email is long. The
