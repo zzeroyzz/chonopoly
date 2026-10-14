@@ -6,7 +6,7 @@ import { ActiveContext } from "@/lib/goals/types";
 import { DebtSummary, DebtType, DEBT_TYPE_META } from "@/lib/debts/types";
 import { MiniDebtWizard } from "@/components/debts/MiniDebtWizard";
 import { formatMoney } from "@/components/budget/types";
-import { StatCard } from "@/components/budget/StatCard";
+import { StatCard } from "@/components/ui/StatCard";
 import { monthsToPayoff } from "@/lib/debts/debtService";
 
 // ─── Math helpers ─────────────────────────────────────────────────────────────

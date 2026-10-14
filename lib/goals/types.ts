@@ -14,10 +14,10 @@ export interface GoalAccountsGrouped {
   spending: LinkedAccount[];
 }
 
-export interface ActiveContext {
-  type: "personal" | "team";
-  id: string;
-}
+// Moved to lib/tenancy.ts — tenancy is shared between the CRM and the finance
+// side, so it no longer lives under goals. Re-exported here so the finance code
+// that still imports it from this path keeps compiling until it moves out.
+export type { ActiveContext } from "@/lib/tenancy";
 
 export interface PlaidAccountInfo {
   plaid_account_id: string;

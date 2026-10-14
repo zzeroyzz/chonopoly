@@ -1,6 +1,6 @@
 "use client";
 
-import { StatCard } from "@/components/budget/StatCard";
+import { StatCard } from "@/components/ui/StatCard";
 import { type MortgageInputs, type MortgageResult } from "@/lib/mortgage/types";
 import { LOAN_TYPE_CONFIG } from "@/lib/mortgage/loanTypes";
 import { Card, SectionLabel } from "./fields";

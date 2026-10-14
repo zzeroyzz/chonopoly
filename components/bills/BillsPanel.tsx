@@ -10,7 +10,7 @@ import {
   Check, Pencil, Trash2, ChevronDown, X,
 } from "lucide-react";
 import { Account, CATEGORY_META, formatMoney } from "@/components/budget/types";
-import { StatCard } from "@/components/budget/StatCard";
+import { StatCard } from "@/components/ui/StatCard";
 import type { Bill } from "@/components/bills/BillsWidget";
 import BillDetailModal from "@/components/bills/BillDetailModal";
 import { BillWizard } from "@/components/bills/BillWizard";

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowUp, ArrowDown, Trash2 } from "lucide-react";
 import { formatMoney } from "@/components/budget/types";
-import { StatCard } from "@/components/budget/StatCard";
+import { StatCard } from "@/components/ui/StatCard";
 import { ActiveContext } from "@/lib/goals/types";
 import { DebtSummary, DEBT_TYPE_META } from "@/lib/debts/types";
 

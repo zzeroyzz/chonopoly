@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MoreHorizontal, RefreshCw } from "lucide-react";
 import { formatMoney } from "./types";
-import { StatCard } from "./StatCard";
+import { StatCard } from "@/components/ui/StatCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -38,7 +38,7 @@ import BudgetDrillDown from "./budget/BudgetDrillDown";
 import StatusPage from "./budget/StatusPage";
 import CategoryPill from "./budget/CategoryPill";
 import CategoryPickerModal from "./budget/CategoryPickerModal";
-import { StatCard } from "./budget/StatCard";
+import { StatCard } from "./ui/StatCard";
 import DailyDigest from "./budget/DailyDigest";
 import {
   Account, ConnectedItem, Transaction, ViewState, BudgetSummaryRow,

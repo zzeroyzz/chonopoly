@@ -6,7 +6,7 @@ import { ActiveContext } from "@/lib/goals/types";
 import { AssetSummary, AssetType, ASSET_TYPE_META, ASSET_ICONS } from "@/lib/assets/types";
 import { DebtSummary } from "@/lib/debts/types";
 import { formatMoney } from "@/components/budget/types";
-import { StatCard } from "@/components/budget/StatCard";
+import { StatCard } from "@/components/ui/StatCard";
 
 const ASSET_TYPES = Object.entries(ASSET_TYPE_META) as [AssetType, { label: string; icon: string }][];
 

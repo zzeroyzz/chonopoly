@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MoreHorizontal } from "lucide-react";
 import { formatMoney } from "@/components/budget/types";
-import { StatCard } from "@/components/budget/StatCard";
+import { StatCard } from "@/components/ui/StatCard";
 import { ActiveContext, GoalSummary } from "@/lib/goals/types";
 import GoalWizard from "@/components/goals/GoalWizard";
 

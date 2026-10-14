@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MoreHorizontal, RefreshCw } from "lucide-react";
 import { formatMoney } from "@/components/budget/types";
-import { StatCard } from "@/components/budget/StatCard";
+import { StatCard } from "@/components/ui/StatCard";
 import type { Bill } from "@/components/bills/BillsWidget";
 import { isPaidThisCycle } from "@/lib/budget/verdict";
 import { isOverdueBill } from "@/lib/bills/cycle";

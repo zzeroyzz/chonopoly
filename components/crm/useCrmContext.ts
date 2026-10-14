@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { type ActiveContext } from "@/lib/goals/types";
+import { type ActiveContext } from "@/lib/tenancy";
 import { loadProfile } from "@/lib/supabase/profile";
 import { createClient } from "@/lib/supabase/client";
 

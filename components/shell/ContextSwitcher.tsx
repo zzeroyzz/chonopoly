@@ -1,7 +1,7 @@
 "use client";
 
 import { User, Users, Check, Plus, RotateCcw, Settings2 } from "lucide-react";
-import { type ActiveContext } from "@/lib/goals/types";
+import { type ActiveContext } from "@/lib/tenancy";
 
 interface Props {
   userId: string;

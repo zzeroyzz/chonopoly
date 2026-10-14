@@ -4,7 +4,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import { Plus, RefreshCw, Target, Trash2, Pause, Play, RotateCcw, ChevronLeft, Pencil, Building2, X } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { formatMoney, CATEGORY_META } from "./budget/types";
-import { StatCard } from "./budget/StatCard";
+import { StatCard } from "./ui/StatCard";
 import { GoalSummary, LinkedAccount, PlaidAccountInfo, ActiveContext } from "@/lib/goals/types";
 import GoalWizard from "./goals/GoalWizard";
 
