@@ -81,7 +81,7 @@ export function HubPage() {
     <div className="min-h-screen bg-(--color-base) text-(--color-text-primary)">
       <div className="px-5 lg:px-10 pt-10 pb-6">
         <p className="text-[10px] uppercase tracking-[0.12em] text-(--color-text-disabled) font-medium">
-          Park Hawkins Properties
+          Park Hawkins Capital
         </p>
         <h1 className="text-[26px] lg:text-[32px] font-semibold mt-2">
           {name ? `Welcome back, ${name}` : "Welcome back"}

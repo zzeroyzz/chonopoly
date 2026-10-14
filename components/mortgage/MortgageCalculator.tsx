@@ -78,7 +78,7 @@ export default function MortgageCalculator() {
 
   return (
     <AppShell
-      appName="Park Hawkins Properties"
+      appName="Park Hawkins Capital"
       userProfile={userProfile}
       onboardingCompleted={null}
       onProfileClick={() => router.push("/profile")}

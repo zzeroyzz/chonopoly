@@ -43,7 +43,7 @@ export function HomePage() {
       {/* Header */}
       <header className="px-5 lg:px-10 py-5 flex items-center justify-between border-b border-(--color-border-subtle)">
         <span className="text-[13px] uppercase tracking-[0.12em] font-medium">
-          Park Hawkins Properties
+          Park Hawkins Capital
         </span>
         <a href="#contact" className="text-[13px] text-(--color-accent)">
           Get an offer
@@ -163,7 +163,7 @@ export function HomePage() {
           protected by proxy.ts, which is what actually keeps people out. */}
       <footer className="px-5 lg:px-10 py-6 border-t border-(--color-border-subtle) flex items-center justify-between">
         <span className="text-[11px] text-(--color-text-tertiary)">
-          © {new Date().getFullYear()} Park Hawkins Properties
+          © {new Date().getFullYear()} Park Hawkins Capital
         </span>
         <Link href="/login" className="text-[11px] text-(--color-text-disabled) hover:text-(--color-text-tertiary) transition-colors">
           Staff
