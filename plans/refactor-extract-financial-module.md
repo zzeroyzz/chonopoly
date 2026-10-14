@@ -62,8 +62,12 @@ Relocate those two and the finance side detaches cleanly.
 - `app/api/` — `budget`, `bills`, `debts`, `goals`, `assets`, `transactions`,
   `plaid`, `net-worth`, `dreams`, `milestones`, `onboarding`
 - `components/` — `budget/`, `bills/`, `debts/`, `goals/`, `assets/`
-- `components/` root — `BudgetClient.tsx`, `GoalsPanel.tsx`, `AdminTab.tsx`,
+- `components/` root — `BudgetClient.tsx`, `GoalsPanel.tsx`,
   `OnboardingChecklist.tsx`, `OnboardingModal.tsx`
+- Teams' Plaid account-sharing (owner decision, 2026-10-14):
+  `app/api/teams/[id]/accounts/` (both routes) and `lib/supabase/plaid.ts`.
+  `components/teams/TeamSettingsPanel.tsx` and `TeamSetupWizard.tsx` are edited in
+  place to drop their share-picker sections — teams itself stays.
 - `lib/` — `budget/`, `bills/`, `debts/`, `goals/`, `assets/`, `plaid.ts`,
   `plaid-sync.ts`, `plaidRefreshBalances.ts`
 - `supabase/functions/` — `nightly-budget-reset`, `nightly-snapshot`,
@@ -83,6 +87,9 @@ Relocate those two and the finance side detaches cleanly.
 - `components/shell`, `components/hub`, `components/home`, `app/layout.tsx`
 - `lib/supabase`, `lib/teams`, auth, profile, `app/login`, `app/profile`
 - `app/course`, `app/app` — not classified, left alone pending a later call
+- **`components/AdminTab.tsx` — correction.** The draft listed this as financial.
+  It is not: it is user administration (roles, invites, deletions) importing from
+  `app/profile/admin-actions`, and `app/profile/page.tsx` renders it. It stays.
 
 **`teams` stays.** The CRM uses personal/team scoping; moving it breaks the CRM.
 
