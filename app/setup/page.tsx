@@ -125,7 +125,7 @@ function SetupContent() {
     }
 
     setStatus("done");
-    setTimeout(() => router.replace("/finances"), 1500);
+    setTimeout(() => router.replace("/app"), 1500);
   }
 
   return (

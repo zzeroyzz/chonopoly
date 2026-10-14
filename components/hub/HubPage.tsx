@@ -3,12 +3,12 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { loadProfile } from "@/lib/supabase/profile";
-import { Wallet, Calculator, LineChart, Building2, TrendingUp, ChevronRight } from "lucide-react";
+import { Calculator, LineChart, Building2, TrendingUp, ChevronRight } from "lucide-react";
 
 /**
  * The authenticated landing screen.
  *
- * Deliberately dumb: five cards and nothing else. The moment this grows counts,
+ * Deliberately dumb: four cards and nothing else. The moment this grows counts,
  * charts or a feed it starts competing with the modules for attention, and we're
  * back to having one primary thing — which is the assumption that made the old
  * navigation wrong in the first place.
@@ -24,14 +24,6 @@ interface Module {
 }
 
 const MODULES: Module[] = [
-  {
-    id: "finances",
-    label: "Finances",
-    description: "Accounts, budgets, bills, goals and spending.",
-    href: "/finances?tab=overview",
-    icon: <Wallet size={20} />,
-    ready: true,
-  },
   {
     id: "mortgage",
     label: "Mortgage calculator",

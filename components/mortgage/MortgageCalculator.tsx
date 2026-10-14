@@ -81,9 +81,8 @@ export default function MortgageCalculator() {
       appName="Park Hawkins Properties"
       userProfile={userProfile}
       onboardingCompleted={null}
-      onProfileClick={() => router.push("/finances?tab=profile")}
+      onProfileClick={() => router.push("/profile")}
       // No contextSwitcher: the calculator has no scoped data, so nothing to scope.
-      asRoutes
       activeNavId="mortgage"
       onNavigate={() => {}}
     >

@@ -34,7 +34,6 @@ interface Props {
    * switches internally via `?tab=`. True everywhere else, where they have to
    * be real links.
    */
-  asRoutes?: boolean;
 
   /** Active destination id within the current section, when the page tracks one. */
   activeNavId: string | null;
@@ -68,7 +67,6 @@ export function AppShell({
   onboardingCompleted,
   onProfileClick,
   contextSwitcher,
-  asRoutes = false,
   activeNavId,
   onNavigate,
   sidebarContent,
@@ -79,7 +77,7 @@ export function AppShell({
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const sections = buildSections({ asRoutes });
+  const sections = buildSections();
   const section = sectionForPath(pathname, sections);
 
   // Remember where we were so coming back from the hub returns to this exact
