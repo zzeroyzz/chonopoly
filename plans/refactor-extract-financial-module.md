@@ -1,8 +1,44 @@
 # Extract the financial module into a standalone project
 
-**Status: User approved** — 2026-10-14. Owner approved the full plan (Phases 1–5)
-and named the destination `/Users/katohernandez/Projects/finance-app`. The cron
-unregister migration is written but **not executed**, per the plan.
+**Status: Complete** — 2026-10-14. All five phases executed. The cron unregister
+migration is written but **not executed**, per the plan.
+
+## Outcome
+
+`/Users/katohernandez/Projects/finance-app` — standalone, no git remote, 39
+commits with real history. Build 0, tsc 0, 64 unit tests pass.
+
+chonopoly — build 0, tsc 0, 145 unit tests pass, 16 Playwright tests pass
+(01-auth, 19-crm including CRM at 390px). Lint 15 errors, down from 66 on main;
+all pre-existing, none introduced. Verified at 390px authenticated: hub, CRM and
+mortgage render with no overflow, no dead finance links, no page errors.
+
+### Deviations from the approved plan, and why
+
+1. **`ActiveContext` went to `lib/tenancy.ts`, not `lib/context.ts`.** That module
+   builds a service-role Supabase client; client components import this type, so
+   a runtime dependency there risked service-role code reaching a browser bundle.
+2. **`AdminTab` stayed.** The draft had it leaving. It is user administration, not
+   finance.
+3. **`git filter-repo`, not `git subtree split`.** The split produced a single
+   commit — `financial/` had existed for one commit, so there was no path history
+   to follow. filter-repo over the original paths preserved all 37.
+4. **The whole of `components/teams` left** (owner decision), not just the
+   share-picker. Once BudgetClient moved, nothing rendered the teams UI, and two
+   of the setup wizard's five steps called `/api/goals` and `/api/plaid/items`.
+
+### Known, reported, not fixed
+
+- **The four cron jobs are still live** and still emailing users. The migration
+  exists at `supabase/migrations/20261014000000_unregister_finance_crons.sql`
+  and is the owner's to run.
+- **Nothing writes the stored active context now**, so the CRM reads personal
+  scope only. Re-homing team switching is separate work.
+- **`/profile` overflows horizontally at 390px** when the email is long. The
+  heading has no `break-words`. Pre-existing — byte-identical on `origin/main`.
+- **Lint fails** in both projects, as it did before this work.
+- The `/api/teams` routes remain in chonopoly for the invite flow; members, mine
+  and transfer-ownership are now unused here.
 
 ---
 
