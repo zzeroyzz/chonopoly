@@ -22,14 +22,14 @@ export function MorePage() {
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 1024px)");
     const bounce = () => {
-      if (mq.matches) router.replace("/finances?tab=overview");
+      if (mq.matches) router.replace("/app");
     };
     bounce();
     mq.addEventListener("change", bounce);
     return () => mq.removeEventListener("change", bounce);
   }, [router]);
 
-  const sections = visibleSections(buildSections({ asRoutes: true }));
+  const sections = visibleSections(buildSections());
 
   return (
     <div className="lg:hidden min-h-screen bg-(--color-base) text-(--color-text-primary)">

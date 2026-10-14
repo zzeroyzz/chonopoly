@@ -67,7 +67,7 @@ export default function ProfileDropdown({ initials, name, email, avatarUrl, avat
           </Link>
 
           <Link
-            href="/finances"
+            href="/app"
             onClick={() => setOpen(false)}
             className="flex items-center gap-2.5 px-4 py-3 text-sm text-[#c8c5bc] hover:bg-[#222228] hover:text-white transition-colors"
           >

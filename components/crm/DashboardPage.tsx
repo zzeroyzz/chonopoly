@@ -66,8 +66,7 @@ export function DashboardPage() {
       appName="Park Hawkins Properties"
       userProfile={profile}
       onboardingCompleted={null}
-      onProfileClick={() => router.push("/finances?tab=profile")}
-      asRoutes
+      onProfileClick={() => router.push("/profile")}
       activeNavId="dashboard"
       onNavigate={() => {}}
     >

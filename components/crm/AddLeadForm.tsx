@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { type ActiveContext } from "@/lib/goals/types";
+import { type ActiveContext } from "@/lib/tenancy";
 
 /**
  * Add a lead by hand.

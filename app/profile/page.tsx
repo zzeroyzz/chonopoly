@@ -159,9 +159,9 @@ function ProfileContent() {
   return (
     <div className="min-h-screen bg-[#0f0f11] text-[#e8e6df]">
       <div className="bg-[#18181c] border-b border-[#2e2e38] px-6 py-4">
-        <Link href="/finances" className="inline-flex items-center gap-1.5 text-[#7a7870] hover:text-amber-400 text-sm transition-colors">
+        <Link href="/app" className="inline-flex items-center gap-1.5 text-[#7a7870] hover:text-amber-400 text-sm transition-colors">
           <ArrowLeft size={14} />
-          Back to Finances
+          Back to Home
         </Link>
       </div>
 

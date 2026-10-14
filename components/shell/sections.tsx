@@ -1,11 +1,7 @@
 import {
   LayoutDashboard,
-  LayoutGrid,
-  Search,
-  PieChart,
   Calculator,
   Building2,
-  Wallet,
   Wrench,
   ListChecks,
   CheckSquare,
@@ -13,13 +9,17 @@ import {
 import { type ShellNavItem } from "./types";
 
 /**
- * The app is three products, not one with tabs: Finances, Tools, and (soon) the
- * CRM. Five bottom-bar slots at 375px cannot hold all of them flat, so the bar
- * is scoped to whichever section you're in and More switches between sections.
+ * The app is two products, not one with tabs: Tools and the CRM. Five bottom-bar
+ * slots at 375px cannot hold everything flat, so the bar is scoped to whichever
+ * section you're in and More switches between sections.
  *
  * Section is derived from the route prefix and nothing else. There is no
  * "current section" state variable, because a state variable can disagree with
  * the URL and then the bar lies about where you are.
+ *
+ * Finances was the third product. It moved to its own project, so its section
+ * and the `asRoutes` flag that existed only to drive its `?tab=` switching are
+ * both gone.
  */
 
 export interface AppSection {
@@ -35,17 +35,6 @@ export interface AppSection {
    * inside it. Items without an href are views the page switches internally.
    */
   items: ShellNavItem[];
-}
-
-/** Finances destinations, which BudgetClient drives internally via `?tab=`. */
-function financesItems(asRoutes: boolean): ShellNavItem[] {
-  const href = (tab: string) => (asRoutes ? `/finances?tab=${tab}` : undefined);
-  return [
-    { id: "overview", icon: <LayoutDashboard size={16} />, label: "Overview", href: href("overview") },
-    { id: "manage", icon: <LayoutGrid size={16} />, label: "Manage", href: href("manage") },
-    { id: "transactions", icon: <Search size={16} />, label: "Transactions", href: href("transactions") },
-    { id: "analytics", icon: <PieChart size={16} />, label: "Analytics", href: href("analytics") },
-  ];
 }
 
 /**
@@ -68,22 +57,8 @@ const CRM_ITEMS: ShellNavItem[] = [
   { id: "dashboard", icon: <LayoutDashboard size={16} />, label: "Dashboard", href: "/crm/dashboard" },
 ];
 
-/**
- * `asRoutes` only affects the finances group: inside /finances those four are
- * views and the shell hands their id back to BudgetClient, which is what keeps
- * its `?tab=` switching and view-local resets working. Seen from anywhere else
- * they have to be real links.
- */
-export function buildSections({ asRoutes }: { asRoutes: boolean }): AppSection[] {
+export function buildSections(): AppSection[] {
   return [
-    {
-      id: "finances",
-      label: "Finances",
-      icon: <Wallet size={16} />,
-      prefix: "/finances",
-      defaultHref: "/finances?tab=overview",
-      items: financesItems(asRoutes),
-    },
     {
       id: "tools",
       label: "Tools",

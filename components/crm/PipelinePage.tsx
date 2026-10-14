@@ -157,8 +157,7 @@ export function PipelinePage() {
       appName="Park Hawkins Properties"
       userProfile={profile}
       onboardingCompleted={null}
-      onProfileClick={() => router.push("/finances?tab=profile")}
-      asRoutes
+      onProfileClick={() => router.push("/profile")}
       activeNavId="pipeline"
       onNavigate={() => {}}
     >
