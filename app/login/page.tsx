@@ -38,14 +38,14 @@ export default function LoginPage() {
               would pull the full file. */}
           <Image
             src="/PH-wht-logo.png"
-            alt="Park Hawkins Properties"
+            alt="Park Hawkins Capital"
             width={120}
             height={94}
             priority
             className="mx-auto mb-4"
           />
           <p className="text-[13px] uppercase tracking-[0.12em] font-medium">
-            Park Hawkins Properties
+            Park Hawkins Capital
           </p>
           <h1 className="text-2xl font-bold mt-4">
             {mode === "login" ? "Sign in to continue" : mode === "forgot" ? "Reset your password" : "Check your email"}

@@ -154,7 +154,7 @@ export function PipelinePage() {
 
   return (
     <AppShell
-      appName="Park Hawkins Properties"
+      appName="Park Hawkins Capital"
       userProfile={profile}
       onboardingCompleted={null}
       onProfileClick={() => router.push("/profile")}

@@ -6,7 +6,7 @@ import { getAvatarColors } from "@/lib/avatar";
 import { type ShellUserProfile } from "./types";
 
 interface Props {
-  /** App name shown top-left, e.g. "Park Hawkins Properties". */
+  /** App name shown top-left, e.g. "Park Hawkins Capital". */
   appName: string;
   /** Optional pill under the app name — the active team, when one is selected. */
   badge?: string | null;

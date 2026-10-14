@@ -63,7 +63,7 @@ export function DashboardPage() {
 
   return (
     <AppShell
-      appName="Park Hawkins Properties"
+      appName="Park Hawkins Capital"
       userProfile={profile}
       onboardingCompleted={null}
       onProfileClick={() => router.push("/profile")}

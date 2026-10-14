@@ -51,8 +51,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Park Hawkins Properties",
-  description: "Park Hawkins Properties — Real Estate Investment & Acquisition",
+  title: "Park Hawkins Capital",
+  description: "Park Hawkins Capital — Real Estate Investment & Acquisition",
   icons: {
     icon: [
       { url: "/favicons/favicon.ico", sizes: "any" },
