@@ -10,11 +10,13 @@ import { loadInputs, saveInputs, clearInputs } from "@/lib/mortgage/storage";
 import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { calculateAffordability, calculateRequiredIncome } from "@/lib/mortgage/affordability";
+import { calculateDti } from "@/lib/mortgage/dti";
 import { InputPanel } from "./InputPanel";
 import { ResultsPanel } from "./ResultsPanel";
 import { AffordabilityPanel } from "./AffordabilityPanel";
 import { AmortizationSection } from "./AmortizationSection";
 import { RateLookup } from "./RateLookup";
+import { ScenarioBar } from "./ScenarioBar";
 
 export default function MortgageCalculator() {
   const router = useRouter();
@@ -70,6 +72,9 @@ export default function MortgageCalculator() {
 
   const result = useMemo(() => calculateMortgage(inputs), [inputs]);
   const affordability = useMemo(() => calculateAffordability(inputs), [inputs]);
+  // Your actual ratios and whether they clear. Computed once here so the
+  // panel displays the same verdict the module calculates.
+  const dti = useMemo(() => calculateDti(inputs, result), [inputs, result]);
   const required = useMemo(
     () => calculateRequiredIncome(inputs, result.totalMonthlyWithMortgageInsurance),
     [inputs, result.totalMonthlyWithMortgageInsurance]
@@ -92,7 +97,7 @@ export default function MortgageCalculator() {
         </h1>
         <div className="flex items-baseline justify-between gap-4 mb-5">
           <p className="text-[12px] text-(--color-text-secondary)">
-            Your inputs stay put between visits. Nothing is saved to your account yet.
+            Your inputs stay put between visits. Save a scenario to keep it on your account.
           </p>
           <button
             type="button"
@@ -113,8 +118,33 @@ export default function MortgageCalculator() {
           </div>
 
           <div className="grid gap-4" style={{ alignContent: "start" }}>
-            <ResultsPanel inputs={inputs} result={result} />
-            <AffordabilityPanel inputs={inputs} affordability={affordability} required={required} />
+            <ResultsPanel
+              inputs={inputs}
+              result={result}
+              // Read from the same RequiredIncome the detail panel renders, so
+              // the headline verdict and the breakdown cannot disagree.
+              verdict={
+                required.applicable && required.qualifies !== null
+                  ? {
+                      affordable: required.qualifies,
+                      required: required.requiredMonthly,
+                      actual: inputs.grossMonthlyIncome,
+                    }
+                  : undefined
+              }
+            />
+            <AffordabilityPanel
+              inputs={inputs}
+              affordability={affordability}
+              required={required}
+              dti={dti}
+            />
+            <ScenarioBar
+              inputs={inputs}
+              monthlyPayment={result.totalMonthlyWithMortgageInsurance}
+              // Replaces the working draft, and only from an explicit click.
+              onLoad={(loaded) => setInputs(loaded)}
+            />
             <RateLookup />
           </div>
         </div>

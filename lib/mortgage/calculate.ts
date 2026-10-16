@@ -11,6 +11,9 @@ import {
   PMI_AUTO_TERMINATION_LTV,
   CONSERVATIVE_INSURANCE_RATE,
   vaFundingFeeRate,
+  DPA_AWARD,
+  BORROWER_MINIMUM_INVESTMENT,
+  allowsDownPaymentAssistance,
 } from "./loanTypes";
 import {
   buildAmortizationSchedule,
@@ -100,7 +103,7 @@ export function downPaymentPercent(inputs: MortgageInputs): number {
  */
 export function dpaPayment(inputs: MortgageInputs): number {
   if (inputs.dpaStructure !== "amortizing") return 0;
-  const principal = Math.max(0, inputs.dpaAmount);
+  const principal = assistanceAward(inputs);
   const months = Math.max(1, Math.round(inputs.dpaTermYears * 12));
   if (principal <= 0) return 0;
 
@@ -110,35 +113,91 @@ export function dpaPayment(inputs: MortgageInputs): number {
 }
 
 /**
- * How assistance lands on the closing figures.
+ * The minimum down payment the loan type requires, in dollars.
  *
- * Capped at the cash actually required — assistance beyond that isn't a rebate,
- * so it's reported as unused rather than quietly turned into a negative bill.
- *
- * Combined LTV is left uncapped. Some programs genuinely push past 100%, and
- * clamping it would hide the one number that says so.
+ * Measured against total acquisition cost, matching `downPaymentPercent` — on a
+ * renovation loan the minimum is a percent of price plus rehab, not of price.
  */
-function dpaBreakdown(
+export function minimumDownPayment(inputs: MortgageInputs): number {
+  const config = LOAN_TYPE_CONFIG[inputs.loanType];
+  return (totalAcquisitionCost(inputs) * config.minDownPercent) / 100;
+}
+
+/** The award, or zero when it's off or the loan type can't use it. */
+export function assistanceAward(inputs: MortgageInputs): number {
+  if (!inputs.dpaEnabled) return 0;
+  if (!allowsDownPaymentAssistance(inputs.loanType)) return 0;
+  return DPA_AWARD;
+}
+
+/**
+ * How the award is allocated, and what the buyer is left holding.
+ *
+ * Order is fixed: the minimum down payment first, then everything remaining to
+ * closing costs. There is no third bucket — with real closing costs the award
+ * cannot outrun them, and "unused assistance" would be a line nobody can act on.
+ *
+ * It covers the minimum and no more. A buyer putting 10% down on an FHA loan is
+ * making a choice, and the program does not fund that choice past 3.5%; the
+ * excess is theirs.
+ *
+ * What this deliberately does NOT do is shrink the first mortgage. The loan is
+ * sized by the down payment, and assistance changes who pays that down payment,
+ * not whether it is made. A buyer putting 3.5% down funded entirely by the award
+ * still has a 96.5% LTV first lien — so PMI and MIP are unchanged, which is the
+ * single easiest thing to get wrong here and the most expensive.
+ *
+ * Combined LTV measures what is borrowed against the house, so it counts the
+ * base loan plus only the slice of the award that bought the house. The slice
+ * that paid closing costs is excluded — closing costs are not the house — and
+ * so are financed fees like UFMIP, which are a cost rolled into the loan rather
+ * than acquisition. Include either and the figure exceeds 100% every time
+ * assistance is used, which is wrong: the mortgage covers 96.5%, the award
+ * covers the 3.5% down, and together that is the whole house, exactly 100%.
+ *
+ * Left uncapped so it can still exceed 100% when something genuinely unusual is
+ * happening — a down payment smaller than the award can cover, say. That is the
+ * case worth warning about, and it was drowned out while every normal deal
+ * tripped the same warning.
+ */
+function allocateAssistance(
   inputs: MortgageInputs,
-  cashBefore: number,
-  loanAmount: number
+  downPayment: number,
+  closingAndFees: number
 ): {
   cashToClose: number;
   cashToCloseBeforeDpa: number;
   dpaApplied: number;
-  dpaUnused: number;
+  dpaToDownPayment: number;
+  dpaToClosing: number;
+  borrowerMinimumApplied: boolean;
   combinedLtv: number;
 } {
-  const offered = Math.max(0, inputs.dpaAmount);
-  const applied = Math.min(offered, Math.max(0, cashBefore));
+  const award = assistanceAward(inputs);
+  const basis = totalAcquisitionCost(inputs);
+
+  // Never more than the minimum, and never more than is actually being put down
+  // — a buyer below the minimum is already warned, not topped up silently.
+  const toDownPayment = Math.min(award, minimumDownPayment(inputs), Math.max(0, downPayment));
+  const toClosing = Math.min(award - toDownPayment, Math.max(0, closingAndFees));
+  const applied = toDownPayment + toClosing;
+
+  const cashBefore = Math.max(0, downPayment) + Math.max(0, closingAndFees);
+  const remaining = Math.max(0, cashBefore - applied);
+
+  // The program requires the buyer to have their own money in the deal. This
+  // binds only when the award would otherwise cover everything.
+  const borrowerMinimumApplied = award > 0 && remaining < BORROWER_MINIMUM_INVESTMENT;
 
   return {
     cashToCloseBeforeDpa: cashBefore,
-    cashToClose: Math.max(0, cashBefore - applied),
+    cashToClose: borrowerMinimumApplied ? BORROWER_MINIMUM_INVESTMENT : remaining,
     dpaApplied: applied,
-    dpaUnused: offered - applied,
+    dpaToDownPayment: toDownPayment,
+    dpaToClosing: toClosing,
+    borrowerMinimumApplied,
     combinedLtv:
-      inputs.homeValue > 0 ? ((loanAmount + offered) / inputs.homeValue) * 100 : 0,
+      basis > 0 ? ((baseLoanAmount(inputs) + toDownPayment) / basis) * 100 : 0,
   };
 }
 
@@ -308,7 +367,7 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
         ? (loanAmount / inputs.afterRepairValue) * 100
         : null,
 
-    ...dpaBreakdown(inputs, inputs.downPayment + closingCosts + feesDueAtClosing, loanAmount),
+    ...allocateAssistance(inputs, inputs.downPayment, closingCosts + feesDueAtClosing),
     dpaMonthlyPayment,
 
     principalAndInterest,

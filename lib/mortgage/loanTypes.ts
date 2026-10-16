@@ -1,4 +1,4 @@
-import { type LoanType, type MortgageInputs } from "./types";
+import { type LoanType, type MortgageInputs, type RenovationProgram } from "./types";
 
 /**
  * Which fields a loan type actually uses. The input panel and the calculator
@@ -105,6 +105,40 @@ export const LOAN_TYPE_CONFIG: Record<LoanType, LoanTypeConfig> = {
 
 export const LOAN_TYPES: LoanType[] = ["conventional", "fha", "va", "hardMoney", "dscr"];
 
+/**
+ * What the loan type dropdown offers.
+ *
+ * 203(k) and HomeStyle appear here as products you can pick, because that is how
+ * people shop for them. They are not loan types underneath: a 203(k) is an FHA
+ * loan with renovation sizing — same insurance, same ratios, same minimum down.
+ * Keeping them as `(loanType, renovationProgram)` pairs means one definition of
+ * what FHA means, instead of two that drift the first time a rule changes.
+ */
+export interface LoanProduct {
+  value: string;
+  label: string;
+  loanType: LoanType;
+  renovationProgram: RenovationProgram;
+}
+
+export const LOAN_PRODUCTS: LoanProduct[] = [
+  { value: "conventional", label: "Conventional", loanType: "conventional", renovationProgram: "none" },
+  { value: "homestyle", label: "HomeStyle renovation", loanType: "conventional", renovationProgram: "homestyle" },
+  { value: "fha", label: "FHA", loanType: "fha", renovationProgram: "none" },
+  { value: "fha203k", label: "FHA 203(k) renovation", loanType: "fha", renovationProgram: "fha203k" },
+  { value: "va", label: "VA", loanType: "va", renovationProgram: "none" },
+  { value: "hardMoney", label: "Hard money", loanType: "hardMoney", renovationProgram: "none" },
+  { value: "dscr", label: "DSCR", loanType: "dscr", renovationProgram: "none" },
+];
+
+/** Which dropdown entry the current inputs correspond to. */
+export function productValueFor(loanType: LoanType, renovationProgram: RenovationProgram): string {
+  const match = LOAN_PRODUCTS.find(
+    (p) => p.loanType === loanType && p.renovationProgram === renovationProgram
+  );
+  return match?.value ?? loanType;
+}
+
 /** FHA upfront mortgage insurance premium: 1.75% of the base loan amount. */
 export const FHA_UFMIP_RATE = 0.0175;
 
@@ -145,6 +179,37 @@ export const CONSERVATIVE_INSURANCE_RATE = 0.8;
 
 /** LTV at which conventional PMI terminates automatically, against original value. */
 export const PMI_AUTO_TERMINATION_LTV = 0.78;
+
+/**
+ * The assistance award. A fixed figure, not something the buyer chooses — the
+ * program grants this amount or none, so it is a constant rather than an input.
+ */
+export const DPA_AWARD = 10000;
+
+/**
+ * The buyer's own money, minimum. The program requires it however the rest of
+ * the closing is funded, so it is a floor on their cash and not an earmark
+ * against the down payment specifically.
+ */
+export const BORROWER_MINIMUM_INVESTMENT = 1000;
+
+/**
+ * Whether assistance can apply to a loan type at all.
+ *
+ * Driven off the minimum down payment rather than a list of names, so the rule
+ * survives a minimum changing: with 0% down there is no minimum for the award to
+ * cover and the whole thing would fall through to closing costs, which is not
+ * what these programs are for. That rules out VA and USDA.
+ *
+ * DSCR is excluded explicitly despite its 20% minimum — the awards do not
+ * apply to it, and that is a fact about the programs rather than something the
+ * minimum can tell us. DSCR likewise: it is an investor product.
+ */
+export function allowsDownPaymentAssistance(loanType: LoanType): boolean {
+  const config = LOAN_TYPE_CONFIG[loanType];
+  if (config.isHardMoney || config.isDscr) return false;
+  return config.minDownPercent > 0;
+}
 
 export function configFor(inputs: MortgageInputs): LoanTypeConfig {
   return LOAN_TYPE_CONFIG[inputs.loanType];

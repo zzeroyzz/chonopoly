@@ -23,10 +23,29 @@ export function loadInputs(): MortgageInputs {
 
     // Spread over the defaults so a stored object written before a field existed
     // still loads, rather than leaving that field undefined.
-    return { ...fallback, ...(JSON.parse(raw) as Partial<MortgageInputs>) };
+    const stored = JSON.parse(raw) as Partial<MortgageInputs> & { dpaAmount?: number };
+    return { ...fallback, ...migrateDpaAmount(stored) };
   } catch {
     return fallback;
   }
+}
+
+/**
+ * Assistance used to be a dollar amount the user typed; it is now a yes/no,
+ * because the award is a fixed $10,000.
+ *
+ * Without this, a draft saved with `dpaAmount: 8750` would spread over the
+ * defaults, find no `dpaEnabled`, and silently come back with assistance turned
+ * off — the figure would simply vanish. Any positive amount means they had the
+ * program on, so that is what we restore.
+ */
+function migrateDpaAmount(
+  stored: Partial<MortgageInputs> & { dpaAmount?: number }
+): Partial<MortgageInputs> {
+  if (stored.dpaAmount === undefined) return stored;
+
+  const { dpaAmount, ...rest } = stored;
+  return { ...rest, dpaEnabled: rest.dpaEnabled ?? dpaAmount > 0 };
 }
 
 export function saveInputs(inputs: MortgageInputs): void {

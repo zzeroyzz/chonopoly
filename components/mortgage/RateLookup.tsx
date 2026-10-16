@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, SectionLabel } from "./fields";
+import { Card, SectionLabel, Disclosure } from "./fields";
 import { monthYear } from "./format";
 
 interface RateEntry {
@@ -64,7 +64,12 @@ export function RateLookup() {
 
   return (
     <Card>
-      <SectionLabel>Current averages</SectionLabel>
+      {/* Reference only — it does not change the calculation, so it does not
+          need to hold screen space above the figures that do. */}
+      <Disclosure
+        label="Current averages"
+        summary={data.rates.map((r) => `${r.rate.toFixed(2)}%`).join(" · ")}
+      >
       <div className="grid grid-cols-2 gap-3">
         {data.rates.map((r) => (
           <div key={r.seriesId}>
@@ -79,6 +84,7 @@ export function RateLookup() {
       <p className="text-[10px] text-(--color-text-tertiary) mt-3 leading-relaxed">
         {data.source}. Reference only — enter the rate you were quoted.
       </p>
+      </Disclosure>
     </Card>
   );
 }

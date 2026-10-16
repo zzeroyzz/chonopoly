@@ -48,14 +48,6 @@ export interface MortgageInputs {
   loanType: LoanType;
 
   /**
-   * Down payment assistance, in dollars. Reduces cash to close.
-   *
-   * Deliberately NOT subtracted from the down payment or added to the loan: the
-   * first mortgage is unchanged, so its LTV — and therefore PMI — is unchanged
-   * too. Assistance covering the down payment does not make PMI go away, and
-   * treating it as if it did understates the payment badly.
-   */
-  /**
    * Renovation financing.
    *
    * Three things change when this is on, and all three are easy to get wrong:
@@ -78,7 +70,19 @@ export interface MortgageInputs {
    */
   afterRepairValue: number | null;
 
-  dpaAmount: number;
+  /**
+   * Whether the buyer is using the assistance program.
+   *
+   * A boolean rather than an amount because the award is a fixed $10,000
+   * (`DPA_AWARD`) — the program grants that or nothing, so there is no figure
+   * for the buyer to choose and no way for them to type a wrong one.
+   *
+   * The award is allocated, not simply netted off: it covers the minimum down
+   * payment for the loan type first, and everything left goes to closing costs.
+   * That means it DOES reduce the first mortgage, which it previously did not —
+   * so LTV, and therefore PMI, respond to it.
+   */
+  dpaEnabled: boolean;
   dpaStructure: DpaStructure;
   /** Amortizing structures only. Annual rate as a percent; 0 is common. */
   dpaRate: number;
@@ -154,8 +158,16 @@ export interface MortgageResult {
   cashToCloseBeforeDpa: number;
   /** Assistance actually used. Capped at cash needed — nobody hands back change. */
   dpaApplied: number;
-  /** Assistance offered beyond what closing required. Surfaced, not silently dropped. */
-  dpaUnused: number;
+  /** The slice of the award that covered the minimum down payment. */
+  dpaToDownPayment: number;
+  /** The slice that went to closing costs — everything the down payment left. */
+  dpaToClosing: number;
+  /**
+   * True when the buyer's own cash had to be raised to meet the program's
+   * minimum investment. Worth surfacing: it means the award would otherwise
+   * have covered everything.
+   */
+  borrowerMinimumApplied: boolean;
   /** Monthly payment on the assistance. Zero unless the structure amortizes. */
   dpaMonthlyPayment: number;
   /**

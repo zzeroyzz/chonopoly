@@ -33,7 +33,7 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
 
     // No assistance until the user says otherwise — the calculator shouldn't
     // assume a program he may not qualify for.
-    dpaAmount: 0,
+    dpaEnabled: false,
     dpaStructure: "grant",
     dpaRate: 0,
     dpaTermYears: 10,
