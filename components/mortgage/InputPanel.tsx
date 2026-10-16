@@ -18,6 +18,8 @@ import {
   effectiveInsuranceYearly,
   isRenovationLoan,
   minimumDownPayment,
+  totalAcquisitionCost,
+  renovationFinanced,
 } from "@/lib/mortgage/calculate";
 import { ltvPercent, pmiBandForLtv, suggestedPmiRate, formatPmiBand } from "@/lib/mortgage/pmi";
 import {
@@ -43,6 +45,21 @@ export function InputPanel({ inputs, onChange }: Props) {
 
   const downPercent = downPaymentPercent(inputs);
   const derivedLoan = baseLoanAmount(inputs);
+
+  // The one basis both the percent box and its note work from. On a renovation
+  // loan the down payment is a percent of price plus the work, so saying "of
+  // $250,000" while measuring against $329,000 is how the two drifted apart.
+  const acquisitionCost = totalAcquisitionCost(inputs);
+  const downBasisNote = isRenovationLoan(inputs)
+    ? `${downPercent.toFixed(1)}% of ${dollars(acquisitionCost, 0)} — price plus the work`
+    : `${downPercent.toFixed(1)}% of ${dollars(inputs.homeValue, 0)}`;
+
+  // With assistance on, the award covers the minimum, so the figure in the box
+  // is not what the buyer brings. Saying so here is the difference between a
+  // number that makes sense and one that looks wrong.
+  const coveredByAssistance = inputs.dpaEnabled
+    ? Math.min(DPA_AWARD, minimumDownPayment(inputs), Math.max(0, inputs.downPayment))
+    : 0;
 
   return (
     <div className="grid gap-4" style={{ alignContent: "start" }}>
@@ -75,9 +92,14 @@ export function InputPanel({ inputs, onChange }: Props) {
             // Hold the down payment PERCENT steady as the price moves. Keeping the
             // dollar figure fixed instead makes the percentage jump on every
             // keystroke, which is what made this annoying to use.
+            //
+            // Measured against acquisition cost, like everything else here. Using
+            // the price alone made the held-steady percentage drift on renovation
+            // loans, where the two differ.
             onChange={(homeValue) => {
-              const pct = inputs.homeValue > 0 ? inputs.downPayment / inputs.homeValue : 0;
-              onChange({ homeValue, downPayment: Math.round(homeValue * pct) });
+              const ratio = acquisitionCost > 0 ? inputs.downPayment / acquisitionCost : 0;
+              const nextBasis = homeValue + renovationFinanced(inputs);
+              onChange({ homeValue, downPayment: Math.round(nextBasis * ratio) });
             }}
             prefix="$"
             min={0}
@@ -104,18 +126,28 @@ export function InputPanel({ inputs, onChange }: Props) {
                 value={Math.round(inputs.downPayment)}
                 onChange={(downPayment) => onChange({ downPayment })}
                 prefix="$"
-                note={`${downPercent.toFixed(1)}% of $${Math.round(inputs.homeValue).toLocaleString()}`}
+                note={downBasisNote}
                 min={0}
               />
             ) : (
               <NumberField
                 label=""
                 value={Number(downPercent.toFixed(2))}
-                onChange={(pct) => onChange({ downPayment: (inputs.homeValue * pct) / 100 })}
+                // Against total acquisition cost, which is what downPaymentPercent
+                // displays. These used to disagree — typing 3.5% wrote 3.5% of the
+                // price, then redisplayed it over price-plus-renovation and came
+                // back as something smaller.
+                onChange={(pct) => onChange({ downPayment: (acquisitionCost * pct) / 100 })}
                 suffix="%"
-                note={`$${Math.round(inputs.downPayment).toLocaleString()} of $${Math.round(inputs.homeValue).toLocaleString()}`}
+                note={downBasisNote}
                 min={0}
               />
+            )}
+            {coveredByAssistance > 0 && (
+              <p className="text-[11px] text-(--color-accent) mt-1">
+                {dollars(coveredByAssistance, 0)} covered by assistance — you pay{" "}
+                {dollars(Math.max(0, inputs.downPayment - coveredByAssistance), 0)} of this.
+              </p>
             )}
             {downPercent < config.minDownPercent && (
               <p className="text-[11px] text-(--color-warning) mt-1">

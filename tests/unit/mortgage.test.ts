@@ -1,4 +1,8 @@
-import { calculateMortgage } from "@/lib/mortgage/calculate";
+import {
+  calculateMortgage,
+  downPaymentPercent,
+  totalAcquisitionCost,
+} from "@/lib/mortgage/calculate";
 import { calculateDti } from "@/lib/mortgage/dti";
 import {
   monthlyPayment,
@@ -387,6 +391,34 @@ describe("totals", () => {
     const annual = toAnnualRows(result.schedule);
     const monthCount = annual.reduce((s, y) => s + y.months.length, 0);
     expect(monthCount).toBe(result.schedule.length);
+  });
+});
+
+describe("down payment percent round-trip", () => {
+  // Typing 3.5% used to come back as 2.66%: the input wrote 3.5% of the PRICE
+  // while the display read it as a percent of price PLUS renovation.
+  it("returns the percent that was typed, on a renovation loan", () => {
+    const base = inputs({
+      homeValue: 250_000,
+      loanType: "fha",
+      renovationProgram: "fha203k",
+      renovationBudget: 71_818,
+      renovationContingencyPct: 10,
+    });
+
+    const acquisition = totalAcquisitionCost(base);
+    expect(acquisition).toBeGreaterThan(base.homeValue);
+
+    // What the percent input now writes for a typed 3.5.
+    const typed = { ...base, downPayment: (acquisition * 3.5) / 100 };
+    expect(downPaymentPercent(typed)).toBeCloseTo(3.5, 6);
+  });
+
+  it("is unchanged without renovation, where the two bases are the same", () => {
+    const base = inputs({ homeValue: 250_000, loanType: "fha" });
+    const typed = { ...base, downPayment: (totalAcquisitionCost(base) * 3.5) / 100 };
+    expect(typed.downPayment).toBeCloseTo(8_750, 6);
+    expect(downPaymentPercent(typed)).toBeCloseTo(3.5, 6);
   });
 });
 
