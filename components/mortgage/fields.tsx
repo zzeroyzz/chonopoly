@@ -218,6 +218,44 @@ export function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * A collapsed section, for reference figures that shouldn't compete with the
+ * numbers you act on.
+ *
+ * Built on <details> rather than state: it is open/closed markup the browser
+ * already understands, so it is keyboard accessible and findable by in-page
+ * search without any of that being reimplemented here.
+ */
+export function Disclosure({
+  label,
+  summary,
+  defaultOpen = false,
+  children,
+}: {
+  label: string;
+  /** The one figure worth seeing while collapsed, if there is one. */
+  summary?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details open={defaultOpen} className="group">
+      <summary className="flex items-center justify-between gap-3 cursor-pointer list-none py-1 [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.1em] text-(--color-text-tertiary)">
+          <span className="inline-block transition-transform group-open:rotate-90">›</span>
+          {label}
+        </span>
+        {summary && (
+          <span className="text-[12px] font-(--font-mono) text-(--color-text-secondary) group-open:hidden">
+            {summary}
+          </span>
+        )}
+      </summary>
+      <div className="mt-2">{children}</div>
+    </details>
+  );
+}
+
 export function Card({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
     <div

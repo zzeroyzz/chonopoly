@@ -537,12 +537,54 @@ describe("down payment assistance", () => {
     expect(charged.dpaMonthlyPayment).toBeGreaterThan(zero.dpaMonthlyPayment);
   });
 
-  it("reports combined LTV uncapped, including above 100%", () => {
-    // A small down payment plus the award can genuinely exceed the value.
+  it("lands combined LTV at exactly 100% in the normal case", () => {
+    // The mortgage covers 96.5%, the award covers the 3.5% down. That is the
+    // whole house and no more — it cannot exceed the thing being bought.
+    const result = calculateMortgage(fhaWithAward(250_000));
+    expect(result.combinedLtv).toBeCloseTo(100, 6);
+  });
+
+  it("excludes financed fees and the closing slice from combined LTV", () => {
+    // UFMIP is financed into the loan here, and $1,250 of the award paid closing
+    // costs. Neither buys the house, so neither belongs in a loan-to-VALUE ratio.
+    const result = calculateMortgage(fhaWithAward(250_000));
+    expect(result.financedFees).toBeGreaterThan(0);
+    expect(result.dpaToClosing).toBeGreaterThan(0);
+    expect(result.combinedLtv).toBeLessThanOrEqual(100);
+  });
+
+  it("cannot exceed 100% on its own, however small the down payment", () => {
+    // The base loan is acquisition cost minus the down payment, and the award
+    // never covers more of that down payment than is actually being made. So the
+    // two can only ever sum back to the house. This is structural, not a clamp.
+    for (const downPayment of [1_000, 2_000, 8_750, 25_000]) {
+      const r = calculateMortgage(
+        inputs({ homeValue: 250_000, downPayment, loanType: "fha", dpaEnabled: true })
+      );
+      expect(r.combinedLtv).toBeLessThanOrEqual(100);
+    }
+  });
+
+  it("exceeds 100% only when the loan amount is overridden above the house", () => {
+    // The one route past 100%, and the case the warning exists for: a hand-typed
+    // loan amount larger than the purchase leaves behind.
     const result = calculateMortgage(
-      inputs({ homeValue: 95_000, downPayment: 3_325, loanType: "fha", dpaEnabled: true })
+      inputs({
+        homeValue: 250_000,
+        downPayment: 8_750,
+        loanType: "fha",
+        dpaEnabled: true,
+        loanAmountOverride: 250_000,
+      })
     );
     expect(result.combinedLtv).toBeGreaterThan(100);
+  });
+
+  it("is unaffected by assistance when the award is off", () => {
+    const withAward = calculateMortgage(fhaWithAward(250_000));
+    const without = calculateMortgage(fhaWithAward(250_000, { dpaEnabled: false }));
+    expect(without.combinedLtv).toBeLessThan(withAward.combinedLtv);
+    expect(without.combinedLtv).toBeCloseTo(96.5, 6);
   });
 
   it("treats no assistance as a no-op", () => {

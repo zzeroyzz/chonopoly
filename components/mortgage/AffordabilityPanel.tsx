@@ -3,7 +3,7 @@
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import { type AffordabilityResult, type RequiredIncome } from "@/lib/mortgage/affordability";
 import { LOAN_TYPE_CONFIG } from "@/lib/mortgage/loanTypes";
-import { Card, SectionLabel } from "./fields";
+import { Card, Disclosure } from "./fields";
 import { dollars } from "./format";
 
 function Line({
@@ -50,12 +50,13 @@ export function AffordabilityPanel({
           a number you can hold against a payslip. */}
       {required.requiredMonthly > 0 && (
         <Card>
-          <SectionLabel>Income needed for this house</SectionLabel>
-          <p className="text-[34px] leading-none font-bold font-(--font-mono) text-(--color-text-primary)">
-            {dollars(required.requiredMonthly)}
-            <span className="text-[14px] font-normal text-(--color-text-tertiary)">/mo</span>
-          </p>
-          <p className="text-[12px] text-(--color-text-secondary) mt-1.5">
+          {/* The verdict and the required figure are already in the payment
+              card. This is the working behind them, so it opens on demand. */}
+          <Disclosure
+            label="Income needed for this house"
+            summary={`${dollars(required.requiredMonthly)}/mo`}
+          >
+          <p className="text-[12px] text-(--color-text-secondary) mb-1.5">
             {dollars(required.requiredAnnual)} a year, gross.
           </p>
 
@@ -107,16 +108,17 @@ export function AffordabilityPanel({
               </div>
             </div>
           )}
+          </Disclosure>
         </Card>
       )}
 
       {/* And the inverse: given your income, how much house? */}
       {affordability.maxPurchasePrice > 0 && (
         <Card>
-          <SectionLabel>What your income supports</SectionLabel>
-          <p className="text-[28px] leading-none font-bold font-(--font-mono) text-(--color-text-primary)">
-            {dollars(affordability.maxPurchasePrice)}
-          </p>
+          <Disclosure
+            label="What your income supports"
+            summary={dollars(affordability.maxPurchasePrice)}
+          >
           <p className="text-[12px] text-(--color-text-secondary) mt-2">
             Maximum purchase price at {dollars(affordability.maxHousingPayment)}/mo housing payment.
             {affordability.binding === "front"
@@ -126,6 +128,7 @@ export function AffordabilityPanel({
           <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">
             Rounded to the nearest $500, assuming a conservative mortgage insurance rate.
           </p>
+          </Disclosure>
         </Card>
       )}
     </>

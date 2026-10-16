@@ -113,7 +113,21 @@ export default function MortgageCalculator() {
           </div>
 
           <div className="grid gap-4" style={{ alignContent: "start" }}>
-            <ResultsPanel inputs={inputs} result={result} />
+            <ResultsPanel
+              inputs={inputs}
+              result={result}
+              // Read from the same RequiredIncome the detail panel renders, so
+              // the headline verdict and the breakdown cannot disagree.
+              verdict={
+                required.applicable && required.qualifies !== null
+                  ? {
+                      affordable: required.qualifies,
+                      required: required.requiredMonthly,
+                      actual: inputs.grossMonthlyIncome,
+                    }
+                  : undefined
+              }
+            />
             <AffordabilityPanel inputs={inputs} affordability={affordability} required={required} />
             <RateLookup />
           </div>

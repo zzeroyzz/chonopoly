@@ -147,14 +147,23 @@ export function assistanceAward(inputs: MortgageInputs): number {
  * still has a 96.5% LTV first lien — so PMI and MIP are unchanged, which is the
  * single easiest thing to get wrong here and the most expensive.
  *
- * Combined LTV is left uncapped. Some programs genuinely push past 100%, and
- * clamping it would hide the one number that says so.
+ * Combined LTV measures what is borrowed against the house, so it counts the
+ * base loan plus only the slice of the award that bought the house. The slice
+ * that paid closing costs is excluded — closing costs are not the house — and
+ * so are financed fees like UFMIP, which are a cost rolled into the loan rather
+ * than acquisition. Include either and the figure exceeds 100% every time
+ * assistance is used, which is wrong: the mortgage covers 96.5%, the award
+ * covers the 3.5% down, and together that is the whole house, exactly 100%.
+ *
+ * Left uncapped so it can still exceed 100% when something genuinely unusual is
+ * happening — a down payment smaller than the award can cover, say. That is the
+ * case worth warning about, and it was drowned out while every normal deal
+ * tripped the same warning.
  */
 function allocateAssistance(
   inputs: MortgageInputs,
   downPayment: number,
-  closingAndFees: number,
-  loanAmount: number
+  closingAndFees: number
 ): {
   cashToClose: number;
   cashToCloseBeforeDpa: number;
@@ -165,6 +174,7 @@ function allocateAssistance(
   combinedLtv: number;
 } {
   const award = assistanceAward(inputs);
+  const basis = totalAcquisitionCost(inputs);
 
   // Never more than the minimum, and never more than is actually being put down
   // — a buyer below the minimum is already warned, not topped up silently.
@@ -187,7 +197,7 @@ function allocateAssistance(
     dpaToClosing: toClosing,
     borrowerMinimumApplied,
     combinedLtv:
-      inputs.homeValue > 0 ? ((loanAmount + applied) / inputs.homeValue) * 100 : 0,
+      basis > 0 ? ((baseLoanAmount(inputs) + toDownPayment) / basis) * 100 : 0,
   };
 }
 
@@ -357,7 +367,7 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
         ? (loanAmount / inputs.afterRepairValue) * 100
         : null,
 
-    ...allocateAssistance(inputs, inputs.downPayment, closingCosts + feesDueAtClosing, loanAmount),
+    ...allocateAssistance(inputs, inputs.downPayment, closingCosts + feesDueAtClosing),
     dpaMonthlyPayment,
 
     principalAndInterest,
