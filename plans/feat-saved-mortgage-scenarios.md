@@ -80,12 +80,10 @@ create table mortgage_scenarios (
 blob outlives the type that wrote it, and reading it back needs to know which
 shape it is.
 
-### Team access follows the house convention
+### Team access
 
-The CRM policies give the **personal owner full access** and team members
-**read-only** (`FOR SELECT`). This plan matches that: a team member can open and
-run a shared scenario, not overwrite or delete it. Called out because "shared with
-the team" could reasonably have meant shared editing — see Open question.
+See the settled section at the bottom: team members get **full access**, which is
+a deliberate divergence from the read-only convention the CRM uses.
 
 ## Scope
 
@@ -112,7 +110,7 @@ the team" could reasonably have meant shared editing — see Open question.
 
 ## Approach
 
-1. Migration written and reviewed. **Not run.**
+1. ~~Migration written and reviewed.~~ **Done — applied 2026-10-16.**
 2. `scenarioService.ts` with unit tests, including reading a `version 1` blob back
    into current `MortgageInputs`.
 3. API routes, following the CRM pattern exactly: auth, `resolveContext`,
@@ -123,13 +121,10 @@ the team" could reasonably have meant shared editing — see Open question.
 
 ## Risks
 
-- **A migration is Tier 2 and running it is owner-only.** I will write it; running
-  it against production is a separate explicit instruction, exactly as with the
-  cron migration.
-- **Until the migration runs, the feature cannot work.** The UI will error against
-  a missing table. The plan therefore sequences the migration first, and the
-  Playwright spec cannot pass before it exists — which is worth knowing given the
-  rule that a feature is not complete without a passing spec.
+- ~~A migration is Tier 2 and running it is owner-only.~~ Applied 2026-10-16 on
+  explicit instruction, after a dry run. Table, indexes, RLS and trigger verified.
+- **Team members can overwrite each other.** The chosen policy is `FOR ALL` and
+  there is no history table, so a teammate's overwrite or delete is final.
 - **Stored inputs outlive the type.** `inputs_version` plus tolerant reading
   handles it; the `dpaAmount` rename on this branch is the proof it is needed.
 - **Loading a scenario overwrites the working draft.** Someone mid-calculation
