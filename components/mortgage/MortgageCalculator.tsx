@@ -16,6 +16,7 @@ import { ResultsPanel } from "./ResultsPanel";
 import { AffordabilityPanel } from "./AffordabilityPanel";
 import { AmortizationSection } from "./AmortizationSection";
 import { RateLookup } from "./RateLookup";
+import { ScenarioBar } from "./ScenarioBar";
 
 export default function MortgageCalculator() {
   const router = useRouter();
@@ -96,7 +97,7 @@ export default function MortgageCalculator() {
         </h1>
         <div className="flex items-baseline justify-between gap-4 mb-5">
           <p className="text-[12px] text-(--color-text-secondary)">
-            Your inputs stay put between visits. Nothing is saved to your account yet.
+            Your inputs stay put between visits. Save a scenario to keep it on your account.
           </p>
           <button
             type="button"
@@ -137,6 +138,12 @@ export default function MortgageCalculator() {
               affordability={affordability}
               required={required}
               dti={dti}
+            />
+            <ScenarioBar
+              inputs={inputs}
+              monthlyPayment={result.totalMonthlyWithMortgageInsurance}
+              // Replaces the working draft, and only from an explicit click.
+              onLoad={(loaded) => setInputs(loaded)}
             />
             <RateLookup />
           </div>

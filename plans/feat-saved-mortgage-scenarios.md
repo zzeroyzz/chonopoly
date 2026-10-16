@@ -1,7 +1,10 @@
 # Saved mortgage scenarios
 
-**Status: In progress** — approved 2026-10-16. Migration written and **applied to
-production**; the service, API, UI and Playwright spec are not built yet.
+**Status: Complete** — 2026-10-16. Both migrations applied to production; service,
+API, UI and Playwright spec all built and passing.
+
+Not built, and deliberately: comparing two *scenarios* side by side. Comparing
+two *versions* of one scenario is in, as the diff line in the history list.
 
 ---
 
