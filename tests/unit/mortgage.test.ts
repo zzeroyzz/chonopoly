@@ -7,7 +7,12 @@ import {
   paymentDate,
   toAnnualRows,
 } from "@/lib/mortgage/amortization";
-import { vaFundingFeeRate, FHA_UFMIP_RATE } from "@/lib/mortgage/loanTypes";
+import {
+  vaFundingFeeRate,
+  FHA_UFMIP_RATE,
+  DPA_AWARD,
+  BORROWER_MINIMUM_INVESTMENT,
+} from "@/lib/mortgage/loanTypes";
 import { defaultInputs } from "@/lib/mortgage/defaults";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 
@@ -386,11 +391,66 @@ describe("totals", () => {
 });
 
 describe("down payment assistance", () => {
-  it("reduces cash to close without touching the loan or PMI", () => {
-    const base = calculateMortgage(inputs());
-    const withDpa = calculateMortgage(inputs({ dpaAmount: 10_000 }));
+  /** An FHA purchase at the 3.5% minimum, with the award switched on. */
+  function fhaWithAward(homeValue: number, overrides: Partial<MortgageInputs> = {}) {
+    return inputs({
+      homeValue,
+      downPayment: homeValue * 0.035,
+      loanType: "fha",
+      dpaEnabled: true,
+      ...overrides,
+    });
+  }
 
-    expect(withDpa.cashToClose).toBeCloseTo(base.cashToClose - 10_000, 4);
+  it("covers the 3.5% minimum on a $250k FHA purchase and sends the rest to closing", () => {
+    const result = calculateMortgage(fhaWithAward(250_000));
+
+    // 3.5% of $250,000 is $8,750, leaving $1,250 of the $10,000 award.
+    expect(result.dpaToDownPayment).toBeCloseTo(8_750, 4);
+    expect(result.dpaToClosing).toBeCloseTo(1_250, 4);
+    expect(result.dpaApplied).toBeCloseTo(DPA_AWARD, 4);
+  });
+
+  it("sends more to closing on a cheaper house, because the minimum is smaller", () => {
+    const result = calculateMortgage(fhaWithAward(175_000));
+
+    // 3.5% of $175,000 is $6,125, so $3,875 is left for closing.
+    expect(result.dpaToDownPayment).toBeCloseTo(6_125, 4);
+    expect(result.dpaToClosing).toBeCloseTo(3_875, 4);
+    expect(result.dpaApplied).toBeCloseTo(DPA_AWARD, 4);
+  });
+
+  it("always allocates the whole award between the two buckets", () => {
+    for (const price of [120_000, 175_000, 250_000, 400_000]) {
+      const r = calculateMortgage(fhaWithAward(price));
+      expect(r.dpaToDownPayment + r.dpaToClosing).toBeCloseTo(DPA_AWARD, 4);
+    }
+  });
+
+  it("covers only 3% on a conventional loan", () => {
+    const result = calculateMortgage(
+      inputs({
+        homeValue: 175_000,
+        downPayment: 175_000 * 0.03,
+        loanType: "conventional",
+        dpaEnabled: true,
+      })
+    );
+    expect(result.dpaToDownPayment).toBeCloseTo(5_250, 4);
+    expect(result.dpaToClosing).toBeCloseTo(4_750, 4);
+  });
+
+  it("covers the minimum and no more when the buyer puts down extra", () => {
+    // 10% down on an FHA loan is a choice; the program funds 3.5% of it.
+    const result = calculateMortgage(fhaWithAward(250_000, { downPayment: 25_000 }));
+    expect(result.dpaToDownPayment).toBeCloseTo(8_750, 4);
+  });
+
+  it("reduces cash to close without touching the loan or PMI", () => {
+    const base = calculateMortgage(fhaWithAward(250_000, { dpaEnabled: false }));
+    const withDpa = calculateMortgage(fhaWithAward(250_000));
+
+    expect(withDpa.cashToClose).toBeCloseTo(base.cashToClose - DPA_AWARD, 4);
     expect(withDpa.cashToCloseBeforeDpa).toBeCloseTo(base.cashToClose, 4);
 
     // The first mortgage is untouched, so its LTV is untouched, so PMI is too.
@@ -400,20 +460,50 @@ describe("down payment assistance", () => {
     expect(withDpa.monthlyMortgageInsurance).toBeCloseTo(base.monthlyMortgageInsurance, 4);
   });
 
-  it("caps assistance at the cash actually required and reports the remainder", () => {
-    const base = calculateMortgage(inputs());
-    const huge = base.cashToClose + 25_000;
-    const result = calculateMortgage(inputs({ dpaAmount: huge }));
+  it("floors the buyer's own cash at the program minimum", () => {
+    // Small purchase, low closing costs: the award would otherwise cover the lot.
+    const result = calculateMortgage(
+      fhaWithAward(100_000, { closingCostPercent: 1, points: 0, fhaUfmipFinanced: true })
+    );
 
-    expect(result.cashToClose).toBe(0);
-    expect(result.dpaApplied).toBeCloseTo(base.cashToClose, 4);
-    expect(result.dpaUnused).toBeCloseTo(25_000, 4);
+    expect(result.borrowerMinimumApplied).toBe(true);
+    expect(result.cashToClose).toBeCloseTo(BORROWER_MINIMUM_INVESTMENT, 4);
+  });
+
+  it("leaves the floor alone when the buyer is already past it", () => {
+    const result = calculateMortgage(fhaWithAward(250_000));
+    expect(result.borrowerMinimumApplied).toBe(false);
+    expect(result.cashToClose).toBeGreaterThan(BORROWER_MINIMUM_INVESTMENT);
+  });
+
+  it("does not apply to loan types with no minimum down payment", () => {
+    // VA requires nothing down, so there is no minimum for the award to cover
+    // and the programs don't apply.
+    const result = calculateMortgage(
+      inputs({ homeValue: 250_000, loanType: "va", dpaEnabled: true })
+    );
+    expect(result.dpaApplied).toBe(0);
+    expect(result.dpaToDownPayment).toBe(0);
+    expect(result.dpaToClosing).toBe(0);
+  });
+
+  it("uses price plus renovation as the basis on a renovation loan", () => {
+    // 3.5% of $175,000 + $55,000 of financed work ($50k + 10% contingency).
+    const result = calculateMortgage(
+      fhaWithAward(175_000, {
+        renovationProgram: "fha203k",
+        renovationBudget: 50_000,
+        renovationContingencyPct: 10,
+        downPayment: 230_000 * 0.035,
+      })
+    );
+    expect(result.dpaToDownPayment).toBeCloseTo(230_000 * 0.035, 4);
   });
 
   it("adds no monthly payment for a grant or a deferred second", () => {
-    const base = calculateMortgage(inputs());
+    const base = calculateMortgage(fhaWithAward(250_000, { dpaEnabled: false }));
     for (const dpaStructure of ["grant", "deferred"] as const) {
-      const result = calculateMortgage(inputs({ dpaAmount: 15_000, dpaStructure }));
+      const result = calculateMortgage(fhaWithAward(250_000, { dpaStructure }));
       expect(result.dpaMonthlyPayment).toBe(0);
       expect(result.totalMonthlyWithMortgageInsurance).toBeCloseTo(
         base.totalMonthlyWithMortgageInsurance,
@@ -423,34 +513,34 @@ describe("down payment assistance", () => {
   });
 
   it("adds a monthly payment for an amortizing second, including at 0%", () => {
-    const base = calculateMortgage(inputs());
+    const base = calculateMortgage(fhaWithAward(250_000, { dpaEnabled: false }));
     const result = calculateMortgage(
-      inputs({ dpaAmount: 12_000, dpaStructure: "amortizing", dpaRate: 0, dpaTermYears: 10 })
+      fhaWithAward(250_000, { dpaStructure: "amortizing", dpaRate: 0, dpaTermYears: 10 })
     );
 
-    // 0% over 10 years is straight division — $100/mo. A 0% second is common
-    // enough that it's the normal case, not an edge case.
-    expect(result.dpaMonthlyPayment).toBeCloseTo(100, 4);
+    // $10,000 at 0% over 10 years is straight division — $83.33/mo. A 0% second
+    // is common enough that it's the normal case, not an edge case.
+    expect(result.dpaMonthlyPayment).toBeCloseTo(10_000 / 120, 4);
     expect(result.totalMonthlyWithMortgageInsurance).toBeCloseTo(
-      base.totalMonthlyWithMortgageInsurance + 100,
+      base.totalMonthlyWithMortgageInsurance + 10_000 / 120,
       4
     );
   });
 
   it("charges more per month when the second carries interest", () => {
     const zero = calculateMortgage(
-      inputs({ dpaAmount: 12_000, dpaStructure: "amortizing", dpaRate: 0, dpaTermYears: 10 })
+      fhaWithAward(250_000, { dpaStructure: "amortizing", dpaRate: 0, dpaTermYears: 10 })
     );
     const charged = calculateMortgage(
-      inputs({ dpaAmount: 12_000, dpaStructure: "amortizing", dpaRate: 5, dpaTermYears: 10 })
+      fhaWithAward(250_000, { dpaStructure: "amortizing", dpaRate: 5, dpaTermYears: 10 })
     );
     expect(charged.dpaMonthlyPayment).toBeGreaterThan(zero.dpaMonthlyPayment);
   });
 
   it("reports combined LTV uncapped, including above 100%", () => {
-    // A small down payment plus a large award can genuinely exceed the value.
+    // A small down payment plus the award can genuinely exceed the value.
     const result = calculateMortgage(
-      inputs({ homeValue: 200_000, downPayment: 7_000, dpaAmount: 20_000 })
+      inputs({ homeValue: 95_000, downPayment: 3_325, loanType: "fha", dpaEnabled: true })
     );
     expect(result.combinedLtv).toBeGreaterThan(100);
   });
@@ -458,8 +548,10 @@ describe("down payment assistance", () => {
   it("treats no assistance as a no-op", () => {
     const base = calculateMortgage(inputs());
     expect(base.dpaApplied).toBe(0);
-    expect(base.dpaUnused).toBe(0);
+    expect(base.dpaToDownPayment).toBe(0);
+    expect(base.dpaToClosing).toBe(0);
     expect(base.dpaMonthlyPayment).toBe(0);
+    expect(base.borrowerMinimumApplied).toBe(false);
     expect(base.cashToClose).toBeCloseTo(base.cashToCloseBeforeDpa, 4);
   });
 });

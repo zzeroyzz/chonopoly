@@ -1,10 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { type MortgageInputs, type LoanType } from "@/lib/mortgage/types";
-import { LOAN_TYPE_CONFIG, LOAN_TYPES, CONSERVATIVE_INSURANCE_RATE } from "@/lib/mortgage/loanTypes";
+import { type MortgageInputs } from "@/lib/mortgage/types";
+import {
+  LOAN_TYPE_CONFIG,
+  LOAN_PRODUCTS,
+  CONSERVATIVE_INSURANCE_RATE,
+  DPA_AWARD,
+  BORROWER_MINIMUM_INVESTMENT,
+  allowsDownPaymentAssistance,
+  productValueFor,
+} from "@/lib/mortgage/loanTypes";
 import { TERM_PRESETS, HARD_MONEY_TERM_PRESETS } from "@/lib/mortgage/defaults";
-import { baseLoanAmount, downPaymentPercent, effectiveInsuranceYearly } from "@/lib/mortgage/calculate";
+import {
+  baseLoanAmount,
+  downPaymentPercent,
+  effectiveInsuranceYearly,
+  isRenovationLoan,
+  minimumDownPayment,
+} from "@/lib/mortgage/calculate";
 import { ltvPercent, pmiBandForLtv, suggestedPmiRate, formatPmiBand } from "@/lib/mortgage/pmi";
 import {
   NumberField,
@@ -15,7 +29,7 @@ import {
   Card,
   FieldLabel,
 } from "./fields";
-import { MONTH_OPTIONS } from "./format";
+import { MONTH_OPTIONS, dollars } from "./format";
 import { PropertyTaxLookup } from "./PropertyTaxLookup";
 
 interface Props {
@@ -33,17 +47,30 @@ export function InputPanel({ inputs, onChange }: Props) {
   return (
     <div className="grid gap-4" style={{ alignContent: "start" }}>
       <Card>
-        <SectionLabel>Loan</SectionLabel>
+        <SectionLabel>Purchase</SectionLabel>
         <div className="grid gap-3.5">
           <SelectField
             label="Loan type"
-            value={inputs.loanType}
-            onChange={(v) => onChange({ loanType: v as LoanType })}
-            options={LOAN_TYPES.map((t) => ({ value: t, label: LOAN_TYPE_CONFIG[t].label }))}
+            value={productValueFor(inputs.loanType, inputs.renovationProgram)}
+            // One dropdown for what you're actually shopping for. The renovation
+            // programs set two fields at once, and switching to a type that can't
+            // use assistance clears it — otherwise the toggle disappears from the
+            // form while the award is still quietly applied to the result.
+            onChange={(v) => {
+              const product = LOAN_PRODUCTS.find((p) => p.value === v);
+              if (!product) return;
+              onChange({
+                loanType: product.loanType,
+                renovationProgram: product.renovationProgram,
+                dpaEnabled:
+                  inputs.dpaEnabled && allowsDownPaymentAssistance(product.loanType),
+              });
+            }}
+            options={LOAN_PRODUCTS.map((p) => ({ value: p.value, label: p.label }))}
           />
 
           <NumberField
-            label="Home value"
+            label="Sales price"
             value={inputs.homeValue}
             // Hold the down payment PERCENT steady as the price moves. Keeping the
             // dollar figure fixed instead makes the percentage jump on every
@@ -92,10 +119,59 @@ export function InputPanel({ inputs, onChange }: Props) {
             )}
             {downPercent < config.minDownPercent && (
               <p className="text-[11px] text-(--color-warning) mt-1">
-                {config.label} typically requires at least {config.minDownPercent}% down.
+                {config.label} typically requires at least {config.minDownPercent}% down
+                {isRenovationLoan(inputs) ? " of price plus the work" : ""}.
               </p>
             )}
           </div>
+
+          {/* Assistance sits with the down payment because it is the same
+              decision: who pays it. The award is fixed, so this is yes or no. */}
+          {allowsDownPaymentAssistance(inputs.loanType) && (
+            <div>
+              <ToggleRow
+                label={`Down payment assistance (${dollars(DPA_AWARD, 0)})`}
+                checked={inputs.dpaEnabled}
+                onChange={(dpaEnabled) => onChange({ dpaEnabled })}
+              />
+              <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed mt-1">
+                {inputs.dpaEnabled
+                  ? `Covers the ${config.minDownPercent}% minimum first — ${dollars(minimumDownPayment(inputs), 0)} — and the rest goes to closing costs. You still bring at least ${dollars(BORROWER_MINIMUM_INVESTMENT, 0)} of your own.`
+                  : "A fixed award that covers the minimum down payment, with the remainder applied to closing costs."}
+              </p>
+            </div>
+          )}
+
+          {inputs.renovationProgram !== "none" && (
+            <>
+              <NumberField
+                label="Renovation cost"
+                value={inputs.renovationBudget}
+                onChange={(renovationBudget) => onChange({ renovationBudget })}
+                prefix="$"
+                hint="hard costs"
+                min={0}
+              />
+              <NumberField
+                label="Contingency reserve"
+                value={inputs.renovationContingencyPct}
+                onChange={(renovationContingencyPct) => onChange({ renovationContingencyPct })}
+                suffix="%"
+                hint="of budget"
+                note={`$${Math.round((inputs.renovationBudget * inputs.renovationContingencyPct) / 100).toLocaleString()} held back. Lenders require one; the amount varies by program and condition.`}
+                min={0}
+              />
+              <NumberField
+                label="After-repair value"
+                value={inputs.afterRepairValue ?? 0}
+                onChange={(n) => onChange({ afterRepairValue: n > 0 ? n : null })}
+                prefix="$"
+                hint="as completed"
+                note="Your number, from comps or an as-completed appraisal. Left blank, the price is used instead — which overstates mortgage insurance rather than understating it."
+                min={0}
+              />
+            </>
+          )}
 
           <NumberField
             label="Loan amount"
@@ -390,137 +466,6 @@ export function InputPanel({ inputs, onChange }: Props) {
             note={`$${Math.round((inputs.homeValue * inputs.closingCostPercent) / 100).toLocaleString()} — paid once, not part of the monthly payment`}
             min={0}
           />
-        </div>
-      </Card>
-
-      {(inputs.loanType === "fha" || inputs.loanType === "conventional") && (
-        <Card>
-          <SectionLabel>Renovation financing</SectionLabel>
-          <div className="grid gap-3.5">
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
-                  Program
-                </span>
-                <SegmentedControl
-                  ariaLabel="Renovation program"
-                  value={inputs.renovationProgram}
-                  onChange={(renovationProgram) => onChange({ renovationProgram })}
-                  options={
-                    inputs.loanType === "fha"
-                      ? [
-                          { value: "none", label: "None" },
-                          { value: "fha203k", label: "203(k)" },
-                        ]
-                      : [
-                          { value: "none", label: "None" },
-                          { value: "homestyle", label: "HomeStyle" },
-                        ]
-                  }
-                />
-              </div>
-              <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
-                {inputs.renovationProgram === "none"
-                  ? "Finance the work into the mortgage instead of paying for it separately."
-                  : "The loan is sized on price plus the work, and measured against the finished value."}
-              </p>
-            </div>
-
-            {inputs.renovationProgram !== "none" && (
-              <>
-                <NumberField
-                  label="Renovation budget"
-                  value={inputs.renovationBudget}
-                  onChange={(renovationBudget) => onChange({ renovationBudget })}
-                  prefix="$"
-                  hint="hard costs"
-                  min={0}
-                />
-                <NumberField
-                  label="Contingency reserve"
-                  value={inputs.renovationContingencyPct}
-                  onChange={(renovationContingencyPct) => onChange({ renovationContingencyPct })}
-                  suffix="%"
-                  hint="of budget"
-                  note={`$${Math.round((inputs.renovationBudget * inputs.renovationContingencyPct) / 100).toLocaleString()} held back. Lenders require one; the amount varies by program and condition.`}
-                  min={0}
-                />
-                <NumberField
-                  label="After-repair value"
-                  value={inputs.afterRepairValue ?? 0}
-                  onChange={(n) => onChange({ afterRepairValue: n > 0 ? n : null })}
-                  prefix="$"
-                  hint="as completed"
-                  note="Your number, from comps or an as-completed appraisal. Left blank, the price is used instead — which overstates mortgage insurance rather than understating it."
-                  min={0}
-                />
-              </>
-            )}
-          </div>
-        </Card>
-      )}
-
-      <Card>
-        <SectionLabel>Down payment assistance</SectionLabel>
-        <div className="grid gap-3.5">
-          <NumberField
-            label="Assistance amount"
-            value={inputs.dpaAmount}
-            onChange={(dpaAmount) => onChange({ dpaAmount })}
-            prefix="$"
-            hint="award"
-            note="Reduces cash at closing. The first mortgage is unchanged, so PMI is unchanged too."
-            min={0}
-          />
-
-          {inputs.dpaAmount > 0 && (
-            <>
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
-                    Repayment
-                  </span>
-                  <SegmentedControl
-                    ariaLabel="Assistance structure"
-                    value={inputs.dpaStructure}
-                    onChange={(dpaStructure) => onChange({ dpaStructure })}
-                    options={[
-                      { value: "grant", label: "Forgiven" },
-                      { value: "deferred", label: "Deferred" },
-                      { value: "amortizing", label: "Monthly" },
-                    ]}
-                  />
-                </div>
-                <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
-                  {inputs.dpaStructure === "grant"
-                    ? "Forgiven outright, or after a residency period. No payment, no effect on what you qualify for."
-                    : inputs.dpaStructure === "deferred"
-                      ? "No monthly payment — the balance comes due when you sell, refinance or pay off."
-                      : "A second mortgage with a payment from day one. It counts against your ratios like any other debt."}
-                </p>
-              </div>
-
-              {inputs.dpaStructure === "amortizing" && (
-                <div className="grid grid-cols-2 gap-3">
-                  <NumberField
-                    label="Rate"
-                    value={inputs.dpaRate}
-                    onChange={(dpaRate) => onChange({ dpaRate })}
-                    suffix="%"
-                    hint="0% is common"
-                    min={0}
-                  />
-                  <NumberField
-                    label="Term"
-                    value={inputs.dpaTermYears}
-                    onChange={(dpaTermYears) => onChange({ dpaTermYears })}
-                    suffix="yr"
-                    min={1}
-                  />
-                </div>
-              )}
-            </>
-          )}
         </div>
       </Card>
 

@@ -2,7 +2,7 @@
 
 import { StatCard } from "@/components/ui/StatCard";
 import { type MortgageInputs, type MortgageResult } from "@/lib/mortgage/types";
-import { LOAN_TYPE_CONFIG } from "@/lib/mortgage/loanTypes";
+import { LOAN_TYPE_CONFIG, BORROWER_MINIMUM_INVESTMENT } from "@/lib/mortgage/loanTypes";
 import { Card, SectionLabel } from "./fields";
 import { dollars, percent, monthYear } from "./format";
 
@@ -171,17 +171,27 @@ export function ResultsPanel({ inputs, result }: { inputs: MortgageInputs; resul
           {result.feesDueAtClosing > 0 && (
             <Line label="Fees due at closing" value={dollars(result.feesDueAtClosing, 0)} />
           )}
+          {/* Show where the award went, not just that it was applied. The split
+              is the question people actually ask: how much covered the down
+              payment, and how much came off closing. */}
           {result.dpaApplied > 0 && (
-            <Line label="Assistance applied" value={`−${dollars(result.dpaApplied, 0)}`} />
+            <>
+              <Line
+                label="Assistance → down payment"
+                value={`−${dollars(result.dpaToDownPayment, 0)}`}
+              />
+              <Line
+                label="Assistance → closing costs"
+                value={`−${dollars(result.dpaToClosing, 0)}`}
+              />
+            </>
           )}
         </div>
 
-        {/* Say when the award is bigger than the bill. It isn't a rebate, and a
-            silently smaller number would leave the user expecting cash back. */}
-        {result.dpaUnused > 0 && (
-          <p className="text-[11px] text-(--color-warning) mt-2 leading-relaxed">
-            {dollars(result.dpaUnused, 0)} of the award is more than closing requires. Most programs
-            won&apos;t pay out the difference.
+        {result.borrowerMinimumApplied && (
+          <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">
+            The award would have covered everything, so cash to close is held at the{" "}
+            {dollars(BORROWER_MINIMUM_INVESTMENT, 0)} the program requires you to put in yourself.
           </p>
         )}
 
