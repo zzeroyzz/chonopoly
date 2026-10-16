@@ -17,6 +17,20 @@ function Line({ label, value, muted }: { label: string; value: string; muted?: b
   );
 }
 
+/**
+ * An indented child of the row above it — the breakdown of a figure, not a
+ * figure of its own. Indented and muted so it reads as subordinate rather than
+ * as another thing to subtract.
+ */
+function SubLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between py-1 pl-4 border-b border-(--color-border-subtle) last:border-0">
+      <span className="text-[11px] text-(--color-text-tertiary)">↳ {label}</span>
+      <span className="text-[12px] font-(--font-mono) text-(--color-text-tertiary)">{value}</span>
+    </div>
+  );
+}
+
 /** A ruled total, so the arithmetic above it reads as arithmetic. */
 function Subtotal({ label, value, emphasis }: { label: string; value: string; emphasis?: boolean }) {
   return (
@@ -233,10 +247,19 @@ export function ResultsPanel({
             <>
               <Subtotal label="Before assistance" value={dollars(result.cashToCloseBeforeDpa, 0)} />
               <Line label="Assistance" value={`−${dollars(result.dpaApplied, 0)}`} />
-              <p className="text-[11px] text-(--color-text-tertiary) pl-3 pb-1.5 leading-relaxed">
-                {dollars(result.dpaToDownPayment, 0)} covers the down payment
-                {result.dpaToClosing > 0 && <>, {dollars(result.dpaToClosing, 0)} goes to closing</>}
-              </p>
+              {/* Where the award went, as rows in the same table rather than a
+                  sentence underneath it. The two sub-rows sum to the line above,
+                  so the arithmetic is checkable by reading down the column. */}
+              <SubLine
+                label="covers the down payment"
+                value={`−${dollars(result.dpaToDownPayment, 0)}`}
+              />
+              {result.dpaToClosing > 0 && (
+                <SubLine
+                  label="goes to closing costs"
+                  value={`−${dollars(result.dpaToClosing, 0)}`}
+                />
+              )}
               <Subtotal label="You bring" value={dollars(result.cashToClose, 0)} emphasis />
             </>
           )}
