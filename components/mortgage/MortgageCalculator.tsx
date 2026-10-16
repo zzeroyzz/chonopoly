@@ -10,6 +10,7 @@ import { loadInputs, saveInputs, clearInputs } from "@/lib/mortgage/storage";
 import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { calculateAffordability, calculateRequiredIncome } from "@/lib/mortgage/affordability";
+import { calculateDti } from "@/lib/mortgage/dti";
 import { InputPanel } from "./InputPanel";
 import { ResultsPanel } from "./ResultsPanel";
 import { AffordabilityPanel } from "./AffordabilityPanel";
@@ -70,6 +71,9 @@ export default function MortgageCalculator() {
 
   const result = useMemo(() => calculateMortgage(inputs), [inputs]);
   const affordability = useMemo(() => calculateAffordability(inputs), [inputs]);
+  // Your actual ratios and whether they clear. Computed once here so the
+  // panel displays the same verdict the module calculates.
+  const dti = useMemo(() => calculateDti(inputs, result), [inputs, result]);
   const required = useMemo(
     () => calculateRequiredIncome(inputs, result.totalMonthlyWithMortgageInsurance),
     [inputs, result.totalMonthlyWithMortgageInsurance]
@@ -128,7 +132,12 @@ export default function MortgageCalculator() {
                   : undefined
               }
             />
-            <AffordabilityPanel inputs={inputs} affordability={affordability} required={required} />
+            <AffordabilityPanel
+              inputs={inputs}
+              affordability={affordability}
+              required={required}
+              dti={dti}
+            />
             <RateLookup />
           </div>
         </div>
