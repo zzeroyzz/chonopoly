@@ -197,13 +197,29 @@ export function AffordabilityPanel({
             label="What your income supports"
             summary={dollars(affordability.maxPurchasePrice)}
           >
-          <p className="text-[12px] text-(--color-text-secondary) mt-2">
-            Maximum purchase price at {dollars(affordability.maxHousingPayment)}/mo housing payment.
-            {affordability.binding === "front"
-              ? " Limited by the housing ratio — a bigger down payment or a cheaper house raises it."
-              : " Limited by your total debt — paying down other monthly debt raises it."}
+          {/* The figure has to appear here too. The Disclosure hides its summary
+              when open, so putting the price only there left this section
+              expanding into a sentence about a number you could no longer see. */}
+          <p className="text-[28px] leading-none font-bold font-(--font-mono) text-(--color-text-primary) mt-1">
+            {dollars(affordability.maxPurchasePrice)}
           </p>
+          <p className="text-[12px] text-(--color-text-secondary) mt-1">
+            the most you can buy at {dollars(affordability.maxHousingPayment)}/mo
+          </p>
+
+          {/* Labelled rows, because the two figures answer different questions
+              and the old sentence ran them together. */}
+          <div className="mt-3">
+            <Line
+              label="Limited by"
+              value={affordability.binding === "front" ? "Housing ratio" : "Your total debt"}
+            />
+          </div>
+
           <p className="text-[11px] text-(--color-text-tertiary) mt-2 leading-relaxed">
+            {affordability.binding === "front"
+              ? "A bigger down payment or a cheaper house raises it."
+              : "Paying down other monthly debt raises it."}{" "}
             Rounded to the nearest $500, assuming a conservative mortgage insurance rate.
           </p>
           </Disclosure>
