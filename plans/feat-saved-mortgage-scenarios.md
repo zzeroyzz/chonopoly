@@ -151,6 +151,31 @@ a deliberate divergence from the read-only convention the CRM uses.
 
 ---
 
+## Version history and soft delete (owner decision, 2026-10-16)
+
+Team members have `FOR ALL`, so a teammate can overwrite or delete your work.
+Version history plus soft delete is what makes that survivable.
+
+- **Every content change snapshots the previous state** into
+  `mortgage_scenario_versions`, written by a **database trigger**, not the
+  service layer. Team members can write directly under `FOR ALL`, so a trigger is
+  the only thing that cannot be bypassed.
+- **Delete is soft** — a `deleted_at` column. The row and its history stay, so a
+  teammate's delete is recoverable. Hard delete would cascade the history away
+  and leave deletion exactly as unrecoverable as before.
+- **Restore writes a new version** rather than rewinding, so restoring never
+  destroys the thing it replaced either.
+- **Compare** diffs two versions to show which inputs actually changed.
+
+A trap worth recording: the unique label index must become **partial**
+(`WHERE deleted_at IS NULL`). Otherwise a soft-deleted scenario keeps its name
+reserved forever and you cannot reuse it — a bug that would only show up weeks
+later and look inexplicable.
+
+The trigger is `SECURITY DEFINER` so its insert is not blocked by RLS on the
+versions table, and users get no direct write access there: history is written by
+the database or not at all.
+
 ## Team access (settled by the owner)
 
 **Team members can edit and delete shared scenarios.** Both RLS policies are
