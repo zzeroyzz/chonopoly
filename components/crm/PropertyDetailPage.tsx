@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Plus } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
+import { dollars } from "@/components/mortgage/format";
 import { STAGE_LABEL, daysInStage } from "@/lib/crm/stages";
 import { cadenceDueDate } from "@/lib/crm/cadence";
 import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/types";
@@ -38,7 +40,20 @@ function when(iso: string): string {
  * rearranging it — two layouts for one screen is a cost this phase declined to
  * pay on the pipeline, and the same reasoning holds here.
  */
+/**
+ * The five tabs, in the order you work them.
+ *
+ * Overview answers "what is this"; Numbers answers "does it work"; Comps and
+ * Rehab are filled by later phases; Activity is the CRM record that already
+ * exists. Comps and Rehab are present and empty rather than hidden, so the
+ * shape of the page does not change under you when they arrive.
+ */
+const TABS = ["Overview", "Numbers", "Comps", "Rehab", "Activity"] as const;
+type Tab = (typeof TABS)[number];
+
 export function PropertyDetailPage({ entryId }: { entryId: string }) {
+  const [tab, setTab] = useState<Tab>("Overview");
+  const [analyses, setAnalyses] = useState<ScenarioSummary[]>([]);
   const router = useRouter();
   const profile = useShellProfile();
   const { ctx, ctxParams } = useCrmContext();
@@ -94,6 +109,30 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   }
 
   const property = detail?.property;
+
+  // This house's financing analyses. Fetched once the property is known, since
+  // the Numbers tab is scoped to it.
+  useEffect(() => {
+    if (!property?.id || !ctxParams) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/mortgage/scenarios?${ctxParams}&property_id=${property.id}`
+        );
+        if (!res.ok) throw new Error("failed");
+        const body = (await res.json()) as { scenarios: ScenarioSummary[] };
+        if (!cancelled) setAnalyses(body.scenarios);
+      } catch {
+        // An empty Numbers tab is a worse answer than the rest of the page not
+        // rendering, so this fails quietly.
+        if (!cancelled) setAnalyses([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [property?.id, ctxParams]);
   const openTasks = (detail?.tasks ?? []).filter((t) => t.status === "open");
 
   return (
@@ -101,14 +140,12 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
       appName="Park Hawkins Capital"
       userProfile={profile}
       onboardingCompleted={null}
-      onProfileClick={() => router.push("/profile")}
-      activeNavId="pipeline"
-      onNavigate={() => {}}
+      onProfileClick={() => router.push("/settings/account")}
     >
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8 max-w-3xl">
         <button
           type="button"
-          onClick={() => router.push("/crm")}
+          onClick={() => router.push("/pipeline")}
           className="inline-flex items-center gap-1.5 text-[12px] text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors mb-3"
         >
           <ArrowLeft size={13} /> Pipeline
@@ -177,6 +214,83 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               </dl>
             )}
 
+            {/* The five tabs. Present even when empty, so the page does not
+                change shape as later phases fill them in. */}
+            <div className="flex gap-1 border-b border-(--color-border-default) mt-5 mb-4 overflow-x-auto">
+              {TABS.map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setTab(t)}
+                  data-testid={`tab-${t.toLowerCase()}`}
+                  aria-current={tab === t ? "page" : undefined}
+                  className={`px-3 py-2 text-[13px] border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                    tab === t
+                      ? "text-(--color-accent) border-(--color-accent) font-medium"
+                      : "text-(--color-text-secondary) border-transparent hover:text-(--color-text-primary)"
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            {tab === "Numbers" && (
+              <div data-testid="panel-numbers">
+                {analyses.length === 0 ? (
+                  <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+                    No analyses on this house yet. Run the numbers in the{" "}
+                    <a href="/tools/mortgage" className="text-(--color-accent)">
+                      mortgage calculator
+                    </a>{" "}
+                    and save with this address.
+                  </p>
+                ) : (
+                  analyses.map((a) => (
+                    <a
+                      key={a.id}
+                      href={`/tools/mortgage?scenario=${a.id}`}
+                      data-testid={`analysis-${a.id}`}
+                      className="flex items-center gap-2 py-2.5 border-b border-(--color-border-subtle) last:border-0"
+                    >
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[13px] text-(--color-text-primary) truncate">
+                          {a.label}
+                          {/* The scenario the other tabs mean when they say
+                              "the price" and "the reno budget". */}
+                          {a.isPrimary && (
+                            <span className="ml-1.5 text-[10px] uppercase tracking-widest text-(--color-accent)">
+                              primary
+                            </span>
+                          )}
+                        </span>
+                        <span className="block text-[11px] text-(--color-text-tertiary)">
+                          {dollars(a.homeValue, 0)} · {dollars(a.monthlyPayment, 0)}/mo
+                          {a.version > 1 && <> · v{a.version}</>}
+                        </span>
+                      </span>
+                    </a>
+                  ))
+                )}
+              </div>
+            )}
+
+            {tab === "Comps" && (
+              <p data-testid="panel-comps" className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+                Comparable sales arrive with the screening step, which pulls them
+                from RentCast and lets you check off the renovated ones.
+              </p>
+            )}
+
+            {tab === "Rehab" && (
+              <p data-testid="panel-rehab" className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+                The rehab estimate arrives with the estimating step — a checklist
+                by system, worked from the listing photos or a walkthrough.
+              </p>
+            )}
+
+            {tab === "Overview" && (
+              <div data-testid="panel-overview">
             {/* Contacts */}
             <h2 className="text-[13px] font-semibold text-(--color-text-primary) mt-6 mb-2">Contacts</h2>
             {detail.contacts.length === 0 ? (
@@ -189,6 +303,11 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               </div>
             )}
 
+              </div>
+            )}
+
+            {tab === "Activity" && (
+              <div data-testid="panel-activity">
             {/* Tasks */}
             <div className="flex items-center justify-between mt-6 mb-2">
               <h2 className="text-[13px] font-semibold text-(--color-text-primary)">Tasks</h2>
@@ -292,6 +411,8 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   </li>
                 ))}
               </ul>
+            )}
+              </div>
             )}
           </>
         )}

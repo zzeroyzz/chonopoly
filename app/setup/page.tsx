@@ -126,7 +126,7 @@ function SetupContent() {
     }
 
     setStatus("done");
-    setTimeout(() => router.replace("/app"), 1500);
+    setTimeout(() => router.replace("/pipeline"), 1500);
   }
 
   return (

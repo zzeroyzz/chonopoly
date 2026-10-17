@@ -262,16 +262,20 @@ test("defaults saves and reports it", async ({ page }) => {
   await expect(page.getByText("Saved.")).toBeVisible();
 });
 
-test("the two settings screens link to each other", async ({ page }) => {
+test("the settings tabs move between the screens", async ({ page }) => {
   await stubProfileApi(page, SALARY);
   await stubDataEndpoints(page);
 
   await page.goto("/settings/profile");
-  await page.getByRole("link", { name: /Loan & cost defaults/ }).click();
+  await page.getByTestId("settings-tab-defaults").click();
   await expect(page.getByLabel("Interest rate")).toBeVisible();
 
-  await page.getByRole("link", { name: /Income & debts/ }).click();
+  await page.getByTestId("settings-tab-profile").click();
   await expect(page.getByTestId("settings-income-name-0")).toBeVisible();
+
+  // Team and integrations have no screens, so they have no tabs.
+  await expect(page.getByTestId("settings-tab-team")).toHaveCount(0);
+  await expect(page.getByTestId("settings-tab-integrations")).toHaveCount(0);
 });
 
 test("the defaults screen fits 390px without horizontal overflow", async ({ page }) => {

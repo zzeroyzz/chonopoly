@@ -101,7 +101,7 @@ async function stubPipeline(page: Page) {
 
 test("pipeline renders one list at 390px with no column to pick first", async ({ page }) => {
   await stubPipeline(page);
-  await page.goto("/crm");
+  await page.goto("/pipeline");
 
   const rows = page.getByTestId("pipeline-row");
   await expect(rows).toHaveCount(3);
@@ -115,7 +115,7 @@ test("pipeline renders one list at 390px with no column to pick first", async ({
 
 test("the order the API returns is the order rendered — overdue first", async ({ page }) => {
   await stubPipeline(page);
-  await page.goto("/crm");
+  await page.goto("/pipeline");
 
   const rows = page.getByTestId("pipeline-row");
   await expect(rows.nth(0)).toContainText("114 Peachtree St");
@@ -125,7 +125,7 @@ test("the order the API returns is the order rendered — overdue first", async 
 
 test("an overdue task and a lead with no follow-up both say so", async ({ page }) => {
   await stubPipeline(page);
-  await page.goto("/crm");
+  await page.goto("/pipeline");
 
   await expect(page.getByText("Overdue —")).toBeVisible();
   // A lead nobody is chasing is a defect, not a quiet success.
@@ -145,7 +145,7 @@ test("stage changes from a menu on the row, and every stage is one tap away", as
     });
   });
 
-  await page.goto("/crm");
+  await page.goto("/pipeline");
   await page.getByTestId("stage-badge").first().click();
   await expect(page.getByTestId("stage-menu")).toBeVisible();
 
@@ -160,7 +160,7 @@ test("stage changes from a menu on the row, and every stage is one tap away", as
 
 test("closed and dead are hidden until asked for", async ({ page }) => {
   await stubPipeline(page);
-  await page.goto("/crm");
+  await page.goto("/pipeline");
 
   const toggle = page.getByTestId("toggle-terminal");
   await expect(toggle).toHaveText("Show closed & dead");
@@ -264,7 +264,7 @@ async function stubDetail(page: Page) {
 
 test("a suppressed number stays visible, struck through, with its reason", async ({ page }) => {
   await stubDetail(page);
-  await page.goto("/crm/e1");
+  await page.goto("/properties/e1");
 
   // Hiding it wouldn't suppress the call — it would move the lookup somewhere
   // nobody can flag it. So it's on screen, and it says why.
@@ -280,10 +280,16 @@ test("a suppressed number stays visible, struck through, with its reason", async
 
 test("detail shows the property, its contact and its activity at 390px", async ({ page }) => {
   await stubDetail(page);
-  await page.goto("/crm/e1");
+  // The route moved to /properties/[id]; the old one redirects here.
+  await page.goto("/properties/e1");
 
   await expect(page.getByRole("heading", { name: "114 Peachtree St" })).toBeVisible();
+
+  // Contacts and activity now live on separate tabs rather than one long
+  // scroll, so each is asserted where it actually is.
   await expect(page.getByText("Dana Whitfield")).toBeVisible();
+
+  await page.getByTestId("tab-activity").click();
   await expect(page.getByText("Left a voicemail.")).toBeVisible();
 
   // Nothing overflows the phone. A horizontal scrollbar here means a card is
@@ -298,7 +304,7 @@ test("detail shows the property, its contact and its activity at 390px", async (
 
 test("dashboard lists stage counts and the no-follow-up defects", async ({ page }) => {
   await stubPipeline(page);
-  await page.goto("/crm/dashboard");
+  await page.goto("/pipeline/dashboard");
 
   await expect(page.getByText("By stage")).toBeVisible();
   // e3 is active with zero open tasks — the one defect in the fixture.

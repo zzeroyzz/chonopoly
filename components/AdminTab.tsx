@@ -9,7 +9,7 @@ import {
   inviteUser,
   resendInvite,
   type UserRow,
-} from "@/app/profile/admin-actions";
+} from "@/app/settings/account/admin-actions";
 
 function Avatar({ name, email }: { name: string | null; email: string }) {
   const letters = (name || email).slice(0, 2).toUpperCase();

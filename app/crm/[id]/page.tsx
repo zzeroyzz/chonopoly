@@ -1,11 +1,14 @@
-import { Suspense } from "react";
-import { PropertyDetailPage } from "@/components/crm/PropertyDetailPage";
+import { redirect } from "next/navigation";
 
-export default async function CrmDetailPage({ params }: { params: Promise<{ id: string }> }) {
+/**
+ * A property deep link. The id is carried across rather than dropped — someone
+ * following a link to a specific house should land on that house, not on a list.
+ */
+export default async function CrmPropertyRedirect({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const { id } = await params;
-  return (
-    <Suspense>
-      <PropertyDetailPage entryId={id} />
-    </Suspense>
-  );
+  redirect(`/properties/${id}`);
 }

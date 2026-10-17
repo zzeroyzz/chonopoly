@@ -157,9 +157,7 @@ export function PipelinePage() {
       appName="Park Hawkins Capital"
       userProfile={profile}
       onboardingCompleted={null}
-      onProfileClick={() => router.push("/profile")}
-      activeNavId="pipeline"
-      onNavigate={() => {}}
+      onProfileClick={() => router.push("/settings/account")}
     >
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8">
         <div className="flex items-baseline justify-between gap-3 mb-4">
@@ -228,7 +226,7 @@ export function PipelinePage() {
                 <div className="flex items-start gap-3">
                   <button
                     type="button"
-                    onClick={() => router.push(`/crm/${row.entry.id}`)}
+                    onClick={() => router.push(`/properties/${row.entry.id}`)}
                     className="flex-1 min-w-0 text-left"
                   >
                     <p className="text-[14px] font-medium text-(--color-text-primary) truncate">

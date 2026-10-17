@@ -1,10 +1,6 @@
-import { Suspense } from "react";
-import { HubPage } from "@/components/hub/HubPage";
+import { redirect } from "next/navigation";
 
-export default function Hub() {
-  return (
-    <Suspense>
-      <HubPage />
-    </Suspense>
-  );
+/** The hub is gone. The pipeline is home. */
+export default function HubRedirect() {
+  redirect("/pipeline");
 }

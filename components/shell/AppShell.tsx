@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, type ReactNode } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { ShellSidebar } from "./ShellSidebar";
 import { MobileTopBar } from "./MobileTopBar";
 import { BottomTabBar } from "./BottomTabBar";
-import { buildSections, sectionForPath, visibleSections } from "./sections";
-import { rememberSectionPath } from "./sectionMemory";
+import { NAV_DESTINATIONS, destinationForPath } from "./sections";
 import { type ShellUserProfile } from "./types";
 
 interface Props {
@@ -35,9 +34,6 @@ interface Props {
    * be real links.
    */
 
-  /** Active destination id within the current section, when the page tracks one. */
-  activeNavId: string | null;
-  onNavigate: (id: string) => void;
 
   /** Feature-specific sidebar body — e.g. the finances bank-account tree. */
   sidebarContent?: ReactNode;
@@ -67,39 +63,31 @@ export function AppShell({
   onboardingCompleted,
   onProfileClick,
   contextSwitcher,
-  activeNavId,
-  onNavigate,
   sidebarContent,
   sidebarFooter,
   children,
   overlays,
 }: Props) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
-  const sections = buildSections();
-  const section = sectionForPath(pathname, sections);
+  // Derived from the route and nothing else. A state variable can disagree with
+  // the URL, and then the bar lies about where you are.
+  const active = destinationForPath(pathname);
 
-  // Remember where we were so coming back from the hub returns to this exact
-  // spot rather than the module's front door.
-  useEffect(() => {
-    const query = searchParams.toString();
-    rememberSectionPath(section.id, query ? `${pathname}?${query}` : (pathname ?? ""));
-  }, [section.id, pathname, searchParams]);
+  // Section memory went with the sections. The bar holds every destination now,
+  // so there is no "go back to where I was in that module" to remember.
 
   return (
     <div className="flex min-h-screen overflow-x-hidden bg-(--color-base) text-(--color-text-primary)">
 
       <ShellSidebar
-        sectionLabel={sectionLabel ?? section.label}
+        sectionLabel={sectionLabel ?? active?.label ?? appName}
         userProfile={userProfile}
         onboardingCompleted={onboardingCompleted}
         onProfileClick={onProfileClick}
         contextSwitcher={contextSwitcher}
-        sections={visibleSections(sections)}
-        activeSectionId={section.id}
-        activeNavId={activeNavId}
-        onNavigate={onNavigate}
+        destinations={NAV_DESTINATIONS}
+        activeDestinationId={active?.id ?? null}
         sidebarContent={sidebarContent}
         sidebarFooter={sidebarFooter}
       />
@@ -117,10 +105,8 @@ export function AppShell({
       </main>
 
       <BottomTabBar
-        navItems={section.items}
-        activeNavId={activeNavId}
-        onNavigate={onNavigate}
-        showHub
+        destinations={NAV_DESTINATIONS}
+        activeDestinationId={active?.id ?? null}
       />
 
       {overlays}

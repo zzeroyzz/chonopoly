@@ -126,10 +126,8 @@ export default function MortgageCalculator() {
       appName="Park Hawkins Capital"
       userProfile={userProfile}
       onboardingCompleted={null}
-      onProfileClick={() => router.push("/profile")}
+      onProfileClick={() => router.push("/settings/account")}
       // No contextSwitcher: the calculator has no scoped data, so nothing to scope.
-      activeNavId="mortgage"
-      onNavigate={() => {}}
     >
       <div className="overflow-y-auto flex-1 w-full px-5 py-4 pb-24 lg:pb-8">
         <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">

@@ -43,6 +43,11 @@ export interface ScenarioSummary {
   id: string;
   /** Null for saves made before a house was part of the model. */
   property?: ScenarioProperty | null;
+  /**
+   * The scenario the other tabs mean when they say "the price" and "the reno
+   * budget". One per house, enforced by a partial unique index.
+   */
+  isPrimary?: boolean;
   /** Profile and defaults as they were when this ran. Null for older saves. */
   profileSnapshot?: ProfileSnapshot | null;
   label: string;
@@ -77,6 +82,7 @@ interface Row {
   version: number;
   updated_at: string;
   property_id?: string | null;
+  is_primary?: boolean;
   properties?: PropertyJoin | PropertyJoin[] | null;
   profile_snapshot?: unknown;
   inputs?: unknown;
@@ -147,12 +153,13 @@ function toSummary(row: Row): ScenarioSummary {
     updatedAt: row.updated_at,
     profileSnapshot: (row.profile_snapshot as ProfileSnapshot | null) ?? null,
     property: toProperty(row.properties),
+    isPrimary: row.is_primary ?? false,
   };
 }
 
 const SUMMARY_COLUMNS =
   "id, label, home_value, loan_type, monthly_payment, version, updated_at, " +
-  "profile_snapshot, property_id, " +
+  "profile_snapshot, property_id, is_primary, " +
   // The house, in the same round trip. The list groups by it, so fetching it
   // separately would be a query per row.
   "properties(id, address_line1, city, state, zip, needs_address_review)";
@@ -164,15 +171,23 @@ const SUMMARY_COLUMNS =
  * the actual boundary — not a convenience. Soft-deleted rows are excluded
  * everywhere except `listDeleted`.
  */
-export async function listScenarios(ctx: RequestContext): Promise<ScenarioSummary[]> {
-  const { data, error } = await db()
+export async function listScenarios(
+  ctx: RequestContext,
+  opts: { propertyId?: string } = {}
+): Promise<ScenarioSummary[]> {
+  let query = db()
     .from(TABLE)
     .select(SUMMARY_COLUMNS)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
     .eq("kind", KIND)
-    .is("archived_at", null)
-    .order("updated_at", { ascending: false });
+    .is("archived_at", null);
+
+  // The property page asks for one house's analyses; the calculator asks for
+  // all of them. Same query, one filter.
+  if (opts.propertyId) query = query.eq("property_id", opts.propertyId);
+
+  const { data, error } = await query.order("updated_at", { ascending: false });
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((r) => toSummary(r as unknown as Row));

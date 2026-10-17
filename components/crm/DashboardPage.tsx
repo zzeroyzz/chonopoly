@@ -66,9 +66,7 @@ export function DashboardPage() {
       appName="Park Hawkins Capital"
       userProfile={profile}
       onboardingCompleted={null}
-      onProfileClick={() => router.push("/profile")}
-      activeNavId="dashboard"
-      onNavigate={() => {}}
+      onProfileClick={() => router.push("/settings/account")}
     >
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8 max-w-2xl">
         <h1 className="text-[18px] font-semibold text-(--color-text-primary) mb-4">Dashboard</h1>
@@ -123,7 +121,7 @@ export function DashboardPage() {
                 <button
                   type="button"
                   data-testid="defect-row"
-                  onClick={() => router.push(`/crm/${r.entry.id}`)}
+                  onClick={() => router.push(`/properties/${r.entry.id}`)}
                   className="w-full text-left bg-(--color-surface) border border-(--color-border-default) rounded-[var(--radius-md)] px-3 py-2.5 hover:border-(--color-border-strong) transition-colors"
                 >
                   <p className="text-[13px] text-(--color-text-primary) truncate">
