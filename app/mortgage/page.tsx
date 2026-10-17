@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import MortgageCalculator from "@/components/mortgage/MortgageCalculator";
+import { redirect } from "next/navigation";
 
-export default function MortgagePage() {
-  return (
-    <Suspense>
-      <MortgageCalculator />
-    </Suspense>
-  );
+export default function MortgageRedirect() {
+  redirect("/tools/mortgage");
 }

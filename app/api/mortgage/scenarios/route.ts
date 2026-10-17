@@ -14,7 +14,10 @@ export async function GET(request: Request) {
   if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
-    return NextResponse.json({ scenarios: await listScenarios(ctx) });
+    // property_id scopes the list to one house, which is what the property
+    // page's Numbers tab asks for.
+    const propertyId = params.get("property_id") ?? undefined;
+    return NextResponse.json({ scenarios: await listScenarios(ctx, { propertyId }) });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to list scenarios";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -20,8 +20,8 @@ export default async function globalSetup() {
   await page.fill('input[name="email"]', process.env.TEST_EMAIL);
   await page.fill('input[name="password"]', process.env.TEST_PASSWORD);
   await page.click('button[type="submit"]');
-  // Login lands on the hub now; /finances left with the finance product.
-  await page.waitForURL("http://localhost:3000/app");
+  // Login lands on the pipeline — the hub is gone and the pipeline is home.
+  await page.waitForURL("http://localhost:3000/pipeline");
   await context.storageState({ path: AUTH_FILE });
   await browser.close();
 }

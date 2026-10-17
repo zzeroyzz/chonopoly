@@ -1,10 +1,6 @@
-import { Suspense } from "react";
-import { PipelinePage } from "@/components/crm/PipelinePage";
+import { redirect } from "next/navigation";
 
-export default function CrmPage() {
-  return (
-    <Suspense>
-      <PipelinePage />
-    </Suspense>
-  );
+/** The pipeline moved. Kept so existing links and bookmarks still land. */
+export default function CrmRedirect() {
+  redirect("/pipeline");
 }

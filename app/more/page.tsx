@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-/** The section switcher became the hub. Kept so old links still land somewhere. */
-export default function More() {
-  redirect("/app");
+/** The section switcher is gone — the bottom bar holds the whole app now. */
+export default function MoreRedirect() {
+  redirect("/pipeline");
 }

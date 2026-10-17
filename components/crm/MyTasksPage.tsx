@@ -76,9 +76,7 @@ export function MyTasksPage() {
       appName="Park Hawkins Capital"
       userProfile={profile}
       onboardingCompleted={null}
-      onProfileClick={() => router.push("/profile")}
-      activeNavId="tasks"
-      onNavigate={() => {}}
+      onProfileClick={() => router.push("/settings/account")}
     >
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8 max-w-2xl">
         <h1 className="text-[18px] font-semibold text-(--color-text-primary)">My tasks</h1>
@@ -112,7 +110,7 @@ export function MyTasksPage() {
                   >
                     <button
                       type="button"
-                      onClick={() => router.push(`/crm/${t.pipeline_entry_id}`)}
+                      onClick={() => router.push(`/properties/${t.pipeline_entry_id}`)}
                       className="min-w-0 text-left flex-1"
                     >
                       <p className="text-[13px] text-(--color-text-primary) truncate">{t.title}</p>

@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import { DashboardPage } from "@/components/crm/DashboardPage";
+import { redirect } from "next/navigation";
 
-export default function CrmDashboardPage() {
-  return (
-    <Suspense>
-      <DashboardPage />
-    </Suspense>
-  );
+export default function CrmDashboardRedirect() {
+  redirect("/pipeline/dashboard");
 }

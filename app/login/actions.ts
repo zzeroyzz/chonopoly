@@ -16,7 +16,7 @@ export async function login(
 
   if (error) return error.message;
 
-  redirect("/app");
+  redirect("/pipeline");
 }
 
 export async function logout() {

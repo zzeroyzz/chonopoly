@@ -1,10 +1,5 @@
-import { Suspense } from "react";
-import { MyTasksPage } from "@/components/crm/MyTasksPage";
+import { redirect } from "next/navigation";
 
-export default function CrmTasksPage() {
-  return (
-    <Suspense>
-      <MyTasksPage />
-    </Suspense>
-  );
+export default function CrmTasksRedirect() {
+  redirect("/pipeline/tasks");
 }
