@@ -9,6 +9,9 @@ export default function SettingsProfilePage() {
         — saved scenarios tell you when these numbers have moved.
       </p>
       <ProfileForm />
+      <p className="text-[12px] mt-5">
+        <a href="/settings/defaults" className="text-(--color-accent)">Loan &amp; cost defaults →</a>
+      </p>
     </div>
   );
 }

@@ -35,12 +35,30 @@ function buildProfile(incomes: Income[], debts: Debt[]) {
   };
 }
 
+/**
+ * Every run starts from the empty state, and nothing is left behind.
+ *
+ * Not by cleaning up afterwards — by never writing in the first place. Each
+ * test seeds its own in-memory profile, so there is no shared state between
+ * runs and no row to delete. `assertNothingEscaped` below enforces that: if a
+ * profile request ever reaches the real server, the test fails rather than
+ * quietly creating a row in production.
+ */
+const escaped: string[] = [];
+
 /** A stand-in for buyer_profiles, so create-then-read behaves as it would live. */
 async function stubProfileApi(
   page: Page,
   seed: ReturnType<typeof buildProfile> | null = null
 ) {
   let profile = seed;
+
+  // Anything the stub does not claim would hit the database. Record it.
+  page.on("request", (req) => {
+    if (req.url().includes("/api/profile/") && !req.url().includes("/api/profile/buyer")) {
+      escaped.push(`${req.method()} ${req.url()}`);
+    }
+  });
 
   await page.route("**/api/profile/buyer", async (route) => {
     const method = route.request().method();
@@ -77,6 +95,15 @@ async function stubProfileApi(
     });
   });
 }
+
+/**
+ * The teardown. Asserts the suite wrote nothing, rather than deleting what it
+ * wrote — the suite is not permitted to write production data at all.
+ */
+test.afterEach(() => {
+  expect(escaped, `unstubbed profile requests reached the server: ${escaped.join(", ")}`).toEqual([]);
+  escaped.length = 0;
+});
 
 async function openCalculator(page: Page) {
   await stubDataEndpoints(page);
@@ -196,4 +223,73 @@ test("the calculator fits 390px with the profile shown", async ({ page }) => {
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
   );
   expect(overflows).toBe(false);
+});
+
+// ─── Settings → defaults ──────────────────────────────────────────────────────
+
+test("the defaults screen edits loan and flip costs", async ({ page }) => {
+  await stubProfileApi(page, SALARY);
+  await stubDataEndpoints(page);
+  await page.goto("/settings/defaults");
+
+  await expect(page.getByLabel("Interest rate")).toHaveValue("6.75");
+  await expect(page.getByLabel("Term")).toHaveValue("30");
+  await expect(page.getByRole("textbox", { name: /^Down payment/ })).toHaveValue("3.5");
+  // Flip costs live here too, saved now so they are ready for Phase 4.
+  await expect(page.getByLabel("Selling costs")).toHaveValue("8");
+  await expect(page.getByLabel("Contingency — photo estimate")).toHaveValue("20");
+});
+
+test("the assistance fields appear only when assistance is on", async ({ page }) => {
+  await stubProfileApi(page, SALARY);
+  await stubDataEndpoints(page);
+  await page.goto("/settings/defaults");
+
+  // SALARY has dpaEnabled false, so the structure picker is hidden.
+  await expect(page.getByLabel("Structure")).toHaveCount(0);
+
+  await page.getByText("I'm using an assistance program by default").click();
+  await expect(page.getByLabel("Structure")).toBeVisible();
+});
+
+test("defaults saves and reports it", async ({ page }) => {
+  await stubProfileApi(page, SALARY);
+  await stubDataEndpoints(page);
+  await page.goto("/settings/defaults");
+
+  await page.getByLabel("Interest rate").fill("7.25");
+  await page.getByTestId("save-settings-defaults").click();
+  await expect(page.getByText("Saved.")).toBeVisible();
+});
+
+test("the two settings screens link to each other", async ({ page }) => {
+  await stubProfileApi(page, SALARY);
+  await stubDataEndpoints(page);
+
+  await page.goto("/settings/profile");
+  await page.getByRole("link", { name: /Loan & cost defaults/ }).click();
+  await expect(page.getByLabel("Interest rate")).toBeVisible();
+
+  await page.getByRole("link", { name: /Income & debts/ }).click();
+  await expect(page.getByTestId("settings-income-name-0")).toBeVisible();
+});
+
+test("the defaults screen fits 390px without horizontal overflow", async ({ page }) => {
+  await stubProfileApi(page, SALARY);
+  await stubDataEndpoints(page);
+  await page.goto("/settings/defaults");
+  await expect(page.getByLabel("Interest rate")).toBeVisible();
+
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflows).toBe(false);
+});
+
+test("defaults explains itself when there is no profile yet", async ({ page }) => {
+  await stubProfileApi(page, null);
+  await stubDataEndpoints(page);
+  await page.goto("/settings/defaults");
+
+  await expect(page.getByText(/haven't set up a profile yet/)).toBeVisible();
 });
