@@ -2,6 +2,7 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { type RequestContext } from "../context";
 import { type MortgageInputs } from "./types";
 import { defaultInputs } from "./defaults";
+import { snapshotOf, type ProfileSnapshot } from "./resolveInputs";
 
 function db(): SupabaseClient {
   return createClient(
@@ -22,6 +23,8 @@ export const CURRENT_INPUTS_VERSION = 1;
 
 export interface ScenarioSummary {
   id: string;
+  /** Profile and defaults as they were when this ran. Null for older saves. */
+  profileSnapshot?: ProfileSnapshot | null;
   label: string;
   homeValue: number;
   loanType: string;
@@ -53,6 +56,7 @@ interface Row {
   monthly_payment: number;
   version: number;
   updated_at: string;
+  profile_snapshot?: unknown;
   inputs?: unknown;
   inputs_version?: number;
 }
@@ -96,10 +100,12 @@ function toSummary(row: Row): ScenarioSummary {
     monthlyPayment: Number(row.monthly_payment),
     version: row.version,
     updatedAt: row.updated_at,
+    profileSnapshot: (row.profile_snapshot as ProfileSnapshot | null) ?? null,
   };
 }
 
-const SUMMARY_COLUMNS = "id, label, home_value, loan_type, monthly_payment, version, updated_at";
+const SUMMARY_COLUMNS =
+  "id, label, home_value, loan_type, monthly_payment, version, updated_at, profile_snapshot";
 
 /**
  * Scenarios for one context, newest first.
@@ -180,6 +186,10 @@ export async function saveScenario(
     monthly_payment: input.monthlyPayment,
     inputs: input.inputs,
     inputs_version: CURRENT_INPUTS_VERSION,
+    // Profile and defaults keys only — never the whole object. startMonth
+    // resolves to "today", so a full snapshot would mark every scenario stale
+    // on the first of the month.
+    profile_snapshot: snapshotOf(input.inputs),
     created_by: userId,
   };
 
