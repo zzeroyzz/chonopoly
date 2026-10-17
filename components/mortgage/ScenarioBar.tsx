@@ -1,9 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Save, Trash2, History, RotateCcw, X, AlertCircle } from "lucide-react";
+import { Save, Trash2, History, RotateCcw, X, AlertCircle, Home, MapPin } from "lucide-react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import {
+  type ScenarioProperty,
   type ScenarioSummary,
   type ScenarioVersion,
   diffInputs,
@@ -42,9 +43,193 @@ function formatValue(v: unknown): string {
   return String(v);
 }
 
+/**
+ * What to tell the user about the house their save landed on.
+ *
+ * A parcel match is authoritative. An address match is only probable —
+ * normalisation is lossy — so it says so rather than implying certainty, and
+ * the property carries needs_address_review for a human to confirm or split.
+ */
+function matchMessage(
+  matchedOn: "parcel" | "address" | "created" | undefined,
+  property: ScenarioProperty | null | undefined
+): string | null {
+  if (!matchedOn || !property) return null;
+  const where = [property.addressLine1, property.city].filter(Boolean).join(", ");
+
+  if (matchedOn === "parcel") return `Matched ${where} by parcel number.`;
+  if (matchedOn === "address") return `Matched ${where} by address — check it before working it.`;
+  return `Added ${where} to your properties.`;
+}
+
+/** Group scenarios by the house they belong to; unassigned ones come last. */
+function groupByProperty(scenarios: ScenarioSummary[]) {
+  const houses = new Map<string, { property: ScenarioProperty; rows: ScenarioSummary[] }>();
+  const unassigned: ScenarioSummary[] = [];
+
+  for (const s of scenarios) {
+    if (!s.property) {
+      unassigned.push(s);
+      continue;
+    }
+    const existing = houses.get(s.property.id);
+    if (existing) existing.rows.push(s);
+    else houses.set(s.property.id, { property: s.property, rows: [s] });
+  }
+
+  return { houses: [...houses.values()], unassigned };
+}
+
+/** One saved scenario. Extracted from the flat list it replaced, unchanged. */
+function ScenarioRow({
+  scenario,
+  inputs,
+  onLoad,
+  onHistory,
+  onDelete,
+}: {
+  scenario: ScenarioSummary;
+  inputs: MortgageInputs;
+  onLoad: () => void;
+  onHistory: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 py-2 border-b border-(--color-border-subtle) last:border-0">
+      <button type="button" onClick={onLoad} className="flex-1 min-w-0 text-left">
+        <span className="block text-[13px] text-(--color-text-primary) truncate">
+          {scenario.label}
+        </span>
+        <span className="block text-[11px] text-(--color-text-tertiary)">
+          {dollars(scenario.homeValue, 0)} · {dollars(scenario.monthlyPayment, 0)}/mo
+          {scenario.version > 1 && <> · v{scenario.version}</>}
+        </span>
+        {/* Nothing re-runs on its own. The old verdict stays traceable to the
+            numbers behind it until you ask for a new one. */}
+        {snapshotChanges(scenario.profileSnapshot, inputs).length > 0 && (
+          <span
+            data-testid="numbers-changed"
+            className="inline-flex items-center gap-1 text-[11px] text-(--color-warning) mt-0.5"
+          >
+            <AlertCircle size={11} />
+            Your numbers changed since this ran
+          </span>
+        )}
+      </button>
+      {scenario.version > 1 && (
+        <button
+          type="button"
+          onClick={onHistory}
+          aria-label={`History for ${scenario.label}`}
+          className="text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors shrink-0 p-1"
+        >
+          <History size={14} />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={onDelete}
+        aria-label={`Delete ${scenario.label}`}
+        className="text-(--color-text-tertiary) hover:text-(--color-danger) transition-colors shrink-0 p-1"
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Attach a house to a save that never had one.
+ *
+ * The same upsertProperty path a new save uses, so an address already in the
+ * pipeline is matched rather than duplicated.
+ */
+function AttachAddressForm({
+  scenario,
+  onDone,
+  onCancel,
+}: {
+  scenario: ScenarioSummary;
+  onDone: (note: string | null) => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  // Pre-filled from the label: these were saved under the address, which is
+  // exactly the string being asked for.
+  const [line1, setLine1] = useState(scenario.label);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    if (!line1.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/mortgage/scenarios/${scenario.id}/address`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address_line1: line1.trim(), context_type: "personal" }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Could not attach that address");
+      }
+      const body = (await res.json()) as {
+        scenario: ScenarioSummary;
+        matchedOn?: "parcel" | "address" | "created";
+      };
+      await onDone(matchMessage(body.matchedOn, body.scenario.property));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not attach that address");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-(--color-border-strong)">
+      <p className="text-[11px] uppercase tracking-[0.1em] text-(--color-text-tertiary) mb-2">
+        Address for “{scenario.label}”
+      </p>
+      <input
+        type="text"
+        value={line1}
+        onChange={(e) => setLine1(e.target.value)}
+        aria-label="Address to attach"
+        data-testid="attach-address-input"
+        className="w-full h-9 rounded-[var(--radius-md)] bg-(--color-elevated) border border-(--color-border-default) px-3 text-[13px] text-(--color-text-primary) focus:outline-none focus:border-(--color-accent) transition-colors"
+      />
+      {error && <p className="text-[11px] text-(--color-danger) mt-1.5">{error}</p>}
+      <div className="flex items-center gap-2 mt-2">
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={!line1.trim() || busy}
+          data-testid="attach-address-save"
+          className="h-9 px-3 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[13px] font-semibold disabled:opacity-40"
+        >
+          {busy ? "Attaching…" : "Attach"}
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="text-[12px] text-(--color-text-secondary)"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [label, setLabel] = useState("");
+  // The house. Optional — quick math still works with no address, and those
+  // saves land under "Unassigned" with an action to attach one later.
+  const [address, setAddress] = useState("");
+  const [city, setCity] = useState("");
+  const [zip, setZip] = useState("");
+  const [matchNote, setMatchNote] = useState<string | null>(null);
+  const [attachingTo, setAttachingTo] = useState<ScenarioSummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [historyFor, setHistoryFor] = useState<ScenarioSummary | null>(null);
@@ -83,6 +268,9 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
           label: label.trim(),
           inputs,
           monthly_payment: monthlyPayment,
+          address: address.trim()
+            ? { address_line1: address.trim(), city: city.trim() || null, zip: zip.trim() || null }
+            : null,
           context_type: "personal",
         }),
       });
@@ -90,7 +278,15 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? "Could not save");
       }
+      const body = (await res.json()) as {
+        scenario: ScenarioSummary;
+        matchedOn?: "parcel" | "address" | "created";
+      };
+      setMatchNote(matchMessage(body.matchedOn, body.scenario.property));
       setLabel("");
+      setAddress("");
+      setCity("");
+      setZip("");
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save");
@@ -196,6 +392,49 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
         </button>
       </div>
 
+      {/* The house. Optional: quick math works without one, and the save lands
+          under "Unassigned" with an action to attach an address later. */}
+      <div className="grid gap-2 mt-2">
+        <input
+          type="text"
+          value={address}
+          onChange={(e) => setAddress(e.target.value)}
+          placeholder="Street address (optional)"
+          aria-label="Street address"
+          data-testid="scenario-address"
+          className={control}
+        />
+        {address.trim() !== "" && (
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={city}
+              onChange={(e) => setCity(e.target.value)}
+              placeholder="City"
+              aria-label="City"
+              data-testid="scenario-city"
+              className={`${control} flex-1 min-w-0`}
+            />
+            <input
+              type="text"
+              inputMode="numeric"
+              value={zip}
+              onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
+              placeholder="ZIP"
+              aria-label="ZIP"
+              data-testid="scenario-zip"
+              className={`${control} w-24 shrink-0 font-(--font-mono)`}
+            />
+          </div>
+        )}
+      </div>
+
+      {matchNote && (
+        <p data-testid="match-note" className="text-[11px] text-(--color-accent) mt-2 leading-relaxed">
+          {matchNote}
+        </p>
+      )}
+
       {error && <p className="text-[11px] text-(--color-danger) mt-2">{error}</p>}
 
       {scenarios.length === 0 ? (
@@ -205,57 +444,88 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
         </p>
       ) : (
         <div className="mt-3">
-          {scenarios.map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center gap-2 py-2 border-b border-(--color-border-subtle) last:border-0"
-            >
-              <button
-                type="button"
-                onClick={() => void load(s.id)}
-                className="flex-1 min-w-0 text-left"
-              >
-                <span className="block text-[13px] text-(--color-text-primary) truncate">
-                  {s.label}
-                </span>
-                <span className="block text-[11px] text-(--color-text-tertiary)">
-                  {dollars(s.homeValue, 0)} · {dollars(s.monthlyPayment, 0)}/mo
-                  {s.version > 1 && <> · v{s.version}</>}
-                </span>
-                {/* Nothing re-runs on its own. The old verdict stays traceable
-                    to the numbers behind it until you ask for a new one. */}
-                {snapshotChanges(s.profileSnapshot, inputs).length > 0 && (
-                  <span
-                    data-testid="numbers-changed"
-                    className="inline-flex items-center gap-1 text-[11px] text-(--color-warning) mt-0.5"
-                  >
-                    <AlertCircle size={11} />
-                    Your numbers changed since this ran
-                  </span>
-                )}
-              </button>
-              {s.version > 1 && (
-                <button
-                  type="button"
-                  onClick={() => void openHistory(s)}
-                  aria-label={`History for ${s.label}`}
-                  className="text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors shrink-0 p-1"
-                >
-                  <History size={14} />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => void remove(s.id)}
-                aria-label={`Delete ${s.label}`}
-                className="text-(--color-text-tertiary) hover:text-(--color-danger) transition-colors shrink-0 p-1"
-              >
-                <Trash2 size={14} />
-              </button>
+          {/* Grouped by house. A flat list of ten names across three houses
+              reads as ten unrelated rows; grouped, it reads as three houses
+              you are deciding between. */}
+          {groupByProperty(scenarios).houses.map((group) => (
+            <div key={group.property.id} className="mb-3 last:mb-0">
+              <div className="flex items-start gap-1.5 pb-1 border-b border-(--color-border-default)">
+                <Home size={12} className="text-(--color-text-tertiary) mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[12px] text-(--color-text-primary) truncate">
+                    {group.property.addressLine1}
+                    {group.property.city && <>, {group.property.city}</>}
+                  </p>
+                  {group.property.needsAddressReview && (
+                    <p
+                      data-testid="needs-review"
+                      className="text-[10px] text-(--color-warning) leading-relaxed"
+                    >
+                      Matched by address, not parcel — check it before working it.
+                    </p>
+                  )}
+                </div>
+              </div>
+              {group.rows.map((s) => (
+                <ScenarioRow
+                  key={s.id}
+                  scenario={s}
+                  inputs={inputs}
+                  onLoad={() => void load(s.id)}
+                  onHistory={() => void openHistory(s)}
+                  onDelete={() => void remove(s.id)}
+                />
+              ))}
             </div>
           ))}
+
+          {groupByProperty(scenarios).unassigned.length > 0 && (
+            <div className="mb-3 last:mb-0">
+              <div className="flex items-center gap-1.5 pb-1 border-b border-(--color-border-default)">
+                <MapPin size={12} className="text-(--color-text-tertiary) shrink-0" />
+                <p className="text-[12px] text-(--color-text-secondary)">Unassigned</p>
+              </div>
+              <p className="text-[10px] text-(--color-text-tertiary) py-1 leading-relaxed">
+                Saved before houses were part of the model. Attach an address to put
+                one on the pipeline.
+              </p>
+              {groupByProperty(scenarios).unassigned.map((s) => (
+                <div key={s.id}>
+                  <ScenarioRow
+                    scenario={s}
+                    inputs={inputs}
+                    onLoad={() => void load(s.id)}
+                    onHistory={() => void openHistory(s)}
+                    onDelete={() => void remove(s.id)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setAttachingTo(s)}
+                    data-testid={`attach-${s.id}`}
+                    className="text-[11px] text-(--color-accent) inline-flex items-center gap-1 pl-1 pb-1.5"
+                  >
+                    <MapPin size={11} />
+                    Attach an address
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
+
+      {attachingTo && (
+        <AttachAddressForm
+          scenario={attachingTo}
+          onDone={async (note) => {
+            setMatchNote(note);
+            setAttachingTo(null);
+            await refresh();
+          }}
+          onCancel={() => setAttachingTo(null)}
+        />
+      )}
+
 
       {/* History. Each entry shows what changed when it was replaced, so the
           list answers "which one do I want" without opening each in turn. */}

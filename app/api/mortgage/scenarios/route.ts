@@ -30,6 +30,13 @@ export async function POST(request: Request) {
     label?: string;
     inputs?: MortgageInputs;
     monthly_payment?: number;
+    address?: {
+      address_line1?: string;
+      city?: string | null;
+      state?: string | null;
+      zip?: string | null;
+      parcel_number?: string | null;
+    } | null;
     context_type?: string;
     context_id?: string;
   };
@@ -53,14 +60,34 @@ export async function POST(request: Request) {
   if (typeof body.monthly_payment !== "number" || !Number.isFinite(body.monthly_payment)) {
     return NextResponse.json({ error: "monthly_payment must be a number" }, { status: 400 });
   }
+  // An address object with no street line is a mistake, not "no house" — the
+  // latter is omitting the field entirely.
+  if (body.address && !body.address.address_line1?.trim()) {
+    return NextResponse.json({ error: "address_line1 is required" }, { status: 400 });
+  }
 
   try {
-    const scenario = await saveScenario(
-      { label: body.label, inputs: body.inputs, monthlyPayment: body.monthly_payment },
+    const result = await saveScenario(
+      {
+        label: body.label,
+        inputs: body.inputs,
+        monthlyPayment: body.monthly_payment,
+        // Omitted entirely means quick math with no house yet; an address with
+        // a street line routes through upsertProperty.
+        address: body.address?.address_line1
+          ? {
+              addressLine1: body.address.address_line1,
+              city: body.address.city,
+              state: body.address.state,
+              zip: body.address.zip,
+              parcelNumber: body.address.parcel_number,
+            }
+          : null,
+      },
       ctx,
       user.id
     );
-    return NextResponse.json({ scenario });
+    return NextResponse.json(result);
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to save scenario";
     return NextResponse.json({ error: message }, { status: 500 });
