@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { LogOut, User, PiggyBank } from "lucide-react";
+import { LogOut, User, PiggyBank, Wallet } from "lucide-react";
 import { logout } from "@/app/login/actions";
 import { getAvatarColors } from "@/lib/avatar";
 
@@ -64,6 +64,17 @@ export default function ProfileDropdown({ initials, name, email, avatarUrl, avat
           >
             <User size={14} />
             Profile
+          </Link>
+
+          {/* Temporary entry point. Navigation is Phase 1; without this the
+              settings screen has no link and is unreachable on a phone. */}
+          <Link
+            href="/settings/profile"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2.5 px-4 py-3 text-sm text-[#c8c5bc] hover:bg-[#222228] hover:text-white transition-colors"
+          >
+            <Wallet size={14} />
+            Income &amp; debts
           </Link>
 
           <Link

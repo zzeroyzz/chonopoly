@@ -1,0 +1,277 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Plus, X } from "lucide-react";
+import {
+  type BuyerProfile,
+  type ProfileDebt,
+  type ProfileIncome,
+  totalMonthlyDebt,
+  totalMonthlyIncome,
+} from "@/lib/profile/types";
+import { Card, SectionLabel, NumberField, ToggleRow } from "@/components/mortgage/fields";
+import { dollars } from "@/components/mortgage/format";
+
+/**
+ * Settings → profile. The one place income and debts are edited after the
+ * first-run modal creates them.
+ *
+ * Rows are named, never a single total: a lump sum cannot be audited later, and
+ * `include in ratios` has nothing to attach to. An excluded debt stays visible
+ * — it just leaves the ratios, which is how a lender exclusion actually works.
+ */
+export function ProfileForm() {
+  const [profile, setProfile] = useState<BuyerProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/profile/buyer");
+        if (!res.ok) throw new Error("Could not load your profile");
+        const body = (await res.json()) as { profile: BuyerProfile | null };
+        if (!cancelled) setProfile(body.profile);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function save() {
+    if (!profile || saving) return;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await fetch("/api/profile/buyer", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cashAvailable: profile.cashAvailable,
+          cashReserves: profile.cashReserves,
+          incomes: profile.incomes,
+          debts: profile.debts,
+        }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? "Could not save");
+      }
+      const body = (await res.json()) as { profile: BuyerProfile };
+      setProfile(body.profile);
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return <p className="text-[12px] text-(--color-text-tertiary)">Loading…</p>;
+  }
+
+  if (!profile) {
+    return (
+      <Card>
+        <SectionLabel>Your profile</SectionLabel>
+        <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+          You haven&apos;t set one up yet. Open the mortgage calculator and choose
+          <strong className="text-(--color-text-primary)"> Set income</strong> to
+          create it.
+        </p>
+      </Card>
+    );
+  }
+
+  const field =
+    "h-10 rounded-[var(--radius-md)] bg-(--color-elevated) border border-(--color-border-default) " +
+    "px-3 text-[14px] text-(--color-text-primary) placeholder-(--color-text-tertiary) " +
+    "focus:outline-none focus:border-(--color-accent) transition-colors";
+
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <SectionLabel>Income</SectionLabel>
+        <div className="grid gap-2">
+          {profile.incomes.map((row, i) => (
+            <div key={row.id || i} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={row.label}
+                onChange={(e) => {
+                  const incomes = [...profile.incomes];
+                  incomes[i] = { ...row, label: e.target.value };
+                  setProfile({ ...profile, incomes });
+                }}
+                aria-label={`Income name ${i + 1}`}
+                data-testid={`settings-income-name-${i}`}
+                placeholder="Salary"
+                className={`${field} flex-1 min-w-0`}
+              />
+              <input
+                type="text"
+                inputMode="numeric"
+                value={String(row.grossMonthly)}
+                onChange={(e) => {
+                  const incomes = [...profile.incomes];
+                  incomes[i] = { ...row, grossMonthly: Number(e.target.value.replace(/[^\d.]/g, "")) || 0 };
+                  setProfile({ ...profile, incomes });
+                }}
+                aria-label={`Income amount ${i + 1}`}
+                data-testid={`settings-income-amount-${i}`}
+                className={`${field} w-28 shrink-0 font-(--font-mono)`}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  setProfile({ ...profile, incomes: profile.incomes.filter((_, n) => n !== i) })
+                }
+                aria-label={`Remove income ${i + 1}`}
+                className="text-(--color-text-tertiary) hover:text-(--color-danger) p-1 shrink-0"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              setProfile({
+                ...profile,
+                incomes: [
+                  ...profile.incomes,
+                  { id: "", label: "", incomeType: "w2", grossMonthly: 0, borrower: null } as ProfileIncome,
+                ],
+              })
+            }
+            className="text-[12px] text-(--color-accent) inline-flex items-center gap-1 justify-self-start"
+          >
+            <Plus size={13} /> Add income
+          </button>
+          <p className="text-[12px] text-(--color-text-secondary) mt-1 pt-2 border-t border-(--color-border-subtle)">
+            Total {dollars(totalMonthlyIncome(profile.incomes), 0)}/mo
+          </p>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionLabel>Debts</SectionLabel>
+        <div className="grid gap-2">
+          {profile.debts.map((row, i) => (
+            <div key={row.id || i}>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={row.label}
+                  onChange={(e) => {
+                    const debts = [...profile.debts];
+                    debts[i] = { ...row, label: e.target.value };
+                    setProfile({ ...profile, debts });
+                  }}
+                  aria-label={`Debt name ${i + 1}`}
+                  data-testid={`settings-debt-name-${i}`}
+                  placeholder="Car loan"
+                  className={`${field} flex-1 min-w-0`}
+                />
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={String(row.monthlyPayment)}
+                  onChange={(e) => {
+                    const debts = [...profile.debts];
+                    debts[i] = { ...row, monthlyPayment: Number(e.target.value.replace(/[^\d.]/g, "")) || 0 };
+                    setProfile({ ...profile, debts });
+                  }}
+                  aria-label={`Debt amount ${i + 1}`}
+                  data-testid={`settings-debt-amount-${i}`}
+                  className={`${field} w-28 shrink-0 font-(--font-mono)`}
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setProfile({ ...profile, debts: profile.debts.filter((_, n) => n !== i) })
+                  }
+                  aria-label={`Remove debt ${i + 1}`}
+                  className="text-(--color-text-tertiary) hover:text-(--color-danger) p-1 shrink-0"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <ToggleRow
+                label="Count this in my ratios"
+                checked={row.includeInRatios}
+                onChange={(includeInRatios) => {
+                  const debts = [...profile.debts];
+                  debts[i] = { ...row, includeInRatios };
+                  setProfile({ ...profile, debts });
+                }}
+                hint="Lenders exclude some debts — a loan with a few payments left, or one someone else pays."
+              />
+            </div>
+          ))}
+          <button
+            type="button"
+            onClick={() =>
+              setProfile({
+                ...profile,
+                debts: [
+                  ...profile.debts,
+                  { id: "", label: "", debtType: "other", monthlyPayment: 0, includeInRatios: true } as ProfileDebt,
+                ],
+              })
+            }
+            className="text-[12px] text-(--color-accent) inline-flex items-center gap-1 justify-self-start"
+          >
+            <Plus size={13} /> Add debt
+          </button>
+          <p className="text-[12px] text-(--color-text-secondary) mt-1 pt-2 border-t border-(--color-border-subtle)">
+            Counted in ratios {dollars(totalMonthlyDebt(profile.debts), 0)}/mo
+          </p>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionLabel>Cash</SectionLabel>
+        <div className="grid gap-3.5">
+          <NumberField
+            label="Available for down payment and closing"
+            value={profile.cashAvailable}
+            onChange={(cashAvailable) => setProfile({ ...profile, cashAvailable })}
+            prefix="$"
+            min={0}
+          />
+          <NumberField
+            label="Reserves to keep"
+            value={profile.cashReserves}
+            onChange={(cashReserves) => setProfile({ ...profile, cashReserves })}
+            prefix="$"
+            min={0}
+          />
+        </div>
+      </Card>
+
+      {error && <p className="text-[12px] text-(--color-danger)">{error}</p>}
+      {saved && <p className="text-[12px] text-(--color-accent)">Saved.</p>}
+
+      <button
+        type="button"
+        onClick={() => void save()}
+        disabled={saving}
+        data-testid="save-settings-profile"
+        className="h-11 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[14px] font-semibold disabled:opacity-40 transition-opacity"
+      >
+        {saving ? "Saving…" : "Save changes"}
+      </button>
+    </div>
+  );
+}

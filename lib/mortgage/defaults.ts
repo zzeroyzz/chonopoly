@@ -38,8 +38,15 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
     dpaRate: 0,
     dpaTermYears: 10,
 
-    grossMonthlyIncome: 9000,
-    otherMonthlyDebt: 600,
+    // Zero, not a plausible-looking salary.
+    //
+    // These two now come from the buyer profile via resolveInputs. A default of
+    // 9000/600 meant a user who had entered nothing still got a confident
+    // verdict, computed against an income they never claimed — the worst of the
+    // three options, because it looks like an answer. Zero makes calculateDti
+    // report "not applicable", which the UI turns into "set your income".
+    grossMonthlyIncome: 0,
+    otherMonthlyDebt: 0,
 
     fhaUfmipFinanced: true,
 

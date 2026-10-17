@@ -1,13 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Save, Trash2, History, RotateCcw, X } from "lucide-react";
+import { Save, Trash2, History, RotateCcw, X, AlertCircle } from "lucide-react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import {
   type ScenarioSummary,
   type ScenarioVersion,
   diffInputs,
 } from "@/lib/mortgage/scenarioService";
+import { snapshotChanges } from "@/lib/mortgage/resolveInputs";
 import { Card, SectionLabel } from "./fields";
 import { dollars } from "./format";
 
@@ -32,8 +33,6 @@ const FIELD_LABELS: Partial<Record<keyof MortgageInputs, string>> = {
   propertyTaxYearly: "Property tax",
   insuranceYearly: "Home insurance",
   hoaMonthly: "HOA",
-  grossMonthlyIncome: "Gross monthly income",
-  otherMonthlyDebt: "Other monthly debt",
 };
 
 function formatValue(v: unknown): string {
@@ -223,6 +222,17 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
                   {dollars(s.homeValue, 0)} · {dollars(s.monthlyPayment, 0)}/mo
                   {s.version > 1 && <> · v{s.version}</>}
                 </span>
+                {/* Nothing re-runs on its own. The old verdict stays traceable
+                    to the numbers behind it until you ask for a new one. */}
+                {snapshotChanges(s.profileSnapshot, inputs).length > 0 && (
+                  <span
+                    data-testid="numbers-changed"
+                    className="inline-flex items-center gap-1 text-[11px] text-(--color-warning) mt-0.5"
+                  >
+                    <AlertCircle size={11} />
+                    Your numbers changed since this ran
+                  </span>
+                )}
               </button>
               {s.version > 1 && (
                 <button

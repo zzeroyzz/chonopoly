@@ -11,6 +11,9 @@ import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { calculateAffordability, calculateRequiredIncome } from "@/lib/mortgage/affordability";
 import { calculateDti } from "@/lib/mortgage/dti";
+import { resolveInputs } from "@/lib/mortgage/resolveInputs";
+import { type BuyerProfile, type ProfileState } from "@/lib/profile/types";
+import { FirstRunIncomeModal } from "@/components/settings/FirstRunIncomeModal";
 import { InputPanel } from "./InputPanel";
 import { ResultsPanel } from "./ResultsPanel";
 import { AffordabilityPanel } from "./AffordabilityPanel";
@@ -41,6 +44,32 @@ export default function MortgageCalculator() {
     if (restored) saveInputs(inputs);
   }, [inputs, restored]);
 
+  // The buyer profile. "none" is a real state, not an error: it drives the
+  // "set your income" prompt instead of screening against a fabricated salary.
+  const [profileState, setProfileState] = useState<ProfileState>({ kind: "loading" });
+  const [showIncomeModal, setShowIncomeModal] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/profile/buyer");
+        if (!res.ok) throw new Error("profile unavailable");
+        const body = (await res.json()) as { profile: BuyerProfile | null };
+        if (!cancelled) {
+          setProfileState(body.profile ? { kind: "ready", profile: body.profile } : { kind: "none" });
+        }
+      } catch {
+        // Treated as "no profile" rather than an error screen: the calculator
+        // still works, it just cannot judge affordability yet.
+        if (!cancelled) setProfileState({ kind: "none" });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const [userProfile, setUserProfile] = useState<{
     name: string;
     avatarUrl: string | null;
@@ -70,14 +99,25 @@ export default function MortgageCalculator() {
 
   const patch = (p: Partial<MortgageInputs>) => setInputs((prev) => ({ ...prev, ...p }));
 
-  const result = useMemo(() => calculateMortgage(inputs), [inputs]);
-  const affordability = useMemo(() => calculateAffordability(inputs), [inputs]);
+  // The three sources merged. `inputs` holds the house-shaped draft; the
+  // profile supplies income, debts and the loan defaults.
+  const resolved = useMemo(
+    () =>
+      resolveInputs(
+        profileState.kind === "ready" ? profileState.profile : null,
+        inputs
+      ),
+    [profileState, inputs]
+  );
+
+  const result = useMemo(() => calculateMortgage(resolved), [resolved]);
+  const affordability = useMemo(() => calculateAffordability(resolved), [resolved]);
   // Your actual ratios and whether they clear. Computed once here so the
   // panel displays the same verdict the module calculates.
-  const dti = useMemo(() => calculateDti(inputs, result), [inputs, result]);
+  const dti = useMemo(() => calculateDti(resolved, result), [resolved, result]);
   const required = useMemo(
-    () => calculateRequiredIncome(inputs, result.totalMonthlyWithMortgageInsurance),
-    [inputs, result.totalMonthlyWithMortgageInsurance]
+    () => calculateRequiredIncome(resolved, result.totalMonthlyWithMortgageInsurance),
+    [resolved, result.totalMonthlyWithMortgageInsurance]
   );
 
 
@@ -114,12 +154,17 @@ export default function MortgageCalculator() {
         {/* Mobile stacks inputs first; desktop runs two columns. */}
         <div className="grid gap-4 lg:grid-cols-2 lg:gap-6" style={{ alignContent: "start" }}>
           <div className="grid gap-4" style={{ alignContent: "start" }}>
-            <InputPanel inputs={inputs} onChange={patch} />
+            <InputPanel
+              inputs={resolved}
+              onChange={patch}
+              profileState={profileState}
+              onSetIncome={() => setShowIncomeModal(true)}
+            />
           </div>
 
           <div className="grid gap-4" style={{ alignContent: "start" }}>
             <ResultsPanel
-              inputs={inputs}
+              inputs={resolved}
               result={result}
               // Read from the same RequiredIncome the detail panel renders, so
               // the headline verdict and the breakdown cannot disagree.
@@ -134,13 +179,13 @@ export default function MortgageCalculator() {
               }
             />
             <AffordabilityPanel
-              inputs={inputs}
+              inputs={resolved}
               affordability={affordability}
               required={required}
               dti={dti}
             />
             <ScenarioBar
-              inputs={inputs}
+              inputs={resolved}
               monthlyPayment={result.totalMonthlyWithMortgageInsurance}
               // Replaces the working draft, and only from an explicit click.
               onLoad={(loaded) => setInputs(loaded)}
@@ -152,6 +197,16 @@ export default function MortgageCalculator() {
         <div className="mt-4">
           <AmortizationSection result={result} />
         </div>
+
+        {showIncomeModal && (
+          <FirstRunIncomeModal
+            onCreated={(profile) => {
+              setProfileState({ kind: "ready", profile });
+              setShowIncomeModal(false);
+            }}
+            onClose={() => setShowIncomeModal(false)}
+          />
+        )}
       </div>
     </AppShell>
   );
