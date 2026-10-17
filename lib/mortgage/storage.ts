@@ -24,7 +24,7 @@ export function loadInputs(): MortgageInputs {
     // Spread over the defaults so a stored object written before a field existed
     // still loads, rather than leaving that field undefined.
     const stored = JSON.parse(raw) as Partial<MortgageInputs> & { dpaAmount?: number };
-    return { ...fallback, ...migrateDpaAmount(stored) };
+    return { ...fallback, ...stripProfileFields(migrateDpaAmount(stored)) };
   } catch {
     return fallback;
   }
@@ -48,10 +48,30 @@ function migrateDpaAmount(
   return { ...rest, dpaEnabled: rest.dpaEnabled ?? dpaAmount > 0 };
 }
 
+/**
+ * Income and debts belong to the profile now, not to a browser draft.
+ *
+ * Drafts written before this change carry the old figures — including the
+ * fabricated 9000/600 default. Restoring them would let a stale draft quietly
+ * out-vote the profile, and the user would have no way to tell which number
+ * produced a verdict. The profile wins, always, so these are dropped on read.
+ *
+ * They are also dropped on write below, so the draft stops carrying a salary
+ * around in localStorage at all.
+ */
+function stripProfileFields(
+  stored: Partial<MortgageInputs>
+): Partial<MortgageInputs> {
+  const rest = { ...stored };
+  delete rest.grossMonthlyIncome;
+  delete rest.otherMonthlyDebt;
+  return rest;
+}
+
 export function saveInputs(inputs: MortgageInputs): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(inputs));
+    window.localStorage.setItem(KEY, JSON.stringify(stripProfileFields(inputs)));
   } catch {
     // Quota or private mode — losing the draft degrades the page, it doesn't break it.
   }

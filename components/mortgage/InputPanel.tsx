@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
+import { type ProfileState } from "@/lib/profile/types";
 import {
   LOAN_TYPE_CONFIG,
   LOAN_PRODUCTS,
@@ -37,9 +38,12 @@ import { PropertyTaxLookup } from "./PropertyTaxLookup";
 interface Props {
   inputs: MortgageInputs;
   onChange: (patch: Partial<MortgageInputs>) => void;
+  profileState: ProfileState;
+  /** Opens the first-run modal. Only reachable while there is no profile. */
+  onSetIncome: () => void;
 }
 
-export function InputPanel({ inputs, onChange }: Props) {
+export function InputPanel({ inputs, onChange, profileState, onSetIncome }: Props) {
   const config = LOAN_TYPE_CONFIG[inputs.loanType];
   const [downMode, setDownMode] = useState<"currency" | "percent">("currency");
 
@@ -501,26 +505,63 @@ export function InputPanel({ inputs, onChange }: Props) {
         </div>
       </Card>
 
+      {/* Income and debts are no longer typed here.
+          They belong to the buyer profile, so they survive between houses
+          instead of being re-entered for each one. With no profile yet, this
+          offers to create one rather than leaving a dead end. */}
       {config.showBorrowerIncome && (
         <Card>
           <SectionLabel>Affordability</SectionLabel>
-          <div className="grid gap-3.5">
-            <NumberField
-              label="Gross monthly income"
-              value={inputs.grossMonthlyIncome}
-              onChange={(grossMonthlyIncome) => onChange({ grossMonthlyIncome })}
-              prefix="$"
-              min={0}
-            />
-            <NumberField
-              label="Other monthly debt"
-              value={inputs.otherMonthlyDebt}
-              onChange={(otherMonthlyDebt) => onChange({ otherMonthlyDebt })}
-              prefix="$"
-              hint="car, student, cards"
-              min={0}
-            />
-          </div>
+
+          {profileState.kind === "none" ? (
+            <div className="grid gap-2.5">
+              <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+                Add your income and monthly debts once, and every house you screen
+                uses them.
+              </p>
+              <button
+                type="button"
+                onClick={onSetIncome}
+                data-testid="set-income"
+                className="h-10 px-4 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[13px] font-semibold justify-self-start"
+              >
+                Set income
+              </button>
+            </div>
+          ) : profileState.kind === "loading" ? (
+            <p className="text-[12px] text-(--color-text-tertiary)">Loading your profile…</p>
+          ) : (
+            <div className="grid gap-2">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[12px] text-(--color-text-secondary)">
+                  Gross monthly income
+                </span>
+                <span className="text-[13px] font-(--font-mono) text-(--color-text-primary)">
+                  {dollars(inputs.grossMonthlyIncome, 0)}
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between">
+                <span className="text-[12px] text-(--color-text-secondary)">
+                  Monthly debt in ratios
+                </span>
+                <span className="text-[13px] font-(--font-mono) text-(--color-text-primary)">
+                  {dollars(inputs.otherMonthlyDebt, 0)}
+                </span>
+              </div>
+              <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed mt-1">
+                {profileState.profile.incomes.length} income
+                {profileState.profile.incomes.length === 1 ? "" : "s"} ·{" "}
+                {profileState.profile.debts.filter((d) => d.includeInRatios).length} debt
+                {profileState.profile.debts.filter((d) => d.includeInRatios).length === 1
+                  ? ""
+                  : "s"}{" "}
+                counted.{" "}
+                <a href="/settings/profile" className="text-(--color-accent)">
+                  Edit in Settings
+                </a>
+              </p>
+            </div>
+          )}
         </Card>
       )}
     </div>
