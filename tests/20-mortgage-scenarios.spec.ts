@@ -15,8 +15,18 @@ test.use({ storageState: ".playwright/user.json" });
  */
 test.use({ viewport: { width: 390, height: 844 } });
 
+interface StoredProperty {
+  id: string;
+  addressLine1: string;
+  city: string | null;
+  state: string;
+  zip: string | null;
+  needsAddressReview: boolean;
+}
+
 interface StoredScenario {
   id: string;
+  property: StoredProperty | null;
   label: string;
   home_value: number;
   loan_type: string;
@@ -32,11 +42,13 @@ interface StoredScenario {
  */
 async function stubScenarioApi(page: Page, seed: StoredScenario[] = []) {
   const store: StoredScenario[] = [...seed];
+  const properties: StoredProperty[] = seed.map((s) => s.property).filter((p): p is StoredProperty => !!p);
 
   // The real route maps rows to camelCase before returning them. The stub has
   // to do the same or it is testing a contract the app does not have.
   const asSummary = (s: StoredScenario) => ({
     id: s.id,
+    property: s.property,
     label: s.label,
     homeValue: s.home_value,
     loanType: s.loan_type,
@@ -62,7 +74,35 @@ async function stubScenarioApi(page: Page, seed: StoredScenario[] = []) {
       monthly_payment: number;
     };
 
-    const existing = store.find((s) => s.label.toLowerCase() === body.label.toLowerCase());
+    // Mirrors upsertProperty: one property per normalised address, so saving
+    // twice at one address yields one house and two analyses.
+    let property: StoredProperty | null = null;
+    let matchedOn: "parcel" | "address" | "created" | undefined;
+    const line1 = (body as { address?: { address_line1?: string } }).address?.address_line1;
+    if (line1) {
+      const key = line1.trim().toLowerCase();
+      const found = properties.find((p) => p.addressLine1.trim().toLowerCase() === key);
+      if (found) {
+        property = found;
+        matchedOn = "address";
+        found.needsAddressReview = true;
+      } else {
+        property = {
+          id: `prop-${properties.length + 1}`,
+          addressLine1: line1.trim(),
+          city: null, state: "GA", zip: null, needsAddressReview: false,
+        };
+        properties.push(property);
+        matchedOn = "created";
+      }
+    }
+
+    // Same name on the same house is an update, not a second row.
+    const existing = store.find(
+      (s) =>
+        s.label.toLowerCase() === body.label.toLowerCase() &&
+        (s.property?.id ?? null) === (property?.id ?? null)
+    );
     if (existing) {
       existing.version += 1;
       existing.inputs = body.inputs;
@@ -71,6 +111,7 @@ async function stubScenarioApi(page: Page, seed: StoredScenario[] = []) {
     } else {
       store.push({
         id: `s-${store.length + 1}`,
+        property,
         label: body.label,
         home_value: body.inputs.homeValue as number,
         loan_type: body.inputs.loanType as string,
@@ -81,7 +122,32 @@ async function stubScenarioApi(page: Page, seed: StoredScenario[] = []) {
       });
     }
 
-    await route.fulfill({ status: 200, contentType: "application/json", body: "{}" });
+    const saved = store[store.length - 1];
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ scenario: asSummary(existing ?? saved), matchedOn }),
+    });
+  });
+
+  await page.route("**/api/mortgage/scenarios/*/address", async (route) => {
+    const id = new URL(route.request().url()).pathname.split("/").slice(-2)[0];
+    const body = route.request().postDataJSON() as { address_line1: string };
+    const target = store.find((s) => s.id === id);
+    if (!target) {
+      return route.fulfill({ status: 404, contentType: "application/json", body: '{"error":"Scenario not found"}' });
+    }
+    const property: StoredProperty = {
+      id: `prop-${properties.length + 1}`,
+      addressLine1: body.address_line1.trim(),
+      city: null, state: "GA", zip: null, needsAddressReview: false,
+    };
+    properties.push(property);
+    target.property = property;
+    await route.fulfill({
+      status: 200, contentType: "application/json",
+      body: JSON.stringify({ scenario: asSummary(target), matchedOn: "created" }),
+    });
   });
 
   await page.route("**/api/mortgage/scenarios/*?**", async (route) => {
@@ -214,6 +280,7 @@ test("the saved list fits 390px without horizontal overflow", async ({ page }) =
   await stubScenarioApi(page, [
     {
       id: "s-1",
+      property: null,
       label: "A name long enough to test truncation on a narrow screen",
       home_value: 250_000,
       loan_type: "fha",
@@ -226,6 +293,115 @@ test("the saved list fits 390px without horizontal overflow", async ({ page }) =
   await openCalculator(page);
 
   await expect(page.getByText(/A name long enough/)).toBeVisible();
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflows).toBe(false);
+});
+
+// ─── The property spine ───────────────────────────────────────────────────────
+
+test("saving with an address groups the scenario under that house", async ({ page }) => {
+  await stubScenarioApi(page);
+  await openCalculator(page);
+
+  await page.getByTestId("scenario-address").fill("128 Maple St");
+  await nameField(page).fill("at asking");
+  await page.getByRole("button", { name: /save/i }).click();
+
+  // Scoped to the group heading: the match note names the address too, so a
+  // bare text match is ambiguous and only passes by timing luck.
+  await expect(page.getByRole("paragraph").filter({ hasText: /^128 Maple St$/ })).toBeVisible();
+  await expect(page.getByText("at asking")).toBeVisible();
+  await expect(page.getByTestId("match-note")).toContainText("Added 128 Maple St");
+});
+
+test("two scenarios on one address give one house and two rows", async ({ page }) => {
+  await stubScenarioApi(page);
+  await openCalculator(page);
+
+  for (const label of ["at asking", "at $240k"]) {
+    await page.getByTestId("scenario-address").fill("128 Maple St");
+    await nameField(page).fill(label);
+    await page.getByRole("button", { name: /save/i }).click();
+    await expect(page.getByText(label)).toBeVisible();
+  }
+
+  // One heading, two scenarios under it. Scoped to the heading: the match note
+  // names the address too, so a bare text match finds both.
+  await expect(page.getByRole("paragraph").filter({ hasText: /^128 Maple St$/ })).toHaveCount(1);
+  await expect(page.getByText("at asking")).toBeVisible();
+  await expect(page.getByText("at $240k")).toBeVisible();
+});
+
+test("a second save at the same address is flagged for review", async ({ page }) => {
+  await stubScenarioApi(page);
+  await openCalculator(page);
+
+  await page.getByTestId("scenario-address").fill("128 Maple St");
+  await nameField(page).fill("at asking");
+  await page.getByRole("button", { name: /save/i }).click();
+  await expect(page.getByText("at asking")).toBeVisible();
+
+  await page.getByTestId("scenario-address").fill("128 Maple St");
+  await nameField(page).fill("with 10% down");
+  await page.getByRole("button", { name: /save/i }).click();
+
+  // Normalisation is lossy, so an address match says so rather than implying
+  // certainty.
+  await expect(page.getByTestId("match-note")).toContainText("check it before working it");
+  await expect(page.getByTestId("needs-review")).toBeVisible();
+});
+
+test("a save with no address lands under Unassigned", async ({ page }) => {
+  await stubScenarioApi(page);
+  await openCalculator(page);
+
+  await nameField(page).fill("quick math");
+  await page.getByRole("button", { name: /save/i }).click();
+
+  await expect(page.getByText("Unassigned")).toBeVisible();
+  await expect(page.getByText("quick math")).toBeVisible();
+});
+
+test("an Unassigned save can have an address attached", async ({ page }) => {
+  await stubScenarioApi(page, [
+    {
+      id: "s-1",
+      property: null,
+      label: "1653 Sylvan Rd SW, Atlanta, GA 30310",
+      home_value: 250_000,
+      loan_type: "fha",
+      monthly_payment: 2_221,
+      version: 1,
+      updated_at: new Date().toISOString(),
+      inputs: { homeValue: 250_000, loanType: "fha" },
+    },
+  ]);
+  await openCalculator(page);
+
+  await expect(page.getByText("Unassigned")).toBeVisible();
+  await page.getByTestId("attach-s-1").click();
+
+  // Pre-filled from the label, which for these saves is the address.
+  await expect(page.getByTestId("attach-address-input")).toHaveValue(
+    "1653 Sylvan Rd SW, Atlanta, GA 30310"
+  );
+  await page.getByTestId("attach-address-save").click();
+
+  await expect(page.getByText("Unassigned")).toHaveCount(0);
+  await expect(page.getByTestId("match-note")).toContainText("Added");
+});
+
+test("the grouped list fits 390px", async ({ page }) => {
+  await stubScenarioApi(page);
+  await openCalculator(page);
+
+  await page.getByTestId("scenario-address").fill("1653 Sylvan Rd SW, Atlanta");
+  await nameField(page).fill("203(k) with $60k of work");
+  await page.getByRole("button", { name: /save/i }).click();
+  await expect(page.getByText("203(k) with $60k of work")).toBeVisible();
+
   const overflows = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
   );

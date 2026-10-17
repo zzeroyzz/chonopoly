@@ -2,6 +2,8 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { type RequestContext } from "../context";
 import { type MortgageInputs } from "./types";
 import { defaultInputs } from "./defaults";
+import { upsertProperty } from "../property/propertyService";
+import { type PropertyMatch } from "../property/types";
 import { snapshotOf, type ProfileSnapshot } from "./resolveInputs";
 
 function db(): SupabaseClient {
@@ -11,8 +13,14 @@ function db(): SupabaseClient {
   );
 }
 
-const TABLE = "mortgage_scenarios";
-const VERSIONS = "mortgage_scenario_versions";
+// Refactored onto `analyses` — the spine every analysis of a house hangs from.
+// The old mortgage_scenarios tables stay in place, read-only, until the copy is
+// verified and the drop separately approved.
+const TABLE = "analyses";
+const VERSIONS = "analysis_versions";
+
+/** This service owns the financing kind. Rehab, flip and rental come later. */
+const KIND = "financing";
 
 /**
  * The shape `inputs` is stored in. Bump when a rename lands, and handle the old
@@ -21,8 +29,20 @@ const VERSIONS = "mortgage_scenario_versions";
  */
 export const CURRENT_INPUTS_VERSION = 1;
 
+export interface ScenarioProperty {
+  id: string;
+  addressLine1: string;
+  city: string | null;
+  state: string;
+  zip: string | null;
+  /** The address matched an existing house rather than matching a parcel. */
+  needsAddressReview: boolean;
+}
+
 export interface ScenarioSummary {
   id: string;
+  /** Null for saves made before a house was part of the model. */
+  property?: ScenarioProperty | null;
   /** Profile and defaults as they were when this ran. Null for older saves. */
   profileSnapshot?: ProfileSnapshot | null;
   label: string;
@@ -56,6 +76,8 @@ interface Row {
   monthly_payment: number;
   version: number;
   updated_at: string;
+  property_id?: string | null;
+  properties?: PropertyJoin | PropertyJoin[] | null;
   profile_snapshot?: unknown;
   inputs?: unknown;
   inputs_version?: number;
@@ -91,6 +113,29 @@ export function readInputs(stored: unknown, version: number): MortgageInputs {
   return { ...base, ...migrated };
 }
 
+interface PropertyJoin {
+  id: string;
+  address_line1: string;
+  city: string | null;
+  state: string;
+  zip: string | null;
+  needs_address_review: boolean;
+}
+
+/** PostgREST returns an embedded row as an object or a one-element array. */
+function toProperty(join: Row["properties"]): ScenarioProperty | null {
+  const p = Array.isArray(join) ? join[0] : join;
+  if (!p) return null;
+  return {
+    id: p.id,
+    addressLine1: p.address_line1,
+    city: p.city,
+    state: p.state,
+    zip: p.zip,
+    needsAddressReview: p.needs_address_review,
+  };
+}
+
 function toSummary(row: Row): ScenarioSummary {
   return {
     id: row.id,
@@ -101,11 +146,16 @@ function toSummary(row: Row): ScenarioSummary {
     version: row.version,
     updatedAt: row.updated_at,
     profileSnapshot: (row.profile_snapshot as ProfileSnapshot | null) ?? null,
+    property: toProperty(row.properties),
   };
 }
 
 const SUMMARY_COLUMNS =
-  "id, label, home_value, loan_type, monthly_payment, version, updated_at, profile_snapshot";
+  "id, label, home_value, loan_type, monthly_payment, version, updated_at, " +
+  "profile_snapshot, property_id, " +
+  // The house, in the same round trip. The list groups by it, so fetching it
+  // separately would be a query per row.
+  "properties(id, address_line1, city, state, zip, needs_address_review)";
 
 /**
  * Scenarios for one context, newest first.
@@ -120,11 +170,12 @@ export async function listScenarios(ctx: RequestContext): Promise<ScenarioSummar
     .select(SUMMARY_COLUMNS)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
-    .is("deleted_at", null)
+    .eq("kind", KIND)
+    .is("archived_at", null)
     .order("updated_at", { ascending: false });
 
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => toSummary(r as Row));
+  return (data ?? []).map((r) => toSummary(r as unknown as Row));
 }
 
 export async function getScenario(id: string, ctx: RequestContext): Promise<Scenario> {
@@ -134,20 +185,42 @@ export async function getScenario(id: string, ctx: RequestContext): Promise<Scen
     .eq("id", id)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
-    .is("deleted_at", null)
+    .eq("kind", KIND)
+    .is("archived_at", null)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Scenario not found");
 
-  const row = data as Row;
+  const row = data as unknown as Row;
   return { ...toSummary(row), inputs: readInputs(row.inputs, row.inputs_version ?? 1) };
+}
+
+/** The address a scenario is being saved against, if the house is known. */
+export interface ScenarioAddress {
+  addressLine1: string;
+  city?: string | null;
+  state?: string | null;
+  zip?: string | null;
+  parcelNumber?: string | null;
 }
 
 export interface SaveScenarioInput {
   label: string;
   inputs: MortgageInputs;
   monthlyPayment: number;
+  /** Omitted for quick math with no house attached yet. */
+  address?: ScenarioAddress | null;
+}
+
+export interface SaveScenarioResult {
+  scenario: ScenarioSummary;
+  /**
+   * How the house was resolved, so the UI can say so before the user assumes a
+   * new property was created. "address" is a probable match, not a certain one
+   * — normalisation is lossy, which is why it also sets needs_address_review.
+   */
+  matchedOn?: PropertyMatch;
 }
 
 /**
@@ -164,22 +237,59 @@ export async function saveScenario(
   input: SaveScenarioInput,
   ctx: RequestContext,
   userId: string
-): Promise<ScenarioSummary> {
+): Promise<SaveScenarioResult> {
   const label = input.label.trim();
   if (!label) throw new Error("A name is required");
 
-  const existing = await db()
+  // The house, if one was given. upsertProperty is the single front door for
+  // properties — it dedupes on parcel first and normalized address second, so
+  // saving numbers on a house already in the pipeline matches it rather than
+  // creating a second record of the same place.
+  let propertyId: string | null = null;
+  let matchedOn: PropertyMatch | undefined;
+
+  if (input.address?.addressLine1?.trim()) {
+    const result = await upsertProperty(
+      {
+        address_line1: input.address.addressLine1.trim(),
+        city: input.address.city ?? null,
+        state: input.address.state ?? "GA",
+        zip: input.address.zip ?? null,
+        parcel_number: input.address.parcelNumber ?? null,
+      },
+      ctx,
+      userId,
+      // The origin value that has been defined and unused since the properties
+      // table was written. This is the path it was waiting for.
+      "analysis"
+    );
+    propertyId = result.property.id;
+    matchedOn = result.matchedOn;
+  }
+
+  // Same name on the same house is an update, not a second row. Scoped by
+  // property so "at asking" can exist once per house rather than once per
+  // account.
+  let existingQuery = db()
     .from(TABLE)
     .select("id")
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
-    .is("deleted_at", null)
-    .ilike("label", label)
-    .maybeSingle();
+    .eq("kind", KIND)
+    .is("archived_at", null)
+    .ilike("label", label);
+
+  existingQuery = propertyId
+    ? existingQuery.eq("property_id", propertyId)
+    : existingQuery.is("property_id", null);
+
+  const existing = await existingQuery.maybeSingle();
 
   const payload = {
     owner_type: ctx.type,
     owner_id: ctx.id,
+    kind: KIND,
+    property_id: propertyId,
     label,
     home_value: input.inputs.homeValue,
     loan_type: input.inputs.loanType,
@@ -199,7 +309,55 @@ export async function saveScenario(
 
   const { data, error } = await query.select(SUMMARY_COLUMNS).single();
   if (error) throw new Error(error.message);
-  return toSummary(data as Row);
+  return { scenario: toSummary(data as unknown as Row), matchedOn };
+}
+
+/**
+ * Attach a house to a save that never had one.
+ *
+ * Everything saved before this phase has a null property_id and a free-text
+ * name — they appear under "Unassigned". This is how they join the spine,
+ * without retyping the numbers.
+ */
+export async function attachAddress(
+  id: string,
+  address: ScenarioAddress,
+  ctx: RequestContext,
+  userId: string
+): Promise<SaveScenarioResult> {
+  if (!address.addressLine1?.trim()) throw new Error("An address is required");
+
+  const existing = await getScenario(id, ctx);
+
+  const result = await upsertProperty(
+    {
+      address_line1: address.addressLine1.trim(),
+      city: address.city ?? null,
+      state: address.state ?? "GA",
+      zip: address.zip ?? null,
+      parcel_number: address.parcelNumber ?? null,
+    },
+    ctx,
+    userId,
+    "analysis"
+  );
+
+  const { data, error } = await db()
+    .from(TABLE)
+    .update({ property_id: result.property.id })
+    .eq("id", existing.id)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id)
+    .eq("kind", KIND)
+    .is("archived_at", null)
+    .select(SUMMARY_COLUMNS)
+    .single();
+
+  if (error) throw new Error(error.message);
+  return {
+    scenario: toSummary(data as unknown as Row),
+    matchedOn: result.matchedOn,
+  };
 }
 
 export async function renameScenario(
@@ -216,13 +374,14 @@ export async function renameScenario(
     .eq("id", id)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
-    .is("deleted_at", null)
+    .eq("kind", KIND)
+    .is("archived_at", null)
     .select(SUMMARY_COLUMNS)
     .maybeSingle();
 
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Scenario not found");
-  return toSummary(data as Row);
+  return toSummary(data as unknown as Row);
 }
 
 /**
@@ -232,11 +391,12 @@ export async function renameScenario(
 export async function deleteScenario(id: string, ctx: RequestContext): Promise<void> {
   const { data, error } = await db()
     .from(TABLE)
-    .update({ deleted_at: new Date().toISOString() })
+    .update({ archived_at: new Date().toISOString() })
     .eq("id", id)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
-    .is("deleted_at", null)
+    .eq("kind", KIND)
+    .is("archived_at", null)
     .select("id")
     .maybeSingle();
 
@@ -255,7 +415,7 @@ export async function listVersions(
   const { data, error } = await db()
     .from(VERSIONS)
     .select("id, version, label, home_value, loan_type, monthly_payment, inputs, inputs_version, superseded_at")
-    .eq("scenario_id", id)
+    .eq("analysis_id", id)
     .order("version", { ascending: false });
 
   if (error) throw new Error(error.message);
@@ -309,12 +469,13 @@ export async function restoreVersion(
     .eq("id", id)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
-    .is("deleted_at", null)
+    .eq("kind", KIND)
+    .is("archived_at", null)
     .select(SUMMARY_COLUMNS)
     .single();
 
   if (error) throw new Error(error.message);
-  return toSummary(data as Row);
+  return toSummary(data as unknown as Row);
 }
 
 /** Which input fields differ between two sets. Drives the compare view. */
