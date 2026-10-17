@@ -447,6 +447,7 @@ Each phase gets its own branch and PR, can ship by itself, and leaves the app in
 **Phase 5: Rental estimate and cleanup**
 - A rough rental estimate in `/tools/rental` using RentCast's rent AVM, which costs one request per house.
 - Remove dead routes and components, and drop the old scenario tables once approved.
+- Drop the legacy cash-flow columns from `analyses` once the rental estimate is settled. They were kept through Phase 1 because they are all defaulted and cost nothing to carry; the rental work is what decides whether any of them are still wanted.
 
 ---
 
