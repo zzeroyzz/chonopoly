@@ -354,7 +354,41 @@ The suggested step is the first unchecked item on the checklist. Every step can 
 
 - **Key:** `RENTCAST_API_KEY`, set in `.env.local` and in Vercel's environment variables. It's server-only: no `NEXT_PUBLIC_` prefix, and it's never sent to the browser.
 - **Client:** `lib/rentcast/client.ts`, using base URL `https://api.rentcast.io/v1` and the `X-Api-Key` header.
-- **Call:** `GET /avm/value` with the address, plus `compCount`, `maxRadius` and `daysOld` (parameter names to be confirmed against the docs). It returns a value estimate, a range and the comparables. If the response includes the subject property's facts (sqft, beds, baths), those fill in the property; if not, `GET /properties` is used as a second call. Confirming this is the first task of Phase 2.
+- **Call:** `GET /avm/value`. **Confirmed against the docs, 2026-10-18:**
+
+  | Parameter | Type | Range / default |
+  |---|---|---|
+  | `address` | string | `"Street, City, State, Zip"` — or `latitude`/`longitude` instead |
+  | `compCount` | integer | **5–25, default 15** |
+  | `maxRadius` | float | miles |
+  | `daysOld` | integer | minimum 1 |
+  | `lookupSubjectAttributes` | boolean | **default true** — not in the earlier draft |
+  | `propertyType`, `bedrooms`, `bathrooms`, `squareFootage` | — | optional hints that improve comp matching |
+
+  All three names the plan guessed are correct.
+
+- **One call, not two.** The response carries a **`subjectProperty`** object with
+  `bedrooms`, `bathrooms`, `squareFootage`, `propertyType`, `yearBuilt`,
+  `lotSize`, `lastSaleDate` and `lastSalePrice`. The planned fallback to
+  `GET /properties` is **not needed**, which halves the request cost per house —
+  it matters on a 50-request month.
+
+- **Response shape:** `price`, `priceRangeLow`, `priceRangeHigh`,
+  `subjectProperty`, `comparables`. Each comparable carries `id`,
+  `formattedAddress`, `price`, `propertyType`, `bedrooms`, `bathrooms`,
+  `squareFootage`, `yearBuilt`, `lotSize`, `status`, `listingType`,
+  `listedDate`, `removedDate`, `lastSeenDate`, `daysOnMarket`, `distance`,
+  `daysOld` and `correlation`, sorted by correlation.
+
+- **A caveat the plan did not anticipate.** `status` is **`"Active"` or
+  `"Inactive"`** — not sold or listed. An inactive comp was *removed*, which
+  might mean it sold or might mean the seller gave up. RentCast does not say
+  which. So the Comps tab labels them **Active / Removed** rather than claiming
+  a sale, and the ARV note says plainly that a removed listing is not a
+  confirmed sale. Calling an unsold withdrawal a comp is how an ARV ends up
+  too high.
+
+- **Quota:** the free Developer plan is **50 requests a month**, confirmed.
 - **Route:** `POST /api/properties/[id]/comps` fetches and stores comps; `GET` returns the stored ones.
 - **Cache:** comps are saved with `fetched_at`. A house isn't fetched again within 30 days unless you press Refresh, which tells you it uses one request.
 - **Usage:** every call is logged to `rentcast_requests`. Settings → Integrations shows this month's count against your plan's limit (the free plan allows 50 a month) and warns you at 80%.
@@ -432,7 +466,7 @@ Each phase gets its own branch and PR, can ship by itself, and leaves the app in
 
 **Phase 2: Add and Screen**
 - RentCast client, comps, valuations, usage log, Integrations settings.
-- Batch add (with listing links), the screen table, both verdicts, `calculateArv`, `calculate203kCap`, and `calculateFlip` (needed for the deal verdict).
+- Batch add (with listing links), the screen table, both verdicts, `calculateArv`, `calculate203kCap`,e and `calculateFlip` (needed for the deal verdict).
 - The progress checklist on each house.
 
 **Phase 3: Estimate, Visit, Check**
@@ -701,3 +735,64 @@ Unit: `resolveInputs` parity — given the same values, it produces the `Mortgag
 1. ~~**Profile scope.**~~ **Settled 2026-10-17: personal only.** Teams can include agents and assistants, so income is not team-readable. Schema is context-shaped so a team policy can be added later without migrating a table full of income.
 2. **How detailed the rehab estimate is.** The plan assumes a per-system estimate (condition plus cost for each system). The alternatives are a quick estimate (sqft × condition level) or line items (quantity × unit cost).
 3. **Your own photos.** Upload photos or screenshots to a house in Phase 3, or rely on the listing link for now?
+4. **Team members cannot write anything.** Found while writing the Phase 2 RLS,
+   2026-10-18. The intention stated for saved scenarios was that team members
+   can edit them, but **no team-write policy exists anywhere in this schema** —
+   all team policies across every migration are `FOR SELECT` only, including
+   `properties` and `analyses`. A team member can read a house and every
+   analysis on it and change none of it.
+
+   The Phase 2 tables (`property_comps`, `valuations`, `rentcast_requests`)
+   follow the same read-only pattern deliberately, so the schema stays
+   consistent rather than having one corner where teams can write.
+
+   **Not part of Phase 2.** Fixing it means deciding whether every team member
+   can edit or only some roles, which is an access-control change and wants its
+   own plan.
+
+---
+
+## Phase 2 decisions
+
+**Verdict thresholds live in `defaults.ts` as module constants** — settled
+2026-10-18. Not per-user columns: the verdicts need to be right against fixed
+numbers before anyone tunes them, and making them editable on day one costs six
+columns and six inputs before either of us knows whether 15% is the right
+figure. Promoting them to the profile later is additive.
+
+**The 70% rule is a figure, not a gate.** `maxOffer = ARV × 0.70 − rehab` is
+shown on the screen, but the deal verdict is decided by margin alone. The 70%
+rule is a margin rule wearing a different hat, and two gates that can disagree
+produce a verdict that cannot be explained in the space a phone gives you.
+
+**Screening is deliberately pessimistic.** The deal verdict uses
+`contingencyPhotosPct` until a visit is logged, then `contingencyVisitPct`. A
+deal may legitimately move Thin → Works once someone has been inside.
+
+**Financing costs are their own line in the flip, never inside holding cost.**
+Holding cost is hand-entered on the profile; financing is derived from the loan
+amount and rate, both of which move with the price. Folding the derived number
+into the hand-entered one would mean the figure on screen stops matching the
+figure you typed. The profile field is therefore labelled *Holding cost (excl.
+financing)*.
+
+**Where the financing figure comes from depends on the house** — settled
+2026-10-18:
+
+- **A primary financing analysis exists** → take the real numbers from it:
+  interest over `holdingMonths` summed from its amortization schedule, plus
+  upfront mortgage insurance (FHA UFMIP or the VA funding fee) and the monthly
+  MIP/PMI across the hold, plus any points.
+- **No financing analysis** (hard money, cash) → the generic estimate:
+  `points% × loanAmount + loanAmount × (rate ÷ 12) × holdingMonths`,
+  interest-only, which is how a rehab carry actually works.
+
+The flip breakdown **states which source was used**, because the two can differ
+by thousands and a number whose origin is invisible is a number nobody can
+check.
+
+**`sold` status requires `source = 'manual'`, enforced by a CHECK.** RentCast
+reports only Active/Inactive and cannot confirm a sale, so it must not be able
+to store one. Counting a withdrawn listing as a sale is the easiest way to
+inflate an ARV, and that is worth making impossible rather than carefully
+avoiding.
