@@ -823,20 +823,16 @@ test("forcing a refresh confirms, and says what it costs", async ({ page }) => {
   await stubComps(page, { status: LOCKED });
   await openCompsTab(page);
 
-  const messages: string[] = [];
-  page.on("dialog", (dialog) => {
-    messages.push(dialog.message());
-    void dialog.dismiss();
-  });
-
   await page.getByTestId("force-refresh-comps").click();
 
-  // "Are you sure?" with no number attached is a dialog people learn to
+  // "Are you sure?" with no number attached is a prompt people learn to
   // dismiss without reading.
-  expect(messages.join(" ")).toContain("Uses 1 of 42 remaining this month");
+  await expect(page.getByTestId("force-confirm")).toContainText(
+    "Uses 1 of 42 remaining this month"
+  );
 });
 
-test("dismissing the confirm spends nothing", async ({ page }) => {
+test("cancelling the confirm spends nothing", async ({ page }) => {
   await stubComps(page, { status: LOCKED });
   await openCompsTab(page);
 
@@ -844,11 +840,12 @@ test("dismissing the confirm spends nothing", async ({ page }) => {
   page.on("request", (req) => {
     if (req.method() === "POST" && req.url().includes("/comps/refresh")) refreshPosts += 1;
   });
-  page.on("dialog", (dialog) => void dialog.dismiss());
 
   await page.getByTestId("force-refresh-comps").click();
-  await expect(page.getByTestId("refresh-lock")).toBeVisible();
+  await page.getByTestId("force-confirm-no").click();
 
+  await expect(page.getByTestId("force-confirm")).toHaveCount(0);
+  await expect(page.getByTestId("refresh-lock")).toBeVisible();
   expect(refreshPosts).toBe(0);
 });
 
@@ -862,13 +859,26 @@ test("accepting the confirm sends force", async ({ page }) => {
       bodies.push(req.postData() ?? "");
     }
   });
-  page.on("dialog", (dialog) => void dialog.accept());
 
   await page.getByTestId("force-refresh-comps").click();
-  await expect(page.getByTestId("comps-source")).toBeVisible();
+  await page.getByTestId("force-confirm-yes").click();
 
+  await expect(page.getByTestId("comps-source")).toBeVisible();
   expect(bodies).toHaveLength(1);
   expect(JSON.parse(bodies[0]).force).toBe(true);
+});
+
+test("the confirm panel fits 390px", async ({ page }) => {
+  await stubComps(page, { status: LOCKED });
+  await openCompsTab(page);
+
+  await page.getByTestId("force-refresh-comps").click();
+  await expect(page.getByTestId("force-confirm")).toBeVisible();
+
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflows).toBe(false);
 });
 
 test("a non-owner cannot force a refresh", async ({ page }) => {

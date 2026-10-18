@@ -273,9 +273,10 @@ test("the settings tabs move between the screens", async ({ page }) => {
   await page.getByTestId("settings-tab-profile").click();
   await expect(page.getByTestId("settings-income-name-0")).toBeVisible();
 
-  // Team and integrations have no screens, so they have no tabs.
+  // Integrations is a real screen now — it carries the RentCast usage counter,
+  // added with the comps work. Team still has none, so it still has no tab.
+  await expect(page.getByTestId("settings-tab-integrations")).toBeVisible();
   await expect(page.getByTestId("settings-tab-team")).toHaveCount(0);
-  await expect(page.getByTestId("settings-tab-integrations")).toHaveCount(0);
 });
 
 test("the defaults screen fits 390px without horizontal overflow", async ({ page }) => {

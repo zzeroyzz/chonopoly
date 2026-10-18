@@ -155,6 +155,7 @@ export function CompsPanel({
   const [adding, setAdding] = useState(false);
   const [status, setStatus] = useState<RefreshStatus | null>(null);
   const [source, setSource] = useState<string | null>(null);
+  const [confirmingForce, setConfirmingForce] = useState(false);
 
   const apply = useCallback((data: CompsResponse) => {
     setComps(data.comps ?? []);
@@ -244,16 +245,16 @@ export function CompsPanel({
   }
 
   /**
-   * A forced refresh spends one of a shared monthly allowance, so it asks
+   * A forced refresh spends one of a shared monthly allowance, so it confirms
    * first and says what it costs. "Are you sure?" with no number attached is a
-   * dialog people learn to dismiss.
+   * prompt people learn to dismiss without reading.
+   *
+   * Deliberately an in-app panel rather than window.confirm: a native dialog
+   * cannot show the cost with any emphasis, looks wrong on a phone, and is
+   * rendered by the browser chrome where the rest of this screen is not.
    */
-  async function forceRefresh() {
-    const remaining = status?.usage.remaining ?? 0;
-    const confirmed = window.confirm(
-      `Refresh now from RentCast?\n\nUses 1 of ${remaining} remaining this month.`
-    );
-    if (!confirmed) return;
+  async function confirmedForceRefresh() {
+    setConfirmingForce(false);
     await refresh({ force: true });
   }
 
@@ -335,7 +336,7 @@ export function CompsPanel({
           ) : status?.locked ? (
             <button
               type="button"
-              onClick={() => void forceRefresh()}
+              onClick={() => setConfirmingForce(true)}
               disabled={refreshing || !ctx || !status.canForce}
               data-testid="force-refresh-comps"
               title={
@@ -374,6 +375,39 @@ export function CompsPanel({
               {shortDate(status.nextRefreshAt)}
             </span>
           </p>
+        )}
+
+        {confirmingForce && (
+          <div
+            data-testid="force-confirm"
+            className="mt-3 rounded-lg border border-(--color-border-default) bg-(--color-base) p-3"
+          >
+            <p className="text-[12px] leading-relaxed">
+              Refresh now from RentCast?{" "}
+              <span className="font-semibold">
+                Uses 1 of {status?.usage.remaining ?? 0} remaining this month.
+              </span>
+            </p>
+            <div className="flex gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => void confirmedForceRefresh()}
+                disabled={refreshing}
+                data-testid="force-confirm-yes"
+                className="h-9 px-3 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[12px] font-semibold disabled:opacity-50"
+              >
+                Use one request
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingForce(false)}
+                data-testid="force-confirm-no"
+                className="h-9 px-3 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
 
         {status?.usage.atCap && (
