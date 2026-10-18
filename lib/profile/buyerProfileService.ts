@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { type Database } from "../supabase/database.types";
 import { type RequestContext } from "../context";
 import {

@@ -1,4 +1,4 @@
-import fixture from "../fixtures/rentcast-value.json";
+import fixture from "@/lib/rentcast/fixtures/valueEstimate.json";
 
 /**
  * `server-only` is a Next bundler marker with no Node resolution, so it is
@@ -20,6 +20,16 @@ jest.mock("server-only", () => ({}), { virtual: true });
  */
 
 const ORIGINAL_KEY = process.env.RENTCAST_API_KEY;
+const ORIGINAL_MODE = process.env.RENTCAST_MODE;
+
+/**
+ * These tests exercise the live HTTP path, and mock mode is now the default —
+ * so each one opts in explicitly. Without this they would all short-circuit to
+ * fixtures and assert nothing about request handling.
+ */
+beforeEach(() => {
+  process.env.RENTCAST_MODE = "live";
+});
 
 function stubFetch(response: {
   ok: boolean;
@@ -42,6 +52,8 @@ async function client() {
 afterEach(() => {
   if (ORIGINAL_KEY === undefined) delete process.env.RENTCAST_API_KEY;
   else process.env.RENTCAST_API_KEY = ORIGINAL_KEY;
+  if (ORIGINAL_MODE === undefined) delete process.env.RENTCAST_MODE;
+  else process.env.RENTCAST_MODE = ORIGINAL_MODE;
   jest.restoreAllMocks();
 });
 
@@ -73,7 +85,10 @@ describe("no API key", () => {
 
     if (result.ok) throw new Error("expected a failure");
     expect(result.failure).toBe("no_key");
-    expect(result.billable).toBe(false);
+    // Corrected: this reaches RentCast and they count it. Two of these were
+    // logged free while their dashboard counted them, which is why our number
+    // read 1 against their 3.
+    expect(result.billable).toBe(true);
   });
 });
 
@@ -93,7 +108,8 @@ describe("429", () => {
     // One is "wait until next month", the other is "wait a minute". A single
     // state would send someone hunting for a key they already have.
     expect(result.failure).toBe("quota");
-    expect(result.billable).toBe(false);
+    // Corrected: a 429 reached RentCast.
+    expect(result.billable).toBe(true);
     expect(result.statusCode).toBe(429);
   });
 
@@ -106,7 +122,7 @@ describe("429", () => {
 
     if (result.ok) throw new Error("expected a failure");
     expect(result.failure).toBe("rate_limited");
-    expect(result.billable).toBe(false);
+    expect(result.billable).toBe(true);
   });
 });
 
@@ -124,7 +140,7 @@ describe("other failures", () => {
     expect(result.billable).toBe(true);
   });
 
-  it("does not count a 500 — a RentCast fault is not the user's quota", async () => {
+  it("counts a 5xx — the request still reached them", async () => {
     process.env.RENTCAST_API_KEY = "test-key";
     stubFetch({ ok: false, status: 503, json: async () => ({}) });
 
@@ -133,7 +149,10 @@ describe("other failures", () => {
 
     if (result.ok) throw new Error("expected a failure");
     expect(result.failure).toBe("http_error");
-    expect(result.billable).toBe(false);
+    // Previously treated as free on the grounds that a RentCast fault is not
+    // the user's fault. True, but irrelevant: fault and billing are different
+    // questions, and guessing in the user's favour undercounts.
+    expect(result.billable).toBe(true);
   });
 
   it("returns a value for a network error rather than throwing", async () => {
@@ -146,7 +165,9 @@ describe("other failures", () => {
 
     if (result.ok) throw new Error("expected a failure");
     expect(result.failure).toBe("network_error");
-    expect(result.billable).toBe(false);
+    // The request left the process and may have been served before the
+    // connection broke. Counted, because undercounting is the worse direction.
+    expect(result.billable).toBe(true);
   });
 
   it("counts an unparseable 200 — it was served, so the quota is gone", async () => {

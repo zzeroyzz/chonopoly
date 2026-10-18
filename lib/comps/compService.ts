@@ -1,4 +1,4 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { type Database } from "../supabase/database.types";
 import { type RequestContext } from "../context";
 import { type Comp, type CompStatus, type ManualCompInput } from "./types";
@@ -399,83 +399,7 @@ export async function applySubjectFacts(
   if (error) throw new Error(`Failed to save the property facts: ${error.message}`);
 }
 
-// ─── Usage log ────────────────────────────────────────────────────────────────
-
-export interface LogRequestInput {
-  propertyId: string | null;
-  endpoint: string;
-  statusCode: number | null;
-  succeeded: boolean;
-  billable: boolean;
-  error: string | null;
-}
-
-/**
- * Log a RentCast call.
- *
- * Never throws. A lookup that worked must not be reported as a failure because
- * the audit row would not insert — the user came here for comps, not for
- * bookkeeping. A logging failure is surfaced on the server and nowhere else.
- */
-export async function logRentCastRequest(
-  input: LogRequestInput,
-  ctx: RequestContext
-): Promise<void> {
-  try {
-    const { error } = await db().from("rentcast_requests").insert({
-      owner_type: ctx.type,
-      owner_id: ctx.id,
-      property_id: input.propertyId,
-      endpoint: input.endpoint,
-      status_code: input.statusCode,
-      succeeded: input.succeeded,
-      billable: input.billable,
-      error: input.error,
-    });
-    if (error) console.error("Failed to log a RentCast request:", error.message);
-  } catch (e) {
-    console.error("Failed to log a RentCast request:", e);
-  }
-}
-
-export interface UsageThisMonth {
-  used: number;
-  limit: number;
-  /** 0–1. Drives the 80% warning. */
-  fraction: number;
-  monthStart: string;
-}
-
-/**
- * Billable requests this calendar month.
- *
- * Calendar month, which is an assumption worth naming: RentCast bills on the
- * subscription period, so a mid-month signup makes this an approximation until
- * the two line up. It is the honest direction to be wrong in — the counter can
- * read low near a boundary, never high.
- */
-export async function getUsageThisMonth(
-  ctx: RequestContext,
-  limit: number,
-  now: Date = new Date()
-): Promise<UsageThisMonth> {
-  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-
-  const { count, error } = await db()
-    .from("rentcast_requests")
-    .select("id", { count: "exact", head: true })
-    .eq("owner_type", ctx.type)
-    .eq("owner_id", ctx.id)
-    .eq("billable", true)
-    .gte("requested_at", monthStart.toISOString());
-
-  if (error) throw new Error(`Failed to read RentCast usage: ${error.message}`);
-
-  const used = count ?? 0;
-  return {
-    used,
-    limit,
-    fraction: limit > 0 ? used / limit : 0,
-    monthStart: monthStart.toISOString(),
-  };
-}
+// The usage log and the monthly counter moved to lib/rentcast/quota.ts, which
+// owns the whole request lifecycle: claim, call, record, cache. Keeping a second
+// pair of writers here would have meant two places deciding what counts as
+// billable, and that disagreement is exactly what produced an undercount.

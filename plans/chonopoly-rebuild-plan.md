@@ -389,6 +389,25 @@ The suggested step is the first unchecked item on the checklist. Every step can 
   too high.
 
 - **Quota:** the free Developer plan is **50 requests a month**, confirmed.
+
+**Spend guard (added 2026-10-18, after the first live lookup).** One request
+per house per 30 days, enforced by four gates in order: the monthly cap, a
+30-day cache keyed on the normalized address, a database in-flight lock, then
+the call. The response body is stored before anything parses it, so a crash
+downstream is recoverable without a new request.
+
+| Setting | Value | Why |
+|---|---|---|
+| Monthly cap | **45** of 50 | Our count can only estimate RentCast's, so stop before the real ceiling rather than discover it by being cut off |
+| Reuse window | **30 days** | A house's comps do not move faster than that |
+| `RENTCAST_MODE` | `live` / `mock` | Unset means mock everywhere except Vercel production, so a preview deploy cannot spend the allowance |
+| Force refresh | `org_owner` only | A shared allowance; spending it early is the owner's call |
+
+**What counts as billable: the request left the process.** 2xx, 4xx, 5xx and a
+network error all count; only a local refusal (no key, cap, cache hit, held
+lock, mock mode) does not. The first version treated 401/403 as free, and
+RentCast's dashboard read 3 against our 1 as a result. Undercounting is the
+dangerous direction — it reads as headroom that is not there.
 - **Route:** `POST /api/properties/[id]/comps` fetches and stores comps; `GET` returns the stored ones.
 - **Cache:** comps are saved with `fetched_at`. A house isn't fetched again within 30 days unless you press Refresh, which tells you it uses one request.
 - **Usage:** every call is logged to `rentcast_requests`. Settings → Integrations shows this month's count against your plan's limit (the free plan allows 50 a month) and warns you at 80%.

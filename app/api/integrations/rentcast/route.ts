@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveContext } from "@/lib/context";
-import { getUsageThisMonth } from "@/lib/comps/compService";
+import { getUsage } from "@/lib/rentcast/quota";
 import {
   hasApiKey,
-  FREE_PLAN_MONTHLY_REQUESTS,
+  rentCastMode,
+  MONTHLY_REQUEST_CAP,
+  CACHE_WINDOW_DAYS,
   QUOTA_WARNING_FRACTION,
 } from "@/lib/rentcast/client";
 
@@ -29,14 +31,29 @@ export async function GET(request: Request) {
   if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   try {
-    const usage = await getUsageThisMonth(ctx, FREE_PLAN_MONTHLY_REQUESTS);
+    const usage = await getUsage(ctx);
+
+    const fraction = usage.cap > 0 ? usage.used / usage.cap : 0;
 
     return NextResponse.json({
       connected: hasApiKey(),
-      usage,
+      // Mock deployments spend nothing, and the screen should say so rather
+      // than implying a live integration.
+      mode: rentCastMode(),
+      usage: {
+        used: usage.used,
+        // The cap, not the plan limit — it is the number that actually stops
+        // calls, so it is the number to show against.
+        limit: usage.cap,
+        planLimit: usage.planLimit,
+        fraction,
+        monthStart: usage.monthStart,
+      },
+      cap: MONTHLY_REQUEST_CAP,
+      cacheWindowDays: CACHE_WINDOW_DAYS,
       warningFraction: QUOTA_WARNING_FRACTION,
-      nearLimit: usage.fraction >= QUOTA_WARNING_FRACTION,
-      atLimit: usage.used >= usage.limit,
+      nearLimit: fraction >= QUOTA_WARNING_FRACTION,
+      atLimit: usage.atCap,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to read RentCast usage";

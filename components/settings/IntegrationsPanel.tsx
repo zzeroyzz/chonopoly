@@ -17,7 +17,18 @@ import { useCrmContext } from "@/components/crm/useCrmContext";
 
 interface RentCastStatus {
   connected: boolean;
-  usage: { used: number; limit: number; fraction: number; monthStart: string };
+  /** Mock deployments serve fixtures and spend nothing. */
+  mode?: "live" | "mock";
+  usage: {
+    used: number;
+    /** The cap, which is what actually stops calls. */
+    limit: number;
+    planLimit?: number;
+    fraction: number;
+    monthStart: string;
+  };
+  cap?: number;
+  cacheWindowDays?: number;
   warningFraction: number;
   nearLimit: boolean;
   atLimit: boolean;
@@ -105,6 +116,16 @@ export function IntegrationsPanel() {
         </span>
       </div>
 
+      {status.mode === "mock" && (
+        <p
+          data-testid="rentcast-mock-mode"
+          className="text-[11px] text-(--color-text-secondary) bg-(--color-base) border border-(--color-border-default) rounded-lg px-3 py-2 leading-relaxed"
+        >
+          This deployment uses sample comps and never calls RentCast, so the
+          count below stays where it is. Only production spends requests.
+        </p>
+      )}
+
       <div>
         <div className="flex items-baseline justify-between">
           <p data-testid="rentcast-usage" className="text-[13px]">
@@ -151,6 +172,15 @@ export function IntegrationsPanel() {
             {Math.round(status.warningFraction * 100)}% of this month&apos;s requests are
             used. {remaining} left — each property you screen spends one.
           </span>
+        </p>
+      )}
+
+      {status.cacheWindowDays && (
+        <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
+          Each property is looked up at most once every {status.cacheWindowDays} days,
+          and the app stops at {status.usage.limit}
+          {status.usage.planLimit ? ` of the plan's ${status.usage.planLimit}` : ""} so
+          RentCast&apos;s own count can never catch us short.
         </p>
       )}
 

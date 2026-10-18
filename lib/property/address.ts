@@ -80,6 +80,39 @@ export interface AddressParts {
   zip?: string | null;
 }
 
+/**
+ * Fold accents and other diacritics to their base letters.
+ *
+ * Must run BEFORE the character filter in `normalizeStreet`, and that order is
+ * the whole point. The filter strips anything outside A-Z0-9, so an accented
+ * letter was being deleted rather than folded: "ŚW" became " W" while "SW"
+ * stayed "SW", and the two addresses stopped matching. A real pair of rows in
+ * production — "1653 sylvan rd sw" and "1653 sylvan rd św" — hashed
+ * differently and became two houses.
+ *
+ * NFD splits a precomposed character into its base letter plus a combining
+ * mark; removing the marks leaves the letter. Handles the Latin-1 and Latin
+ * Extended-A ranges, which is what a mistyped US address actually produces.
+ */
+export function foldDiacritics(input: string): string {
+  return input
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    // A few letters carry their stroke inside the code point and have no
+    // combining form to strip, so NFD leaves them whole.
+    .replace(/[\u0141]/g, "L")
+    .replace(/[\u0142]/g, "l")
+    .replace(/[\u00d8]/g, "O")
+    .replace(/[\u00f8]/g, "o")
+    .replace(/[\u00c6]/g, "AE")
+    .replace(/[\u00e6]/g, "ae")
+    .replace(/[\u00d0\u0110]/g, "D")
+    .replace(/[\u00f0\u0111]/g, "d")
+    .replace(/[\u00de]/g, "TH")
+    .replace(/[\u00fe]/g, "th")
+    .replace(/[\u00df]/g, "ss");
+}
+
 function canonicalToken(token: string): string {
   if (SUFFIXES[token]) return SUFFIXES[token];
   if (DIRECTIONALS[token]) return DIRECTIONALS[token];
@@ -88,7 +121,7 @@ function canonicalToken(token: string): string {
 
 /** "123 N. Main Street, Apt #4" -> "123 N MAIN ST UNIT 4" */
 export function normalizeStreet(line: string): string {
-  const cleaned = line
+  const cleaned = foldDiacritics(line)
     .toUpperCase()
     // "#4" and "# 4" both become "UNIT 4"
     .replace(/#\s*/g, " UNIT ")
@@ -117,8 +150,12 @@ export function normalizeStreet(line: string): string {
 /** Canonical single-line form used for both hashing and display of a match. */
 export function normalizeAddress(parts: AddressParts): string {
   const street = normalizeStreet(parts.addressLine1 ?? "");
-  const city = (parts.city ?? "").toUpperCase().replace(/[^A-Z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-  const state = (parts.state ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
+  const city = foldDiacritics(parts.city ?? "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const state = foldDiacritics(parts.state ?? "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 2);
   // ZIP+4 collapses to the 5-digit ZIP: the same house is often written both ways.
   const zip = (parts.zip ?? "").replace(/[^0-9]/g, "").slice(0, 5);
 

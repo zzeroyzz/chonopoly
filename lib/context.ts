@@ -46,3 +46,35 @@ export async function resolveContext(
     return null;
   }
 }
+
+/**
+ * Whether this user may spend a RentCast request that the cache would
+ * otherwise have covered.
+ *
+ * A forced refresh costs one of a shared monthly allowance, so it is the
+ * owner's call. In a personal context the user IS the owner. In a team context
+ * only `org_owner` can force one — a team here can include agents and
+ * assistants, and the quota is not theirs to spend.
+ *
+ * Reads the role rather than trusting anything the client sent.
+ */
+export async function canForceRentCastRefresh(
+  ctx: RequestContext,
+  userId: string
+): Promise<boolean> {
+  if (ctx.type === "personal") return ctx.id === userId;
+
+  try {
+    const { data } = await db()
+      .from("team_members")
+      .select("role")
+      .eq("team_id", ctx.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    return data?.role === "org_owner";
+  } catch {
+    // Fails closed. Being unable to confirm authority is not authority.
+    return false;
+  }
+}
