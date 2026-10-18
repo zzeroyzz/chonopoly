@@ -3,6 +3,59 @@ import { type MortgageInputs } from "./types";
 export const TERM_PRESETS = [30, 20, 15];
 export const HARD_MONEY_TERM_PRESETS = [6, 12, 18, 24];
 
+/**
+ * Where the two screening verdicts draw their lines.
+ *
+ * Module constants, not per-user columns: the verdicts have to be right against
+ * fixed numbers before anyone tunes them, and making them editable on day one
+ * would cost six columns and six form inputs before we know whether 15% is even
+ * the right figure. Promoting them to the buyer profile later is additive.
+ *
+ * Every number here is a judgement call, so each one says what it is for.
+ */
+export const VERDICT_THRESHOLDS = {
+  // ── Affordability: Qualifies · Tight · Doesn't qualify ─────────────────────
+
+  /**
+   * Points above a DTI guideline that still counts as caution rather than fail.
+   *
+   * This was hardcoded in dti.ts and is unchanged — it moved here so both the
+   * ratio badges and the affordability verdict read one number. Two copies of a
+   * threshold eventually disagree, and then the badge says caution while the
+   * verdict says it failed.
+   */
+  dtiCautionPoints: 7,
+
+  /**
+   * Months of housing payment that should survive closing. Below this the buyer
+   * qualifies on paper and has nothing left for the first surprise, which is
+   * Tight rather than fine.
+   */
+  cashReservesTightMonths: 3,
+
+  /** Combined LTV above this leaves no equity to absorb an appraisal miss. */
+  combinedLtvTightPct: 97,
+
+  // ── Deal: Works · Thin · Doesn't work ──────────────────────────────────────
+  //
+  // Margin and profit are both tested, and both have to clear. 15% of a
+  // $120,000 ARV is $18,000 — a percentage that looks healthy attached to a
+  // payday that is not worth a six-month rehab. Neither test alone catches that.
+
+  dealMarginWorksPct: 15,
+  dealMarginThinPct: 10,
+  dealMinProfitWorks: 25_000,
+  dealMinProfitThin: 15_000,
+
+  /**
+   * The 70% rule, shown as a figure rather than used as a gate: a deal is
+   * judged on margin alone. This is a margin rule wearing a different hat, and
+   * two gates that can disagree give you a verdict you cannot explain in the
+   * space a phone has.
+   */
+  maxOfferArvPct: 70,
+} as const;
+
 export function defaultInputs(now: Date = new Date()): MortgageInputs {
   return {
     homeValue: 350000,

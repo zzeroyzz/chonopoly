@@ -1,11 +1,14 @@
 import { type DtiResult, type MortgageInputs, type MortgageResult, type RatioStatus } from "./types";
 import { LOAN_TYPE_CONFIG } from "./loanTypes";
+import { VERDICT_THRESHOLDS } from "./defaults";
 
 function status(ratio: number, guideline: number | null): RatioStatus {
   if (guideline === null) return "pass";
   if (ratio <= guideline) return "pass";
-  // A few points over the guideline is common and still approvable; well over isn't.
-  if (ratio <= guideline + 7) return "caution";
+  // A few points over the guideline is common and still approvable; well over
+  // isn't. The band is shared with the affordability verdict so the badge and
+  // the verdict cannot disagree about what "caution" means.
+  if (ratio <= guideline + VERDICT_THRESHOLDS.dtiCautionPoints) return "caution";
   return "fail";
 }
 
