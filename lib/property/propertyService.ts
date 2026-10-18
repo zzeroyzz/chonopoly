@@ -104,6 +104,7 @@ export async function upsertProperty(
       longitude: input.longitude ?? null,
       description: input.description ?? null,
       photo_url: input.photo_url ?? null,
+      listing_url: input.listing_url ?? null,
       created_by: userId,
     })
     .select("*")

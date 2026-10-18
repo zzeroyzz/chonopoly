@@ -55,6 +55,8 @@ export interface PropertyInput {
   longitude?: number | null;
   description?: string | null;
   photo_url?: string | null;
+  /** The listing page, so the photos are one tap away when estimating. */
+  listing_url?: string | null;
 }
 
 /** How an upsert resolved — surfaced so callers can explain a merge to the user. */

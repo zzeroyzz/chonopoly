@@ -1,4 +1,9 @@
-import { buildScreenRow, sortScreenRows, type ScreenHouse } from "@/lib/screen/screenRow";
+import {
+  buildScreenRow,
+  sortScreenRows,
+  type ScreenHouse,
+  type ScreenRow,
+} from "@/lib/screen/screenRow";
 import { type BuyerProfile } from "@/lib/profile/types";
 import { type Comp } from "@/lib/comps/types";
 
@@ -230,12 +235,17 @@ describe("the empty-profile state", () => {
 });
 
 describe("sortScreenRows", () => {
-  function rowWith(deal: "works" | "thin" | "does_not_work", affordability: "qualifies" | "tight" | "does_not_qualify", profit: number) {
+  /** Only the three fields the sort reads; the rest is irrelevant here. */
+  function rowWith(
+    deal: "works" | "thin" | "does_not_work",
+    affordability: "qualifies" | "tight" | "does_not_qualify",
+    profit: number | null
+  ): ScreenRow {
     return {
       deal: { verdict: deal },
       affordability: { verdict: affordability },
       profit,
-    } as never;
+    } as unknown as ScreenRow;
   }
 
   it("puts the houses worth acting on first", () => {
@@ -268,7 +278,7 @@ describe("sortScreenRows", () => {
 
   it("puts rows with no profit figure last", () => {
     const sorted = sortScreenRows([
-      rowWith("works", "qualifies", null as unknown as number),
+      rowWith("works", "qualifies", null),
       rowWith("works", "qualifies", 10_000),
     ]);
 
@@ -277,8 +287,8 @@ describe("sortScreenRows", () => {
 
   it("does not mutate the input", () => {
     const rows = [rowWith("thin", "qualifies", 1), rowWith("works", "qualifies", 2)];
-    const before = rows.map((r) => r.deal.verdict);
+    const before = rows.map((r) => r.profit);
     sortScreenRows(rows);
-    expect(rows.map((r) => r.deal.verdict)).toEqual(before);
+    expect(rows.map((r) => r.profit)).toEqual(before);
   });
 });
