@@ -1,12 +1,18 @@
 import { createClient as createServiceClient } from "@supabase/supabase-js";
+import { type Database } from "./supabase/database.types";
 
 export interface RequestContext {
   type: "personal" | "team";
   id: string;
 }
 
+/**
+ * Typed against the generated schema (`lib/supabase/database.types.ts`), so a
+ * column that does not exist is a compile error instead of a 500. Regenerate
+ * with `npm run db:types` after every migration.
+ */
 function db() {
-  return createServiceClient(
+  return createServiceClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
