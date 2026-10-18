@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveContext } from "@/lib/context";
 import { listScenarios, saveScenario } from "@/lib/mortgage/scenarioService";
+import { getProperty } from "@/lib/property/propertyService";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 
 export async function GET(request: Request) {
@@ -33,6 +34,8 @@ export async function POST(request: Request) {
     label?: string;
     inputs?: MortgageInputs;
     monthly_payment?: number;
+    /** Set when the calculator was opened from a house. */
+    property_id?: string | null;
     address?: {
       address_line1?: string;
       city?: string | null;
@@ -69,12 +72,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "address_line1 is required" }, { status: 400 });
   }
 
+  // A bound save and an address are mutually exclusive, and sending both is a
+  // caller bug worth surfacing rather than silently preferring one.
+  if (body.property_id && body.address?.address_line1?.trim()) {
+    return NextResponse.json(
+      { error: "Send property_id or address, not both" },
+      { status: 400 }
+    );
+  }
+
+  // The house has to be one of the caller's, or a bound save would be a way to
+  // write an analysis onto someone else's property.
+  if (body.property_id) {
+    const property = await getProperty(body.property_id, ctx);
+    if (!property) {
+      return NextResponse.json({ error: "Property not found" }, { status: 404 });
+    }
+  }
+
   try {
     const result = await saveScenario(
       {
         label: body.label,
         inputs: body.inputs,
         monthlyPayment: body.monthly_payment,
+        // A bound house skips upsertProperty entirely — it is already known.
+        propertyId: body.property_id ?? null,
         // Omitted entirely means quick math with no house yet; an address with
         // a street line routes through upsertProperty.
         address: body.address?.address_line1
