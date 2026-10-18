@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { type Database } from "../supabase/database.types";
 import { type RequestContext } from "../context";
 import { type Comp, type CompStatus, type ManualCompInput } from "./types";
 import { type MappedComp, type MappedSubjectFacts } from "./fromRentCast";
@@ -12,8 +13,13 @@ import { type MappedComp, type MappedSubjectFacts } from "./fromRentCast";
  * caught by the other.
  */
 
-function db(): SupabaseClient {
-  return createClient(
+/**
+ * Typed against the generated schema (`lib/supabase/database.types.ts`), so a
+ * column that does not exist is a compile error instead of a 500. Regenerate
+ * with `npm run db:types` after every migration.
+ */
+function db() {
+  return createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
@@ -51,11 +57,46 @@ interface CompRow {
   updated_at: string;
 }
 
-const COMP_COLUMNS =
-  "id,property_id,source,external_id,formatted_address,city,state,zip,latitude,longitude," +
-  "property_type,beds,baths,sqft,lot_sqft,year_built,price,status,listing_type,listed_date," +
-  "removed_date,last_seen_date,days_on_market,distance_miles,days_old,correlation,included," +
-  "notes,updated_at";
+/**
+ * Built from `keyof Row` rather than written as free text, so a column that
+ * does not exist is a compile error. A typed client alone does not catch this:
+ * supabase-js does not validate column names inside a `.select()` string.
+ */
+type CompColumn = keyof Database["public"]["Tables"]["property_comps"]["Row"];
+
+const COMP_FIELDS: CompColumn[] = [
+  "id",
+  "property_id",
+  "source",
+  "external_id",
+  "formatted_address",
+  "city",
+  "state",
+  "zip",
+  "latitude",
+  "longitude",
+  "property_type",
+  "beds",
+  "baths",
+  "sqft",
+  "lot_sqft",
+  "year_built",
+  "price",
+  "status",
+  "listing_type",
+  "listed_date",
+  "removed_date",
+  "last_seen_date",
+  "days_on_market",
+  "distance_miles",
+  "days_old",
+  "correlation",
+  "included",
+  "notes",
+  "updated_at",
+];
+
+const COMP_COLUMNS = COMP_FIELDS.join(",");
 
 function toComp(row: CompRow): Comp {
   return {
@@ -107,11 +148,22 @@ export async function listComps(propertyId: string, ctx: RequestContext): Promis
 /**
  * Store a fresh set of RentCast comps for a property.
  *
- * Upsert on `(property_id, source, external_id)`, which the partial unique
- * index backs, so refreshing updates the comps already held rather than
- * appending a second copy of each. The `included` flag is deliberately NOT part
- * of the update: a refresh must not silently re-tick a comp the user excluded
- * on purpose, which is the kind of change that moves an ARV with no visible
+ * Read the existing comps, update the ones we already hold, insert the rest —
+ * deliberately NOT an upsert.
+ *
+ * `ON CONFLICT (property_id, source, external_id)` cannot work here: the unique
+ * index backing those columns is partial (`WHERE external_id IS NOT NULL`), and
+ * PostgreSQL will only infer a partial index when the statement repeats its
+ * predicate, which PostgREST has no way to send. The upsert that used to be
+ * here therefore failed with "no unique or exclusion constraint matching the
+ * ON CONFLICT specification" on every live refresh — after the RentCast call
+ * had already been made and billed.
+ *
+ * The index stays as it is. It still does its job as a duplicate guard, and
+ * widening it to non-partial to suit one query would be the wrong way round.
+ *
+ * `included` is never written on an update: a refresh must not silently re-tick
+ * a comp the user excluded on purpose, which would move the ARV with no visible
  * cause.
  */
 export async function saveRentCastComps(
@@ -122,21 +174,77 @@ export async function saveRentCastComps(
 ): Promise<Comp[]> {
   if (comps.length === 0) return listComps(propertyId, ctx);
 
-  const rows = comps.map((comp) => ({
-    ...comp,
-    property_id: propertyId,
-    owner_type: ctx.type,
-    owner_id: ctx.id,
-    source: "rentcast" as const,
-    created_by: userId,
-    updated_at: new Date().toISOString(),
-  }));
-
-  const { error } = await db()
+  const { data: existingRows, error: readError } = await db()
     .from("property_comps")
-    .upsert(rows, { onConflict: "property_id,source,external_id", ignoreDuplicates: false });
+    .select("id, external_id")
+    .eq("property_id", propertyId)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id)
+    .eq("source", "rentcast");
 
-  if (error) throw new Error(`Failed to save comps: ${error.message}`);
+  if (readError) throw new Error(`Failed to read existing comps: ${readError.message}`);
+
+  const idByExternalId = new Map<string, string>();
+  for (const row of existingRows ?? []) {
+    if (row.external_id) idByExternalId.set(row.external_id, row.id);
+  }
+
+  const now = new Date().toISOString();
+  const toInsert: MappedComp[] = [];
+  const updates: { id: string; comp: MappedComp }[] = [];
+
+  for (const comp of comps) {
+    const existingId = comp.external_id ? idByExternalId.get(comp.external_id) : undefined;
+    if (existingId) updates.push({ id: existingId, comp });
+    else toInsert.push(comp);
+  }
+
+  if (toInsert.length > 0) {
+    const { error } = await db()
+      .from("property_comps")
+      .insert(
+        toInsert.map((comp) => ({
+          ...comp,
+          property_id: propertyId,
+          owner_type: ctx.type,
+          owner_id: ctx.id,
+          source: "rentcast",
+          created_by: userId,
+          updated_at: now,
+        }))
+      );
+    if (error) throw new Error(`Failed to save comps: ${error.message}`);
+  }
+
+  // Sequential rather than one statement per the whole set: PostgREST has no
+  // multi-row update, and a comp set is at most 25 rows.
+  for (const { id, comp } of updates) {
+    const { error } = await db()
+      .from("property_comps")
+      .update({
+        price: comp.price,
+        status: comp.status,
+        sqft: comp.sqft,
+        beds: comp.beds,
+        baths: comp.baths,
+        lot_sqft: comp.lot_sqft,
+        year_built: comp.year_built,
+        listing_type: comp.listing_type,
+        listed_date: comp.listed_date,
+        removed_date: comp.removed_date,
+        last_seen_date: comp.last_seen_date,
+        days_on_market: comp.days_on_market,
+        distance_miles: comp.distance_miles,
+        days_old: comp.days_old,
+        correlation: comp.correlation,
+        updated_at: now,
+      })
+      .eq("id", id)
+      .eq("owner_type", ctx.type)
+      .eq("owner_id", ctx.id);
+    if (error) throw new Error(`Failed to update a comp: ${error.message}`);
+  }
+
   return listComps(propertyId, ctx);
 }
 
@@ -214,12 +322,34 @@ export async function deleteComp(compId: string, ctx: RequestContext): Promise<v
   if (error) throw new Error(`Failed to remove the comp: ${error.message}`);
 }
 
+/** The fact columns RentCast can fill. Typed, for the same reason as above. */
+const SUBJECT_FACT_KEYS: (keyof Database["public"]["Tables"]["properties"]["Row"])[] = [
+  "property_type",
+  "beds",
+  "baths",
+  "sqft",
+  "lot_sqft",
+  "year_built",
+  "last_sale_date",
+  "last_sale_price",
+] as const;
+
 /**
- * Apply RentCast's subject facts without trampling anything a person typed.
+ * Apply RentCast's subject facts, filling only the blanks.
  *
- * `facts_source = 'manual'` wins: someone who corrected a sqft after standing
- * in the house knows more than the API does, and a refresh that quietly reverts
- * it is worse than one that does nothing.
+ * This previously gated on `facts_source !== 'manual'` and skipped the whole
+ * update, which was wrong in a way live data exposed immediately: the column
+ * DEFAULTS to 'manual', so every property that existed before the facts
+ * migration — and every one created since by any path that does not set it —
+ * was permanently ineligible. The Sylvan Rd property came back from RentCast
+ * with a 1,750 sqft subject and kept `sqft = null`, which meant the ARV had no
+ * size to multiply and could never compute. A property's facts simply never
+ * filled in.
+ *
+ * Filling blanks is the rule that actually expresses the intent. A value a
+ * person typed is non-null, so it is never overwritten; a column nobody has
+ * filled gets the API's figure. That protects a hand-corrected sqft without
+ * depending on a flag whose default disables the whole feature.
  */
 export async function applySubjectFacts(
   propertyId: string,
@@ -230,7 +360,7 @@ export async function applySubjectFacts(
 
   const { data: existing, error: readError } = await db()
     .from("properties")
-    .select("facts_source")
+    .select(SUBJECT_FACT_KEYS.join(","))
     .eq("id", propertyId)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
@@ -238,12 +368,26 @@ export async function applySubjectFacts(
 
   if (readError) throw new Error(`Failed to read the property: ${readError.message}`);
   if (!existing) throw new Error("Property not found.");
-  if (existing.facts_source === "manual") return;
+
+  const current = existing as unknown as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+
+  for (const key of SUBJECT_FACT_KEYS) {
+    const incoming = (facts as Record<string, unknown>)[key];
+    // Only where RentCast has something and the column is empty.
+    if (incoming !== undefined && (current[key] === null || current[key] === undefined)) {
+      patch[key] = incoming;
+    }
+  }
+
+  // Nothing to fill is a normal outcome, not a failure — it means the property
+  // already knows everything RentCast could tell us.
+  if (Object.keys(patch).length === 0) return;
 
   const { error } = await db()
     .from("properties")
     .update({
-      ...facts,
+      ...patch,
       facts_source: "rentcast",
       facts_updated_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

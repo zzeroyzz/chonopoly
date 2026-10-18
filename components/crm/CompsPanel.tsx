@@ -66,6 +66,42 @@ function compDate(comp: Comp): string | null {
   return comp.listedDate ? `Listed ${monthYear(comp.listedDate)}` : null;
 }
 
+/**
+ * Read a response safely, whatever came back.
+ *
+ * A 500 from a crashed route has no JSON body, and calling `.json()` on it
+ * throws "Unexpected end of JSON input" — which is what the Comps tab showed
+ * instead of the real PostgREST error. Status is checked first, and a body that
+ * will not parse becomes a message about the status rather than a parser
+ * complaint the user cannot act on.
+ */
+async function readResponse(res: Response, fallback: string): Promise<CompsResponse> {
+  const text = await res.text();
+
+  let parsed: unknown = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // Left null — handled below.
+    }
+  }
+
+  if (!res.ok) {
+    const message =
+      parsed && typeof parsed === "object" && typeof (parsed as { error?: unknown }).error === "string"
+        ? (parsed as { error: string }).error
+        : `${fallback} (HTTP ${res.status})`;
+    throw new Error(message);
+  }
+
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(`${fallback} — the server sent an empty response.`);
+  }
+
+  return parsed as CompsResponse;
+}
+
 export function CompsPanel({
   propertyId,
   ctx,
@@ -93,8 +129,7 @@ export function CompsPanel({
     if (!ctxParams) return;
     try {
       const res = await fetch(`/api/properties/${propertyId}/comps?${ctxParams}`);
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to load comps");
-      apply((await res.json()) as CompsResponse);
+      apply(await readResponse(res, "Failed to load comps"));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load comps");
@@ -122,11 +157,10 @@ export function CompsPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ context_type: ctx.type, context_id: ctx.id }),
       });
-      const data = (await res.json()) as CompsResponse & { error?: string };
       // A degraded lookup is a 200 carrying a reason, not an error — the comps
-      // already held stay on screen either way.
-      if (!res.ok) throw new Error(data.error ?? "Failed to refresh comps");
-      apply(data);
+      // already held stay on screen either way. A real 500 throws with the
+      // server's message.
+      apply(await readResponse(res, "Failed to refresh comps"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to refresh comps");
     } finally {
@@ -150,8 +184,7 @@ export function CompsPanel({
           body: JSON.stringify({ included: !comp.included }),
         }
       );
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to update the comp");
-      apply((await res.json()) as CompsResponse);
+      apply(await readResponse(res, "Failed to update the comp"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to update the comp");
       await load();
@@ -165,8 +198,7 @@ export function CompsPanel({
         `/api/properties/${propertyId}/comps/${comp.id}?${ctxParams}`,
         { method: "DELETE" }
       );
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to remove the comp");
-      apply((await res.json()) as CompsResponse);
+      apply(await readResponse(res, "Failed to remove the comp"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to remove the comp");
     }
@@ -443,8 +475,7 @@ function ManualCompForm({
           status: "sold",
         }),
       });
-      if (!res.ok) throw new Error((await res.json()).error ?? "Failed to add the comp");
-      onAdded((await res.json()) as CompsResponse);
+      onAdded(await readResponse(res, "Failed to add the comp"));
       setAddress("");
       setPrice("");
       setSqft("");
