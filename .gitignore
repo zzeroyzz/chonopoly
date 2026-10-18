@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# The template is the opt-in: it carries variable names and guidance, never
+# values. Must stay after the .env* line to re-include it.
+!.env.example
 
 # Playwright auth state and reports
 .playwright/

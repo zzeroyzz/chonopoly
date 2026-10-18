@@ -1837,37 +1837,52 @@ export type Database = {
       rentcast_requests: {
         Row: {
           billable: boolean
+          completed_at: string | null
           endpoint: string
           error: string | null
           id: string
+          normalized_address: string | null
           owner_id: string
           owner_type: string
           property_id: string | null
+          requested_address: string | null
           requested_at: string
+          response_body: Json | null
+          state: string
           status_code: number | null
           succeeded: boolean
         }
         Insert: {
           billable?: boolean
+          completed_at?: string | null
           endpoint: string
           error?: string | null
           id?: string
+          normalized_address?: string | null
           owner_id: string
           owner_type: string
           property_id?: string | null
+          requested_address?: string | null
           requested_at?: string
+          response_body?: Json | null
+          state?: string
           status_code?: number | null
           succeeded: boolean
         }
         Update: {
           billable?: boolean
+          completed_at?: string | null
           endpoint?: string
           error?: string | null
           id?: string
+          normalized_address?: string | null
           owner_id?: string
           owner_type?: string
           property_id?: string | null
+          requested_address?: string | null
           requested_at?: string
+          response_body?: Json | null
+          state?: string
           status_code?: number | null
           succeeded?: boolean
         }

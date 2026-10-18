@@ -25,54 +25,12 @@ import { MONTHLY_REQUEST_CAP, CACHE_WINDOW_DAYS, FREE_PLAN_MONTHLY_REQUESTS } fr
  */
 
 /**
- * ─────────────────────────────────────────────────────────────────────────────
- * TEMPORARY — remove when migration 20261019020000_rentcast_quota_guard is run.
- *
- * That migration is written but NOT applied, so `npm run db:types` cannot see
- * its columns yet. Rather than cast them away — which is the exact hole that
- * let `analyses.home_value` reach production — they are declared here and
- * merged into the generated table type, so every query below is still checked
- * and a typo in one of these names is still a compile error.
- *
- * Once the migration is applied: run `npm run db:types`, delete this block, and
- * change `QuotaDatabase` back to `Database`. If the generated types and this
- * block ever disagree, the generated ones are right.
- * ─────────────────────────────────────────────────────────────────────────────
+ * Typed against the generated schema. Regenerate with `npm run db:types` after
+ * every migration — a column that does not exist should be a compile error,
+ * never a 500.
  */
-interface PendingRentCastColumns {
-  normalized_address: string | null;
-  requested_address: string | null;
-  response_body: Json | null;
-  state: string;
-  completed_at: string | null;
-}
-
-type RentCastTable = Database["public"]["Tables"]["rentcast_requests"];
-
-/**
- * Flatten an intersection into a single object type.
- *
- * Needed because supabase-js parses the `.select()` string against the Row
- * type, and its conditional types resolve to `never` when handed an
- * intersection. Flattening restores inference, which is the whole reason for
- * the overlay — a cast would have compiled and checked nothing.
- */
-type Flatten<T> = { [K in keyof T]: T[K] };
-
-type QuotaDatabase = Omit<Database, "public"> & {
-  public: Omit<Database["public"], "Tables"> & {
-    Tables: Omit<Database["public"]["Tables"], "rentcast_requests"> & {
-      rentcast_requests: Omit<RentCastTable, "Row" | "Insert" | "Update"> & {
-        Row: Flatten<RentCastTable["Row"] & PendingRentCastColumns>;
-        Insert: Flatten<RentCastTable["Insert"] & Partial<PendingRentCastColumns>>;
-        Update: Flatten<RentCastTable["Update"] & Partial<PendingRentCastColumns>>;
-      };
-    };
-  };
-};
-
 function db() {
-  return createClient<QuotaDatabase>(
+  return createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
