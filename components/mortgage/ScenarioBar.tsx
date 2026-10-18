@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { Save, Trash2, History, RotateCcw, X, AlertCircle, Home, MapPin } from "lucide-react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import {
@@ -13,11 +13,30 @@ import { snapshotChanges } from "@/lib/mortgage/resolveInputs";
 import { Card, SectionLabel } from "./fields";
 import { dollars } from "./format";
 
+export interface BoundProperty {
+  id: string;
+  address_line1: string;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+}
+
 interface Props {
   inputs: MortgageInputs;
   monthlyPayment: number;
   /** Replaces the working draft. Only ever called from an explicit click. */
   onLoad: (inputs: MortgageInputs) => void;
+  /**
+   * The house this calculator was opened from.
+   *
+   * When set, saving writes straight to that property and the address fields
+   * are not shown at all — the house is already known, and asking for it again
+   * is what created duplicate property rows. Only the standalone calculator
+   * asks for an address.
+   */
+  boundProperty?: BoundProperty | null;
+  /** A scenario to open on arrival, from the Numbers tab's deep link. */
+  openScenarioId?: string | null;
 }
 
 /** Field names as they read in the UI, for the compare view. */
@@ -220,7 +239,13 @@ function AttachAddressForm({
   );
 }
 
-export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
+export function ScenarioBar({
+  inputs,
+  monthlyPayment,
+  onLoad,
+  boundProperty = null,
+  openScenarioId = null,
+}: Props) {
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [label, setLabel] = useState("");
   // The house. Optional — quick math still works with no address, and those
@@ -234,6 +259,13 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [historyFor, setHistoryFor] = useState<ScenarioSummary | null>(null);
   const [versions, setVersions] = useState<ScenarioVersion[]>([]);
+
+  // The Numbers tab has linked `?scenario=<id>` since it was written and
+  // nothing ever read it, so that link silently opened a blank calculator.
+  //
+  // A ref rather than state: this is a one-shot latch, nothing renders from it,
+  // and setting state in the effect that reads it cascades renders.
+  const openedScenario = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -268,9 +300,19 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
           label: label.trim(),
           inputs,
           monthly_payment: monthlyPayment,
-          address: address.trim()
-            ? { address_line1: address.trim(), city: city.trim() || null, zip: zip.trim() || null }
-            : null,
+          // A bound house is sent by id and never re-derived from text. The
+          // two are mutually exclusive and the route rejects both together.
+          ...(boundProperty
+            ? { property_id: boundProperty.id }
+            : {
+                address: address.trim()
+                  ? {
+                      address_line1: address.trim(),
+                      city: city.trim() || null,
+                      zip: zip.trim() || null,
+                    }
+                  : null,
+              }),
           context_type: "personal",
         }),
       });
@@ -306,6 +348,17 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
       setError(e instanceof Error ? e.message : "Could not open that scenario");
     }
   }
+
+  // Open the deep-linked scenario once, after the list has loaded. Once only:
+  // re-applying it would overwrite edits the user made after arriving.
+  useEffect(() => {
+    if (!openScenarioId || openedScenario.current) return;
+    openedScenario.current = true;
+    void load(openScenarioId);
+    // `load` is recreated each render; depending on it would re-run this on
+    // every render, which the latch above would block but pointlessly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openScenarioId]);
 
   async function remove(id: string) {
     setError(null);
@@ -370,6 +423,7 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
         <input
           type="text"
           value={label}
+          data-testid="scenario-label"
           onChange={(e) => setLabel(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -386,14 +440,17 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
           onClick={() => void save()}
           disabled={!label.trim() || busy}
           className="h-9 px-3 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[13px] font-semibold disabled:opacity-40 transition-opacity shrink-0 inline-flex items-center gap-1.5"
+          data-testid="scenario-save"
         >
           <Save size={14} />
           {busy ? "Saving…" : "Save"}
         </button>
       </div>
 
-      {/* The house. Optional: quick math works without one, and the save lands
-          under "Unassigned" with an action to attach an address later. */}
+      {/* The house. Only asked for by the standalone calculator — a bound save
+          already knows which house it is for, and asking again is what created
+          two property rows for one address. */}
+      {!boundProperty && (
       <div className="grid gap-2 mt-2">
         <input
           type="text"
@@ -428,6 +485,7 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
           </div>
         )}
       </div>
+      )}
 
       {matchNote && (
         <p data-testid="match-note" className="text-[11px] text-(--color-accent) mt-2 leading-relaxed">
