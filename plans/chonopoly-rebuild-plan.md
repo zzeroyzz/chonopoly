@@ -417,7 +417,14 @@ All of these are pure functions that sit alongside the existing ones, and each h
 | `resolveInputs` | A complete `MortgageInputs` built from profile + defaults + house |
 
 **`calculateFlip`**: profit = ARV − purchase − rehab − buying − holding − financing − selling.
-Test fixture (FlipperForce's worked example): purchase $95,000, ARV $210,000, repairs $65,000, buying 1%, holding $750 × 5 months, financing 12% on $140,000 for 6 months, selling 8% → profit **$20,900**.
+Test fixture (FlipperForce's worked example): purchase $95,000, ARV $210,000, repairs $65,000, buying 1%, holding $750 × 5 months, financing 12% on $140,000 for 6 months, selling 8% → profit **$20,100**.
+
+FlipperForce publishes $20,900 for this example, but that figure does not
+follow from the inputs it states. The page says "8% in Selling Costs" and then
+shows $16,000 — which is 7.619% of the $210,000 resale value, i.e. 8% of
+$200,000. Eight percent of the actual resale value is $16,800, which gives
+$20,100. The fixture uses the stated 8%, so every input is the one the example
+names and every output follows from it.
 
 **`calculate203kCap`**: the lower of (adjusted as-is value + rehab + financeable items) or 110% of the after-improved value, multiplied by the LTV factor (96.5% on a purchase), and kept within the county loan limit. It's labeled as an estimate everywhere it appears, because the lender's worksheet is the final word. The Limited 203(k) rehab ceiling comes from whatever HUD guidance is current at build time.
 
@@ -518,7 +525,7 @@ Each phase gets its own branch and PR, can ship by itself, and leaves the app in
 ## Testing
 
 For every phase:
-- **Unit:** every new calculation, including the $20,900 flip fixture. `resolveInputs` must produce the same `MortgageInputs` the current form does when given the same values.
+- **Unit:** every new calculation, including the $20,100 flip fixture. `resolveInputs` must produce the same `MortgageInputs` the current form does when given the same values.
 - **API:** 400 on a missing address, 403 on the wrong context, 404 on a missing property. RentCast failure paths: no key, 429, and no comps returned.
 - **Playwright at 390px:**
   - Phase 0: set income and debts once, see the calculator use them without re-entry, change a debt and see the badge. Plus the empty-profile state and a negative badge case. (The earlier wording said "screen two houses" — the screen table is Phase 2.)

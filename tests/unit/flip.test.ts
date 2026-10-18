@@ -14,9 +14,23 @@ import { type MortgageInputs } from "@/lib/mortgage/types";
  * https://flipperforce.com/how-to-flip-houses/chapter-4-how-to-analyze-house-flip-deals/calculating-profit
  */
 
-describe("calculateFlip — the FlipperForce $20,900 fixture", () => {
-  // Purchase $95,000 · ARV $210,000 · repairs $65,000 · buying 1% ·
-  // holding $750 × 5 months · financing 12% on $140,000 for 6 months.
+describe("calculateFlip — the FlipperForce fixture", () => {
+  // ───────────────────────────────────────────────────────────────────────────
+  // FlipperForce's worked example: purchase $95,000 · ARV $210,000 · repairs
+  // $65,000 · buying 1% of purchase · holding $750 × 5 months · financing 12%
+  // on $140,000 for 6 months · selling 8% of the resale price.
+  //
+  // Their published headline is $20,900, but that figure does not follow from
+  // their own stated percentage. They say "8% in Selling Costs" and show
+  // $16,000 — which is 7.619% of $210,000, i.e. 8% of $200,000. Correct
+  // arithmetic on 8% of the actual resale value gives $16,800 and a profit of
+  // $20,100.
+  //
+  // This fixture uses the stated 8%, so every input here is the one the
+  // example names and every output follows from it. Do not "fix" these numbers
+  // to reach $20,900 — doing so would require the selling rate to be something
+  // other than the 8% being passed in.
+  // ───────────────────────────────────────────────────────────────────────────
   const financing = genericFinancing(140_000, 12, 0, 6);
 
   const base = {
@@ -24,54 +38,39 @@ describe("calculateFlip — the FlipperForce $20,900 fixture", () => {
     purchasePrice: 95_000,
     rehabTotal: 65_000,
     buyingPct: 1,
+    sellingPct: 8,
     holdingMonthly: 750,
     holdingMonths: 5,
     financing,
   };
 
-  it("reproduces the published $20,900 profit from the published line items", () => {
-    // ─────────────────────────────────────────────────────────────────────────
-    // FlipperForce's example is internally inconsistent, and this is where it
-    // shows. It *states* "8% in Selling Costs" but *shows* a selling cost of
-    // $16,000 — which is 7.619% of the $210,000 resale value, i.e. 8% of
-    // $200,000. The $20,900 headline reconciles only with the $16,000 figure.
-    //
-    // So this test drives the dollar amount they actually used, expressed as
-    // the rate it implies. The calculator is not bent to hit the headline; see
-    // the next test for what a literal 8% produces.
-    // ─────────────────────────────────────────────────────────────────────────
-    const result = calculateFlip({ ...base, sellingPct: (16_000 / 210_000) * 100 });
+  it("costs out every line of the example", () => {
+    const result = calculateFlip(base);
 
     expect(result.buyingCosts).toBeCloseTo(950, 6);
     expect(result.holdingCosts).toBeCloseTo(3_750, 6);
     expect(result.financingCosts).toBeCloseTo(8_400, 6);
-    expect(result.sellingCosts).toBeCloseTo(16_000, 6);
-    expect(result.allInCost).toBeCloseTo(189_100, 6);
-    expect(result.profit).toBeCloseTo(20_900, 6);
+    expect(result.sellingCosts).toBeCloseTo(16_800, 6);
+    expect(result.allInCost).toBeCloseTo(189_900, 6);
   });
 
-  it("produces $20,100 at a literal 8% selling cost", () => {
-    // Correct arithmetic on the stated percentage. Documented so nobody
-    // 'fixes' the calculator later to make the headline match the percentage.
-    const result = calculateFlip({ ...base, sellingPct: 8 });
-
-    expect(result.sellingCosts).toBeCloseTo(16_800, 6);
-    expect(result.profit).toBeCloseTo(20_100, 6);
+  it("produces a $20,100 profit", () => {
+    expect(calculateFlip(base).profit).toBeCloseTo(20_100, 6);
   });
 
   it("derives margin, ROI and cash invested", () => {
-    const result = calculateFlip({ ...base, sellingPct: (16_000 / 210_000) * 100 });
+    const result = calculateFlip(base);
 
-    expect(result.marginPct).toBeCloseTo((20_900 / 210_000) * 100, 6);
+    expect(result.marginPct).toBeCloseTo((20_100 / 210_000) * 100, 6);
 
     // Cash invested excludes selling costs, which come out of the proceeds:
     // 95,000 + 65,000 + 950 + 3,750 + 8,400 − 140,000
     expect(result.cashInvested).toBeCloseTo(33_100, 6);
-    expect(result.roiPct).toBeCloseTo((20_900 / 33_100) * 100, 6);
+    expect(result.roiPct).toBeCloseTo((20_100 / 33_100) * 100, 6);
   });
 
   it("reports the 70% rule as a figure", () => {
-    const result = calculateFlip({ ...base, sellingPct: 8 });
+    const result = calculateFlip(base);
 
     // 210,000 × 70% − 65,000
     expect(result.maxOffer).toBeCloseTo(82_000, 6);
