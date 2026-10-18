@@ -46,6 +46,37 @@ async function stubCrm(page: Page) {
     })
   );
 
+  await page.route("**/api/properties/*?*detail=1*", (r) =>
+    r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: {
+          entry: entry("e1", "128 Maple St").entry,
+          property: {
+            id: "prop-e1",
+            address_line1: "128 Maple St",
+            city: "Duluth",
+            state: "GA",
+            zip: "30096",
+            property_type: "single_family",
+            beds: 3,
+            baths: 2,
+            sqft: 1750,
+            year_built: 1994,
+            annual_taxes: null,
+            listing_url: null,
+            needs_address_review: false,
+          },
+          contacts: [],
+          tasks: [],
+          activities: [],
+          history: [],
+        },
+      }),
+    })
+  );
+
   await page.route("**/api/crm/entry/**", (r) =>
     r.fulfill({
       status: 200,

@@ -74,7 +74,9 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   const load = useCallback(async () => {
     if (!ctxParams) return;
     try {
-      const res = await fetch(`/api/crm/entry/${entryId}?${ctxParams}`);
+      // Resolves a property id first and an entry id second, so the Properties
+      // list and old /crm/<entryId> links both land here.
+      const res = await fetch(`/api/properties/${entryId}?${ctxParams}&detail=1`);
       if (!res.ok) throw new Error((await res.json()).error ?? "Failed to load");
       const data = await res.json();
       setError(null);
@@ -188,31 +190,46 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               )}
             </div>
 
-            <div className="flex items-center gap-2 mt-3 flex-wrap">
-              <div className="relative">
-                <button
-                  type="button"
-                  data-testid="detail-stage-badge"
-                  disabled={busy}
-                  onClick={() => setMenuOpen((v) => !v)}
-                  className="text-[12px] px-2.5 py-1 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors disabled:opacity-50"
-                >
-                  {STAGE_LABEL[detail.entry.stage]}
-                </button>
-                {menuOpen && (
-                  <StageMenu
-                    current={detail.entry.stage}
-                    onPick={(s: Stage) =>
-                      void post("/api/crm/stage", { entry_id: entryId, to_stage: s })
-                    }
-                    onClose={() => setMenuOpen(false)}
-                  />
-                )}
+            {/* The pipeline badge only exists when the house is on the
+                pipeline. A house added from the calculator or a batch paste
+                has no entry, and it is still a house worth looking at. */}
+            {detail.entry ? (
+              <div className="flex items-center gap-2 mt-3 flex-wrap">
+                <div className="relative">
+                  <button
+                    type="button"
+                    data-testid="detail-stage-badge"
+                    disabled={busy}
+                    onClick={() => setMenuOpen((v) => !v)}
+                    className="text-[12px] px-2.5 py-1 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors disabled:opacity-50"
+                  >
+                    {STAGE_LABEL[detail.entry.stage]}
+                  </button>
+                  {menuOpen && detail.entry && (
+                    <StageMenu
+                      current={detail.entry.stage}
+                      onPick={(s: Stage) =>
+                        void post("/api/crm/stage", {
+                          entry_id: detail.entry?.id,
+                          to_stage: s,
+                        })
+                      }
+                      onClose={() => setMenuOpen(false)}
+                    />
+                  )}
+                </div>
+                <span className="text-[11px] text-(--color-text-tertiary)">
+                  {daysInStage(detail.entry.stage_since)}d in stage
+                </span>
               </div>
-              <span className="text-[11px] text-(--color-text-tertiary)">
-                {daysInStage(detail.entry.stage_since)}d in stage
-              </span>
-            </div>
+            ) : (
+              <p
+                data-testid="not-on-pipeline"
+                className="text-[11px] text-(--color-text-tertiary) mt-3"
+              >
+                Not on the pipeline — screening only.
+              </p>
+            )}
 
             {property && (
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 text-[12px]">
