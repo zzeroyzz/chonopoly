@@ -208,13 +208,13 @@ test("the Numbers tab lists this property's analyses", async ({ page }) => {
   await expect(page.getByText("primary")).toBeVisible();
 });
 
-test("Comps and Rehab say which phase fills them", async ({ page }) => {
+test("Rehab still says which phase fills it", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties/e1");
 
-  await page.getByTestId("tab-comps").click();
-  await expect(page.getByTestId("panel-comps")).toContainText(/screening step/);
-
+  // Comps used to carry the same "arrives with the screening step" placeholder.
+  // It is a real panel now, covered by 23-comps.spec.ts; Rehab is still a
+  // placeholder until the estimating phase lands.
   await page.getByTestId("tab-rehab").click();
   await expect(page.getByTestId("panel-rehab")).toContainText(/estimating step/);
 });
