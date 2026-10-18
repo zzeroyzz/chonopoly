@@ -40,6 +40,8 @@ interface RefreshUsage {
 interface RefreshStatus {
   usage: RefreshUsage;
   mode: "live" | "mock";
+  /** False when no API key is configured — nothing can be pulled at all. */
+  connected: boolean;
   locked: boolean;
   fetchedAt: string | null;
   nextRefreshAt: string | null;
@@ -322,18 +324,11 @@ export function CompsPanel({
             )}
           </div>
 
-          {/* Locked, at the cap, or free to call — three different buttons
-              rather than one that silently does something different. */}
-          {status?.usage.atCap ? (
-            <button
-              type="button"
-              disabled
-              data-testid="refresh-at-cap"
-              className="shrink-0 h-9 px-3 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium opacity-50"
-            >
-              Limit reached
-            </button>
-          ) : status?.locked ? (
+          {/* A button that cannot do anything is worse than no button. When
+              RentCast is unreachable — no key, or the month's allowance gone —
+              Refresh is removed entirely and the reason takes its place
+              below. Otherwise: locked, or free to call. */}
+          {status && !status.connected ? null : status?.usage.atCap ? null : status?.locked ? (
             <button
               type="button"
               onClick={() => setConfirmingForce(true)}
@@ -410,15 +405,29 @@ export function CompsPanel({
           </div>
         )}
 
-        {status?.usage.atCap && (
+        {status && !status.connected && (
+          <p
+            data-testid="refresh-unavailable"
+            className="flex gap-1.5 text-[11px] text-(--color-text-secondary) mt-2 leading-relaxed"
+          >
+            <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+            <span>
+              RentCast isn&apos;t connected, so comps can&apos;t be pulled
+              automatically. Add them by hand below.
+            </span>
+          </p>
+        )}
+
+        {status?.connected && status.usage.atCap && (
           <p
             data-testid="refresh-cap-notice"
             className="flex gap-1.5 text-[11px] text-red-400 mt-2 leading-relaxed"
           >
             <AlertTriangle size={12} className="shrink-0 mt-0.5" />
             <span>
-              {status.usage.used} of {status.usage.cap} monthly RentCast requests used.
-              Comps can still be added by hand, and this resets next month.
+              {status.usage.used} of {status.usage.cap} monthly RentCast requests used,
+              so nothing can be pulled until next month. Comps can still be
+              added by hand.
             </span>
           </p>
         )}
@@ -444,14 +453,20 @@ export function CompsPanel({
           </button>
         )}
 
-        {/* What the number is built on. Stated, never implied. */}
-        <p data-testid="arv-basis" className="text-[12px] text-(--color-text-secondary) mt-3">
-          {arv ? `Built on ${arv.basisLabel}` : "No comps yet"}
-          {arv?.medianPricePerSqft
-            ? ` · median $${Math.round(arv.medianPricePerSqft)}/sqft`
-            : ""}
-          {arv?.subjectSqft ? ` × ${arv.subjectSqft.toLocaleString()} sqft` : ""}
-        </p>
+        {/* What the number is built on. Stated, never implied.
+            Only shown once there IS a number — with no comps this said "Built
+            on no comps" directly above a warning saying "No comps are included
+            yet", which is the same sentence twice. The warning is the better
+            of the two, because it says what to do. */}
+        {arv && arv.value !== null && (
+          <p data-testid="arv-basis" className="text-[12px] text-(--color-text-secondary) mt-3">
+            {`Built on ${arv.basisLabel}`}
+            {arv.medianPricePerSqft
+              ? ` · median $${Math.round(arv.medianPricePerSqft)}/sqft`
+              : ""}
+            {arv.subjectSqft ? ` × ${arv.subjectSqft.toLocaleString()} sqft` : ""}
+          </p>
+        )}
 
         {arv && arv.confidence !== "none" && (
           <p className="text-[11px] text-(--color-text-tertiary) mt-1">

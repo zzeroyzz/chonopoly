@@ -59,6 +59,13 @@ async function stubCrm(page: Page) {
             city: "Duluth",
             state: "GA",
             zip: "30096",
+            property_type: "single_family",
+            beds: 3,
+            baths: 2,
+            sqft: 1750,
+            year_built: 1994,
+            annual_taxes: null,
+            listing_url: null,
             needs_address_review: false,
           },
           contacts: [],
@@ -236,4 +243,87 @@ test("the hub is gone", async ({ page }) => {
 
   await expect(page).toHaveURL(/\/pipeline$/);
   await expect(page.getByText("Pick where you're working")).toHaveCount(0);
+});
+
+// ─── House facts are editable ─────────────────────────────────────────────────
+
+test("property type reads as a label, not a database value", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/properties/e1");
+
+  // "single_family" on a detail page is showing the database to the user.
+  await expect(page.getByText("Single family")).toBeVisible();
+  await expect(page.getByText("single_family")).toHaveCount(0);
+});
+
+test("house facts can be edited", async ({ page }) => {
+  await stubCrm(page);
+
+  const patches: string[] = [];
+  await page.route("**/api/properties/*", async (route) => {
+    if (route.request().method() === "PATCH") {
+      patches.push(route.request().postData() ?? "");
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ property: { id: "prop-e1" } }),
+      });
+    }
+    return route.fallback();
+  });
+
+  await page.goto("/properties/e1");
+  await page.getByTestId("edit-house-toggle").click();
+  await expect(page.getByTestId("edit-house-form")).toBeVisible();
+
+  // The two the owner named: sqft and the address.
+  await page.getByTestId("edit-house-sqft").fill("1875");
+  await page.getByTestId("edit-house-address").fill("128 Maple Street");
+  await page.getByTestId("edit-house-save").click();
+
+  expect(patches).toHaveLength(1);
+  const sent = JSON.parse(patches[0]);
+  expect(sent.sqft).toBe(1875);
+  expect(sent.addressLine1).toBe("128 Maple Street");
+});
+
+test("the edit form says hand-entered facts win", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/properties/e1");
+
+  await page.getByTestId("edit-house-toggle").click();
+  // Otherwise a correction looks like it might be overwritten on the next
+  // refresh, which is exactly what used to happen.
+  await expect(page.getByTestId("edit-house-form")).toContainText("wins over RentCast");
+});
+
+test("cancelling the edit form changes nothing", async ({ page }) => {
+  await stubCrm(page);
+
+  let patches = 0;
+  await page.route("**/api/properties/*", async (route) => {
+    if (route.request().method() === "PATCH") patches += 1;
+    return route.fallback();
+  });
+
+  await page.goto("/properties/e1");
+  await page.getByTestId("edit-house-toggle").click();
+  await page.getByTestId("edit-house-sqft").fill("9999");
+  await page.getByTestId("edit-house-cancel").click();
+
+  await expect(page.getByTestId("edit-house-form")).toHaveCount(0);
+  expect(patches).toBe(0);
+});
+
+test("the edit form fits 390px", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/properties/e1");
+
+  await page.getByTestId("edit-house-toggle").click();
+  await expect(page.getByTestId("edit-house-form")).toBeVisible();
+
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflows).toBe(false);
 });

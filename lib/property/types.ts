@@ -55,6 +55,8 @@ export interface PropertyInput {
   longitude?: number | null;
   description?: string | null;
   photo_url?: string | null;
+  /** The listing page, so the photos are one tap away when estimating. */
+  listing_url?: string | null;
 }
 
 /** How an upsert resolved — surfaced so callers can explain a merge to the user. */
@@ -63,4 +65,26 @@ export type PropertyMatch = "parcel" | "address" | "created";
 export interface UpsertPropertyResult {
   property: Property;
   matchedOn: PropertyMatch;
+}
+
+/**
+ * Readable names for the stored property types.
+ *
+ * The column holds snake_case values, and showing "single_family" on a detail
+ * page is showing the database to the user.
+ */
+export const PROPERTY_TYPE_LABEL: Record<string, string> = {
+  single_family: "Single family",
+  multi_family: "Multi-family",
+  condo: "Condo",
+  townhouse: "Townhouse",
+  land: "Land",
+  mobile: "Mobile home",
+  other: "Other",
+};
+
+/** Falls back to the raw value rather than hiding an unexpected one. */
+export function propertyTypeLabel(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return PROPERTY_TYPE_LABEL[value] ?? value;
 }
