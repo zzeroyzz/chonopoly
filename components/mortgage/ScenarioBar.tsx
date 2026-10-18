@@ -51,25 +51,6 @@ function formatValue(v: unknown): string {
   return String(v);
 }
 
-/**
- * What to tell the user about the house their save landed on.
- *
- * A parcel match is authoritative. An address match is only probable —
- * normalisation is lossy — so it says so rather than implying certainty, and
- * the property carries needs_address_review for a human to confirm or split.
- */
-function matchMessage(
-  matchedOn: "parcel" | "address" | "created" | undefined,
-  property: ScenarioProperty | null | undefined
-): string | null {
-  if (!matchedOn || !property) return null;
-  const where = [property.addressLine1, property.city].filter(Boolean).join(", ");
-
-  if (matchedOn === "parcel") return `Matched ${where} by parcel number.`;
-  if (matchedOn === "address") return `Matched ${where} by address — check it before working it.`;
-  return `Added ${where} to your properties.`;
-}
-
 /** Group scenarios by the house they belong to; unassigned ones come last. */
 function groupByProperty(scenarios: ScenarioSummary[]) {
   const houses = new Map<string, { property: ScenarioProperty; rows: ScenarioSummary[] }>();
@@ -147,47 +128,50 @@ function ScenarioRow({
 }
 
 /**
- * Attach a house to a save that never had one.
+ * Point an unassigned save at a house that already exists.
  *
- * The same upsertProperty path a new save uses, so an address already in the
- * pipeline is matched rather than duplicated.
+ * A picker, not a text field. Typing an address here used to run through
+ * upsertProperty and could create a house, which is the duplicate-making path
+ * this app now has exactly one of: Add.
  */
-function AttachAddressForm({
+function AttachHouseForm({
   scenario,
+  houses,
   onDone,
   onCancel,
 }: {
   scenario: ScenarioSummary;
-  onDone: (note: string | null) => void | Promise<void>;
+  houses: { propertyId: string; address: string }[];
+  onDone: () => void | Promise<void>;
   onCancel: () => void;
 }) {
-  // Pre-filled from the label: these were saved under the address, which is
-  // exactly the string being asked for.
-  const [line1, setLine1] = useState(scenario.label);
+  // Pre-filled from the label, which for these saves is the address they were
+  // named after — so the house they belong to is usually the first match.
+  const [query, setQuery] = useState(scenario.label);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit() {
-    if (!line1.trim() || busy) return;
+  const matches = houses.filter((h) =>
+    h.address.toLowerCase().includes(query.trim().toLowerCase())
+  );
+
+  async function attach(propertyId: string) {
+    if (busy) return;
     setBusy(true);
     setError(null);
     try {
       const res = await fetch(`/api/mortgage/scenarios/${scenario.id}/address`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address_line1: line1.trim(), context_type: "personal" }),
+        body: JSON.stringify({ property_id: propertyId, context_type: "personal" }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Could not attach that address");
+        throw new Error(body.error ?? "Could not attach that house");
       }
-      const body = (await res.json()) as {
-        scenario: ScenarioSummary;
-        matchedOn?: "parcel" | "address" | "created";
-      };
-      await onDone(matchMessage(body.matchedOn, body.scenario.property));
+      await onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not attach that address");
+      setError(e instanceof Error ? e.message : "Could not attach that house");
       setBusy(false);
     }
   }
@@ -195,35 +179,47 @@ function AttachAddressForm({
   return (
     <div className="mt-3 pt-3 border-t border-(--color-border-strong)">
       <p className="text-[11px] uppercase tracking-[0.1em] text-(--color-text-tertiary) mb-2">
-        Address for “{scenario.label}”
+        House for “{scenario.label}”
       </p>
       <input
         type="text"
-        value={line1}
-        onChange={(e) => setLine1(e.target.value)}
-        aria-label="Address to attach"
-        data-testid="attach-address-input"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        aria-label="Search houses by address"
+        data-testid="attach-house-search"
+        placeholder="Search your houses by address"
         className="w-full h-9 rounded-[var(--radius-md)] bg-(--color-elevated) border border-(--color-border-default) px-3 text-[13px] text-(--color-text-primary) focus:outline-none focus:border-(--color-accent) transition-colors"
       />
       {error && <p className="text-[11px] text-(--color-danger) mt-1.5">{error}</p>}
-      <div className="flex items-center gap-2 mt-2">
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={!line1.trim() || busy}
-          data-testid="attach-address-save"
-          className="h-9 px-3 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[13px] font-semibold disabled:opacity-40"
-        >
-          {busy ? "Attaching…" : "Attach"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-[12px] text-(--color-text-secondary)"
-        >
-          Cancel
-        </button>
+      <div className="max-h-40 overflow-y-auto mt-2" data-testid="attach-house-list">
+        {matches.length === 0 ? (
+          <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
+            No house matches. Houses are added from{" "}
+            <span className="text-(--color-text-secondary)">+ Add</span> — attaching
+            here never creates one.
+          </p>
+        ) : (
+          matches.map((h) => (
+            <button
+              key={h.propertyId}
+              type="button"
+              disabled={busy}
+              onClick={() => void attach(h.propertyId)}
+              data-testid={`attach-house-${h.propertyId}`}
+              className="block w-full text-left text-[12px] text-(--color-text-primary) py-2 border-b border-(--color-border-subtle) last:border-0 truncate disabled:opacity-40"
+            >
+              {h.address}
+            </button>
+          ))
+        )}
       </div>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="text-[12px] text-(--color-text-secondary) mt-2"
+      >
+        Cancel
+      </button>
     </div>
   );
 }
@@ -246,7 +242,6 @@ export function ScenarioBar({
   const [houseQuery, setHouseQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selectedHouse, setSelectedHouse] = useState<{ id: string; address: string } | null>(null);
-  const [matchNote, setMatchNote] = useState<string | null>(null);
   const [attachingTo, setAttachingTo] = useState<ScenarioSummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -302,13 +297,12 @@ export function ScenarioBar({
     try {
       // One request, shared with the modal. No address parameter exists, so
       // this cannot create a property however it is called.
-      const result = await saveAnalysis({
+      await saveAnalysis({
         label,
         inputs,
         monthlyPayment,
         propertyId: selectedHouse?.id ?? null,
       });
-      setMatchNote(matchMessage(result.matchedOn, result.scenario.property));
       setLabel("");
       setSelectedHouse(null);
       setPickerOpen(false);
@@ -515,12 +509,6 @@ export function ScenarioBar({
         )}
       </div>
 
-      {matchNote && (
-        <p data-testid="match-note" className="text-[11px] text-(--color-accent) mt-2 leading-relaxed">
-          {matchNote}
-        </p>
-      )}
-
       {error && <p className="text-[11px] text-(--color-danger) mt-2">{error}</p>}
 
       {scenarios.length === 0 ? (
@@ -586,12 +574,15 @@ export function ScenarioBar({
                   />
                   <button
                     type="button"
-                    onClick={() => setAttachingTo(s)}
+                    onClick={() => {
+                      setAttachingTo(s);
+                      if (houses.length === 0) void loadHouses();
+                    }}
                     data-testid={`attach-${s.id}`}
                     className="text-[11px] text-(--color-accent) inline-flex items-center gap-1 pl-1 pb-1.5"
                   >
                     <MapPin size={11} />
-                    Attach an address
+                    Attach a house
                   </button>
                 </div>
               ))}
@@ -601,10 +592,10 @@ export function ScenarioBar({
       )}
 
       {attachingTo && (
-        <AttachAddressForm
+        <AttachHouseForm
           scenario={attachingTo}
-          onDone={async (note) => {
-            setMatchNote(note);
+          houses={houses}
+          onDone={async () => {
             setAttachingTo(null);
             await refresh();
           }}

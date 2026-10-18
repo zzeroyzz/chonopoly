@@ -34,15 +34,10 @@ export async function POST(request: Request) {
     label?: string;
     inputs?: MortgageInputs;
     monthly_payment?: number;
-    /** Set when the calculator was opened from a house. */
+    /** The house this analysis belongs to. Omit for quick math with no house. */
     property_id?: string | null;
-    address?: {
-      address_line1?: string;
-      city?: string | null;
-      state?: string | null;
-      zip?: string | null;
-      parcel_number?: string | null;
-    } | null;
+    /** Accepted only to be refused — see below. */
+    address?: unknown;
     context_type?: string;
     context_id?: string;
   };
@@ -66,17 +61,13 @@ export async function POST(request: Request) {
   if (typeof body.monthly_payment !== "number" || !Number.isFinite(body.monthly_payment)) {
     return NextResponse.json({ error: "monthly_payment must be a number" }, { status: 400 });
   }
-  // An address object with no street line is a mistake, not "no house" — the
-  // latter is omitting the field entirely.
-  if (body.address && !body.address.address_line1?.trim()) {
-    return NextResponse.json({ error: "address_line1 is required" }, { status: 400 });
-  }
-
-  // A bound save and an address are mutually exclusive, and sending both is a
-  // caller bug worth surfacing rather than silently preferring one.
-  if (body.property_id && body.address?.address_line1?.trim()) {
+  // Saving an analysis cannot create a house, so an address has nothing to do
+  // here. Refused loudly rather than ignored: a caller still sending one is
+  // working from the old contract, where this call could make a property and
+  // a second spelling of one address made a second house. Add is the only door.
+  if (body.address !== undefined && body.address !== null) {
     return NextResponse.json(
-      { error: "Send property_id or address, not both" },
+      { error: "Send property_id. Houses are created from Add, not from a save." },
       { status: 400 }
     );
   }
@@ -96,19 +87,9 @@ export async function POST(request: Request) {
         label: body.label,
         inputs: body.inputs,
         monthlyPayment: body.monthly_payment,
-        // A bound house skips upsertProperty entirely — it is already known.
+        // Null means quick math with no house yet, which lands under
+        // "Unassigned" and can be pointed at a house later.
         propertyId: body.property_id ?? null,
-        // Omitted entirely means quick math with no house yet; an address with
-        // a street line routes through upsertProperty.
-        address: body.address?.address_line1
-          ? {
-              addressLine1: body.address.address_line1,
-              city: body.address.city,
-              state: body.address.state,
-              zip: body.address.zip,
-              parcelNumber: body.address.parcel_number,
-            }
-          : null,
       },
       ctx,
       user.id

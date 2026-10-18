@@ -4,8 +4,7 @@ import { type Database, type Json } from "../supabase/database.types";
 import { type MortgageInputs } from "./types";
 import { defaultInputs } from "./defaults";
 import { calculateMortgage } from "./calculate";
-import { upsertProperty } from "../property/propertyService";
-import { type PropertyMatch } from "../property/types";
+import { getProperty } from "../property/propertyService";
 import { snapshotOf, type ProfileSnapshot } from "./resolveInputs";
 
 /**
@@ -289,43 +288,24 @@ export async function getScenario(id: string, ctx: RequestContext): Promise<Scen
   return { ...toSummary(row), inputs: readInputs(row.inputs, row.inputs_version ?? 1) };
 }
 
-/** The address a scenario is being saved against, if the house is known. */
-export interface ScenarioAddress {
-  addressLine1: string;
-  city?: string | null;
-  state?: string | null;
-  zip?: string | null;
-  parcelNumber?: string | null;
-}
-
 export interface SaveScenarioInput {
   label: string;
   inputs: MortgageInputs;
   monthlyPayment: number;
   /**
-   * The house this analysis belongs to, when the calculator was opened from
-   * one.
+   * The house this analysis belongs to, by id. Null saves it unattached, under
+   * "Unassigned", where it can be pointed at a house later.
    *
-   * Takes precedence over `address` and skips upsertProperty entirely. That is
-   * the whole point: the house is already known, so there is nothing to look
-   * up and nothing to dedupe. Re-deriving it from a retyped address is what
-   * created two property rows for one house — "Atlanta, GA" in the city field
-   * once and "Atlanta" the next time hashed differently, and the second save
-   * made a second house.
+   * There is no address alternative, by design. Re-deriving a house from typed
+   * text created two property rows for one house — "Atlanta, GA" in the city
+   * field once and "Atlanta" the next time hashed differently, and the second
+   * save made a second house. Properties are created in exactly one place, Add.
    */
   propertyId?: string | null;
-  /** Only for the standalone calculator, which has no house to bind to. */
-  address?: ScenarioAddress | null;
 }
 
 export interface SaveScenarioResult {
   scenario: ScenarioSummary;
-  /**
-   * How the house was resolved, so the UI can say so before the user assumes a
-   * new property was created. "address" is a probable match, not a certain one
-   * — normalisation is lossy, which is why it also sets needs_address_review.
-   */
-  matchedOn?: PropertyMatch;
 }
 
 /**
@@ -346,32 +326,10 @@ export async function saveScenario(
   const label = input.label.trim();
   if (!label) throw new Error("A name is required");
 
-  // The house, if one was given. upsertProperty is the single front door for
-  // properties — it dedupes on parcel first and normalized address second, so
-  // saving numbers on a house already in the pipeline matches it rather than
-  // creating a second record of the same place.
-  let propertyId: string | null = input.propertyId ?? null;
-  let matchedOn: PropertyMatch | undefined;
-
-  // Only when no house was bound. A bound save never touches upsertProperty.
-  if (!propertyId && input.address?.addressLine1?.trim()) {
-    const result = await upsertProperty(
-      {
-        address_line1: input.address.addressLine1.trim(),
-        city: input.address.city ?? null,
-        state: input.address.state ?? "GA",
-        zip: input.address.zip ?? null,
-        parcel_number: input.address.parcelNumber ?? null,
-      },
-      ctx,
-      userId,
-      // The origin value that has been defined and unused since the properties
-      // table was written. This is the path it was waiting for.
-      "analysis"
-    );
-    propertyId = result.property.id;
-    matchedOn = result.matchedOn;
-  }
+  // The house, if one was given — always by id. Saving never creates a
+  // property: Add is the only place that does, so there is no address to
+  // normalise here and no way for a second spelling to make a second house.
+  const propertyId: string | null = input.propertyId ?? null;
 
   // Same name on the same house is an update, not a second row. Scoped by
   // property so "at asking" can exist once per house rather than once per
@@ -439,42 +397,39 @@ export async function saveScenario(
 
   const { data, error } = await query.select(SUMMARY_COLUMNS).single();
   if (error) throw new Error(error.message);
-  return { scenario: toSummary(data as unknown as Row), matchedOn };
+  return { scenario: toSummary(data as unknown as Row) };
 }
 
 /**
- * Attach a house to a save that never had one.
+ * Attach an existing house to a save that never had one.
  *
- * Everything saved before this phase has a null property_id and a free-text
- * name — they appear under "Unassigned". This is how they join the spine,
- * without retyping the numbers.
+ * Everything saved before the property spine has a null property_id and a
+ * free-text name — they appear under "Unassigned". This is how they join the
+ * spine, without retyping the numbers.
+ *
+ * Takes a property id, never an address. This used to call `upsertProperty`
+ * with typed text, which made it the second door through which a property
+ * could be created: a spelling that normalised differently produced a new
+ * house instead of matching the one already on file. Add is the only door
+ * now, so this can only point a save at something that already exists.
  */
-export async function attachAddress(
+export async function attachToProperty(
   id: string,
-  address: ScenarioAddress,
-  ctx: RequestContext,
-  userId: string
+  propertyId: string,
+  ctx: RequestContext
 ): Promise<SaveScenarioResult> {
-  if (!address.addressLine1?.trim()) throw new Error("An address is required");
+  if (!propertyId?.trim()) throw new Error("A house is required");
 
   const existing = await getScenario(id, ctx);
 
-  const result = await upsertProperty(
-    {
-      address_line1: address.addressLine1.trim(),
-      city: address.city ?? null,
-      state: address.state ?? "GA",
-      zip: address.zip ?? null,
-      parcel_number: address.parcelNumber ?? null,
-    },
-    ctx,
-    userId,
-    "analysis"
-  );
+  // The house has to be one of the caller's, or this would be a way to hang an
+  // analysis on someone else's property.
+  const property = await getProperty(propertyId, ctx);
+  if (!property) throw new Error("Property not found");
 
   const { data, error } = await db()
     .from(TABLE)
-    .update({ property_id: result.property.id })
+    .update({ property_id: property.id })
     .eq("id", existing.id)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
@@ -484,10 +439,7 @@ export async function attachAddress(
     .single();
 
   if (error) throw new Error(error.message);
-  return {
-    scenario: toSummary(data as unknown as Row),
-    matchedOn: result.matchedOn,
-  };
+  return { scenario: toSummary(data as unknown as Row) };
 }
 
 export async function renameScenario(

@@ -128,6 +128,37 @@ export function hasApiKey(): boolean {
   return Boolean(process.env.RENTCAST_API_KEY);
 }
 
+/** Thrown when a write would persist fixture data. */
+export class MockModeWriteError extends Error {
+  constructor(what: string) {
+    super(
+      `Mock mode is on, so ${what} was not written. Fixtures are for reading; ` +
+        `writing them would put invented data in a real database.`
+    );
+    this.name = "MockModeWriteError";
+  }
+}
+
+/**
+ * Refuse a database write while mock mode is serving fixtures.
+ *
+ * Mode was a read-side idea — "do not spend a request" — and nothing stopped
+ * the fixture it returned from being stored. A local session pointed at the
+ * production database wrote six Duluth comps onto an Atlanta house, filled
+ * that house's blank facts from the fixture subject, and left `facts_source`
+ * reading 'rentcast'. Every one of those writes was a mock serving data the
+ * write path had no idea was invented.
+ *
+ * So the boundary is enforced where the data lands, not where it is fetched.
+ * A caller cannot forget to check the mode, because the write itself checks.
+ *
+ * Any future writer of RentCast-derived rows — `valuations` in particular,
+ * which has no writer yet — must call this first.
+ */
+export function assertNotMockMode(what: string): void {
+  if (rentCastMode() === "mock") throw new MockModeWriteError(what);
+}
+
 /**
  * The fixture, restamped with the address that was asked for.
  *
