@@ -77,6 +77,14 @@ async function stubCrm(page: Page) {
     })
   );
 
+  // The Properties page is the screen table now, and it reads this endpoint
+  // rather than the pipeline. Without the stub this suite reached the real API,
+  // which made the nav test depend on live data and timing — it waited on a
+  // nav bar that never settled.
+  await page.route("**/api/properties/screen**", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ rows: [] }) })
+  );
+
   await page.route("**/api/mortgage/scenarios**", (r) =>
     r.fulfill({
       status: 200,

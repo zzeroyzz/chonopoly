@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { Home } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { loadProfile } from "@/lib/supabase/profile";
@@ -33,7 +33,6 @@ interface BoundProperty {
 
 export default function MortgageCalculator() {
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   // ── The house, when the calculator was opened from one ────────────────────
   //
@@ -42,8 +41,22 @@ export default function MortgageCalculator() {
   // which meant retyping an address that was already on file. Two slightly
   // different spellings hashed differently and produced two property rows for
   // one house, which is the bug this exists to close.
-  const propertyId = searchParams.get("property");
-  const scenarioId = searchParams.get("scenario");
+  // Read from window.location rather than useSearchParams, deliberately.
+  //
+  // useSearchParams suspends, and AppShell — which carries the bottom nav — is
+  // rendered inside this component. Suspending took the whole nav off screen
+  // during a client-side navigation into this page, so Tools became a route
+  // you could enter and not leave. Caught by 22-navigation.
+  const [propertyId, setPropertyId] = useState<string | null>(null);
+  const [scenarioId, setScenarioId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPropertyId(params.get("property"));
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setScenarioId(params.get("scenario"));
+  }, []);
 
   const [boundProperty, setBoundProperty] = useState<BoundProperty | null>(null);
 
