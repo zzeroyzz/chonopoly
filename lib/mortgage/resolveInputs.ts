@@ -42,6 +42,43 @@ export type HouseInputs = Partial<
   >
 >;
 
+/** The house's own recorded facts, as the property API returns them. */
+export interface HouseFacts {
+  annual_taxes?: number | null;
+}
+
+/**
+ * The house's numbers, as a seed for a new analysis bound to it.
+ *
+ * Distinct from `resolveInputs`, which runs on every keystroke and returns a
+ * complete object. This runs once, when a bound calculator opens with no draft
+ * of its own, and supplies only the figures the house actually knows.
+ *
+ * Price and the reno budget come from the primary financing analysis, because
+ * `properties` has no price column — a price is a term of a scenario, not a
+ * fact about a building. Annual taxes are a fact about the building, so the
+ * house's own figure is applied last and wins over a scenario's older copy.
+ */
+export function housePrefill(
+  facts: HouseFacts | null,
+  primaryInputs: Partial<MortgageInputs> | null
+): HouseInputs {
+  const out: HouseInputs = {};
+
+  if (primaryInputs) {
+    const { homeValue, renovationBudget, propertyTaxYearly } = primaryInputs;
+    if (typeof homeValue === "number") out.homeValue = homeValue;
+    if (typeof renovationBudget === "number") out.renovationBudget = renovationBudget;
+    if (typeof propertyTaxYearly === "number") out.propertyTaxYearly = propertyTaxYearly;
+  }
+
+  if (facts && typeof facts.annual_taxes === "number") {
+    out.propertyTaxYearly = facts.annual_taxes;
+  }
+
+  return out;
+}
+
 export function resolveInputs(
   profile: BuyerProfile | null,
   house: HouseInputs = {},

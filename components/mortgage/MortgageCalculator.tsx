@@ -1,18 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Home } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { loadProfile } from "@/lib/supabase/profile";
 import { useEffect } from "react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
-import { loadInputs, saveInputs, clearInputs } from "@/lib/mortgage/storage";
+import { loadInputs, saveInputs, clearInputs, hasDraft } from "@/lib/mortgage/storage";
 import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { calculateAffordability, calculateRequiredIncome } from "@/lib/mortgage/affordability";
 import { calculateDti } from "@/lib/mortgage/dti";
-import { resolveInputs } from "@/lib/mortgage/resolveInputs";
+import { resolveInputs, housePrefill, type HouseFacts } from "@/lib/mortgage/resolveInputs";
 import { type BuyerProfile, type ProfileState } from "@/lib/profile/types";
 import { FirstRunIncomeModal } from "@/components/settings/FirstRunIncomeModal";
 import { InputPanel } from "./InputPanel";
@@ -31,7 +31,21 @@ interface BoundProperty {
   zip: string | null;
 }
 
-export default function MortgageCalculator() {
+interface Props {
+  /**
+   * The house this calculator is bound to, taken from the route by
+   * `/properties/[id]/numbers/*`. The UUID in the path IS the binding, so it
+   * survives a reload and cannot be lost by a navigation.
+   */
+  propertyId?: string | null;
+  /** An existing analysis to open, from `/numbers/[analysisId]`. */
+  scenarioId?: string | null;
+}
+
+export default function MortgageCalculator({
+  propertyId: routePropertyId = null,
+  scenarioId: routeScenarioId = null,
+}: Props = {}) {
   const router = useRouter();
 
   // ── The house, when the calculator was opened from one ────────────────────
@@ -41,33 +55,110 @@ export default function MortgageCalculator() {
   // which meant retyping an address that was already on file. Two slightly
   // different spellings hashed differently and produced two property rows for
   // one house, which is the bug this exists to close.
-  // Read from window.location rather than useSearchParams, deliberately.
   //
-  // useSearchParams suspends, and AppShell — which carries the bottom nav — is
-  // rendered inside this component. Suspending took the whole nav off screen
-  // during a client-side navigation into this page, so Tools became a route
-  // you could enter and not leave. Caught by 22-navigation.
-  const [propertyId, setPropertyId] = useState<string | null>(null);
-  const [scenarioId, setScenarioId] = useState<string | null>(null);
+  // The route-keyed pages pass the binding as props, so there is no query
+  // string to read and nothing to suspend on. Only `/tools/mortgage` still
+  // reads it from the URL, and it reads window.location rather than
+  // useSearchParams deliberately: useSearchParams suspends, and AppShell —
+  // which carries the bottom nav — renders inside this component. Suspending
+  // took the whole nav off screen during a client-side navigation, so Tools
+  // became a route you could enter and not leave. Caught by 22-navigation.
+  const [binding, setBinding] = useState<{
+    property: string | null;
+    scenario: string | null;
+  } | null>(routePropertyId ? { property: routePropertyId, scenario: routeScenarioId } : null);
 
   useEffect(() => {
+    if (routePropertyId) return;
     const params = new URLSearchParams(window.location.search);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPropertyId(params.get("property"));
-    setScenarioId(params.get("scenario"));
-  }, []);
+    setBinding({ property: params.get("property"), scenario: params.get("scenario") });
+  }, [routePropertyId]);
+
+  const propertyId = binding?.property ?? null;
+  const scenarioId = binding?.scenario ?? null;
+  // Null until the standalone page has read the query string. The draft cannot
+  // load before this: reading the global key first and the house's key second
+  // would briefly show one house's work on another.
+  const bindingResolved = binding !== null;
 
   const [boundProperty, setBoundProperty] = useState<BoundProperty | null>(null);
 
+  // One serializable object rather than a field per useState — which is what
+  // makes persisting the whole thing a one-liner.
+  const [inputs, setInputs] = useState<MortgageInputs>(() => defaultInputs());
+  const [restored, setRestored] = useState(false);
+
+  // Whether a draft already existed for this house, captured by the restore
+  // below before the save effect can write one. Without it, the restore writes
+  // a draft and the prefill then sees its own handiwork and skips.
+  const draftExisted = useRef<boolean | null>(null);
+  const prefilled = useRef(false);
+
+  // Read on mount rather than in the initializer. localStorage doesn't exist
+  // during the server render, so initializing from it would render different
+  // markup on the server and the client and break hydration. One setState on
+  // mount is the accepted cost of that; the rule below is about cascading
+  // renders, and this fires exactly once.
+  useEffect(() => {
+    // The house's key, so one house's draft never surfaces on another.
+    if (!bindingResolved) return;
+    draftExisted.current = hasDraft(propertyId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInputs(loadInputs(propertyId));
+    setRestored(true);
+  }, [bindingResolved, propertyId]);
+
+  useEffect(() => {
+    if (restored) saveInputs(inputs, propertyId);
+  }, [inputs, restored, propertyId]);
+
+  // ── The bound house, and the seed it supplies ─────────────────────────────
+  //
+  // Declared after `inputs` deliberately: it patches the draft, so it cannot
+  // run before the state it writes to exists.
   useEffect(() => {
     if (!propertyId) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/properties/${propertyId}?context_type=personal`);
-        if (!res.ok) return;
-        const body = (await res.json()) as { property: BoundProperty };
-        if (!cancelled) setBoundProperty(body.property);
+        // Independent reads, so they go together rather than in sequence.
+        const [propertyRes, listRes] = await Promise.all([
+          fetch(`/api/properties/${propertyId}?context_type=personal`),
+          fetch(`/api/mortgage/scenarios?context_type=personal&property_id=${propertyId}`),
+        ]);
+
+        if (!propertyRes.ok) return;
+        const { property } = (await propertyRes.json()) as {
+          property: BoundProperty & HouseFacts;
+        };
+        if (cancelled) return;
+        setBoundProperty(property);
+
+        // Seed a new analysis from the house. Not when opening an existing one
+        // — that supplies its own inputs — and not over a draft in progress.
+        if (scenarioId || prefilled.current || draftExisted.current !== false) return;
+        prefilled.current = true;
+
+        let primaryInputs: MortgageInputs | null = null;
+        if (listRes.ok) {
+          const { scenarios } = (await listRes.json()) as {
+            scenarios: { id: string; isPrimary?: boolean }[];
+          };
+          // The primary is the one the other tabs mean by "the price".
+          const primary = scenarios.find((s) => s.isPrimary);
+          if (primary) {
+            const res = await fetch(`/api/mortgage/scenarios/${primary.id}?context_type=personal`);
+            if (res.ok) {
+              const body = (await res.json()) as { scenario: { inputs: MortgageInputs } };
+              primaryInputs = body.scenario.inputs;
+            }
+          }
+        }
+
+        if (cancelled) return;
+        const seed = housePrefill(property, primaryInputs);
+        if (Object.keys(seed).length > 0) setInputs((prev) => ({ ...prev, ...seed }));
       } catch {
         // Unbound rather than broken: the calculator still works, it just
         // saves under "Unassigned" instead of onto the house.
@@ -76,27 +167,7 @@ export default function MortgageCalculator() {
     return () => {
       cancelled = true;
     };
-  }, [propertyId]);
-
-  // One serializable object rather than a field per useState — which is what
-  // makes persisting the whole thing a one-liner.
-  const [inputs, setInputs] = useState<MortgageInputs>(() => defaultInputs());
-  const [restored, setRestored] = useState(false);
-
-  // Read on mount rather than in the initializer. localStorage doesn't exist
-  // during the server render, so initializing from it would render different
-  // markup on the server and the client and break hydration. One setState on
-  // mount is the accepted cost of that; the rule below is about cascading
-  // renders, and this fires exactly once.
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setInputs(loadInputs());
-    setRestored(true);
-  }, []);
-
-  useEffect(() => {
-    if (restored) saveInputs(inputs);
-  }, [inputs, restored]);
+  }, [propertyId, scenarioId]);
 
   // The buyer profile. "none" is a real state, not an error: it drives the
   // "set your income" prompt instead of screening against a fabricated salary.
@@ -219,7 +290,9 @@ export default function MortgageCalculator() {
           <button
             type="button"
             onClick={() => {
-              clearInputs();
+              // This house's draft only. Resetting the calculator on one house
+              // must not wipe what you were modelling on another.
+              clearInputs(propertyId);
               setInputs(defaultInputs());
             }}
             className="text-[12px] text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors shrink-0"

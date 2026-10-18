@@ -42,6 +42,7 @@ export function NumberField({
   hint,
   note,
   min,
+  testId,
 }: {
   label: string;
   value: number;
@@ -55,6 +56,8 @@ export function NumberField({
   /** Kept for call-site compatibility; the input is text now, so it's unused. */
   step?: string;
   min?: number;
+  /** Stable handle for tests that assert on a specific field's value. */
+  testId?: string;
 }) {
   // null means "not being edited" — show the model value.
   const [draft, setDraft] = useState<string | null>(null);
@@ -99,6 +102,7 @@ export function NumberField({
         <input
           type="text"
           inputMode="decimal"
+          data-testid={testId}
           value={shown}
           onChange={(e) => handle(e.target.value)}
           onFocus={(e) => {

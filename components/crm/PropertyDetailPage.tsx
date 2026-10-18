@@ -286,16 +286,16 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
             {tab === "Numbers" && (
               <div data-testid="panel-numbers">
-                {/* Both links carry ?property=<id>, which binds the calculator
-                    to this house. The old copy told the user to "save with
-                    this address" — retyping an address already on file, which
-                    hashed differently on the second attempt and created a
-                    second property row for one house. */}
+                {/* Both links are keyed by the house's UUID in the path, so the
+                    calculator opens bound to it. The old copy told the user to
+                    "save with this address" — retyping an address already on
+                    file, which hashed differently on the second attempt and
+                    created a second property row for one house. */}
                 {analyses.length === 0 ? (
                   <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
                     No analyses on this house yet.{" "}
                     <a
-                      href={`/tools/mortgage?property=${property?.id ?? ""}`}
+                      href={`/properties/${property?.id ?? ""}/numbers/new`}
                       data-testid="run-numbers"
                       className="text-(--color-accent)"
                     >
@@ -307,7 +307,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   analyses.map((a) => (
                     <a
                       key={a.id}
-                      href={`/tools/mortgage?property=${property?.id ?? ""}&scenario=${a.id}`}
+                      href={`/properties/${property?.id ?? ""}/numbers/${a.id}`}
                       data-testid={`analysis-${a.id}`}
                       className="flex items-center gap-2 py-2.5 border-b border-(--color-border-subtle) last:border-0"
                     >

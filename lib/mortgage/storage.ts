@@ -13,12 +13,27 @@ import { defaultInputs } from "./defaults";
 
 const KEY = "mortgageCalculatorInputs";
 
-export function loadInputs(): MortgageInputs {
+/**
+ * One draft per house, plus one for the standalone calculator.
+ *
+ * A single global key meant the draft left on one house came back on the next
+ * one — a price typed for 1653 Sylvan reappeared under 1900 Windsor, which is
+ * exactly the kind of crossed wire this binding work exists to remove.
+ *
+ * The standalone calculator keeps the bare key, so drafts written before this
+ * change still load from where they were written. There is nothing to migrate:
+ * a house-bound page never had a draft of its own to lose.
+ */
+function keyFor(propertyId?: string | null): string {
+  return propertyId ? `${KEY}:${propertyId}` : KEY;
+}
+
+export function loadInputs(propertyId?: string | null): MortgageInputs {
   const fallback = defaultInputs();
   if (typeof window === "undefined") return fallback;
 
   try {
-    const raw = window.localStorage.getItem(KEY);
+    const raw = window.localStorage.getItem(keyFor(propertyId));
     if (!raw) return fallback;
 
     // Spread over the defaults so a stored object written before a field existed
@@ -68,19 +83,36 @@ function stripProfileFields(
   return rest;
 }
 
-export function saveInputs(inputs: MortgageInputs): void {
+/**
+ * Whether a draft is already stored for this house.
+ *
+ * `loadInputs` cannot answer it: an absent draft and a draft equal to the
+ * defaults both come back as the defaults. The bound calculator needs the
+ * difference, because it seeds a new analysis from the house only when there is
+ * no work in progress to overwrite.
+ */
+export function hasDraft(propertyId?: string | null): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(keyFor(propertyId)) !== null;
+  } catch {
+    return false;
+  }
+}
+
+export function saveInputs(inputs: MortgageInputs, propertyId?: string | null): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(stripProfileFields(inputs)));
+    window.localStorage.setItem(keyFor(propertyId), JSON.stringify(stripProfileFields(inputs)));
   } catch {
     // Quota or private mode — losing the draft degrades the page, it doesn't break it.
   }
 }
 
-export function clearInputs(): void {
+export function clearInputs(propertyId?: string | null): void {
   if (typeof window === "undefined") return;
   try {
-    window.localStorage.removeItem(KEY);
+    window.localStorage.removeItem(keyFor(propertyId));
   } catch {
     /* no-op */
   }

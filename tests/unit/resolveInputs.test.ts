@@ -2,6 +2,7 @@ import {
   resolveInputs,
   snapshotOf,
   snapshotChanges,
+  housePrefill,
   SNAPSHOT_KEYS,
 } from "@/lib/mortgage/resolveInputs";
 import { defaultInputs } from "@/lib/mortgage/defaults";
@@ -181,5 +182,55 @@ describe("snapshots and the changed badge", () => {
     // be ignored.
     expect(snapshotChanges(null, resolveInputs(profile(), {}, NOW))).toEqual([]);
     expect(snapshotChanges(undefined, resolveInputs(profile(), {}, NOW))).toEqual([]);
+  });
+});
+
+describe("housePrefill", () => {
+  // Seeds a new analysis from the house it is bound to. The calculator used to
+  // open blank on a house whose price was already on file, which is how a
+  // retyped address got a second chance to create a second property.
+
+  it("takes price and reno budget from the primary analysis", () => {
+    const seed = housePrefill(null, {
+      homeValue: 312_500,
+      renovationBudget: 45_000,
+    });
+    expect(seed.homeValue).toBe(312_500);
+    expect(seed.renovationBudget).toBe(45_000);
+  });
+
+  it("prefers the house's own annual taxes over a scenario's older copy", () => {
+    // Taxes are a fact about the building; a scenario holds a copy that may
+    // predate the figure RentCast returned.
+    const seed = housePrefill({ annual_taxes: 4_200 }, { propertyTaxYearly: 3_000 });
+    expect(seed.propertyTaxYearly).toBe(4_200);
+  });
+
+  it("falls back to the scenario's taxes when the house has none recorded", () => {
+    expect(housePrefill({ annual_taxes: null }, { propertyTaxYearly: 3_000 }))
+      .toEqual({ propertyTaxYearly: 3_000 });
+  });
+
+  it("returns nothing when the house knows nothing", () => {
+    // An empty seed leaves the defaults alone rather than zeroing the form.
+    expect(housePrefill(null, null)).toEqual({});
+    expect(housePrefill({ annual_taxes: null }, null)).toEqual({});
+  });
+
+  it("ignores non-numeric figures rather than seeding NaN", () => {
+    const seed = housePrefill(null, {
+      homeValue: undefined,
+      renovationBudget: 45_000,
+    });
+    expect(seed).toEqual({ renovationBudget: 45_000 });
+    expect("homeValue" in seed).toBe(false);
+  });
+
+  it("feeds resolveInputs without disturbing the profile fields", () => {
+    // The seed is a house source, so it must not reach income or debts.
+    const resolved = resolveInputs(profile(), housePrefill({ annual_taxes: 4_200 }, { homeValue: 312_500 }), NOW);
+    expect(resolved.homeValue).toBe(312_500);
+    expect(resolved.propertyTaxYearly).toBe(4_200);
+    expect(resolved.grossMonthlyIncome).toBe(9_000);
   });
 });
