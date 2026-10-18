@@ -12,6 +12,7 @@ import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/ty
 import { StageMenu } from "./StageMenu";
 import { ContactCard } from "./ContactCard";
 import { CompsPanel } from "./CompsPanel";
+import { NumbersModal } from "@/components/mortgage/NumbersModal";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
 import { propertyTypeLabel } from "@/lib/property/types";
 import { useCrmContext, useShellProfile } from "./useCrmContext";
@@ -117,28 +118,60 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   const property = detail?.property;
 
   // This house's financing analyses. Fetched once the property is known, since
-  // the Numbers tab is scoped to it.
+  // the Numbers tab is scoped to it. A useCallback rather than a bare effect so
+  // saving from the modal can re-run exactly this read.
+  const propertyId = property?.id ?? null;
+
+  const loadAnalyses = useCallback(async () => {
+    if (!propertyId || !ctxParams) return;
+    try {
+      const res = await fetch(`/api/mortgage/scenarios?${ctxParams}&property_id=${propertyId}`);
+      if (!res.ok) throw new Error("failed");
+      const body = (await res.json()) as { scenarios: ScenarioSummary[] };
+      setAnalyses(body.scenarios);
+    } catch {
+      // An empty Numbers tab is a worse answer than the rest of the page not
+      // rendering, so this fails quietly.
+      setAnalyses([]);
+    }
+  }, [propertyId, ctxParams]);
+
   useEffect(() => {
-    if (!property?.id || !ctxParams) return;
-    let cancelled = false;
     (async () => {
-      try {
-        const res = await fetch(
-          `/api/mortgage/scenarios?${ctxParams}&property_id=${property.id}`
-        );
-        if (!res.ok) throw new Error("failed");
-        const body = (await res.json()) as { scenarios: ScenarioSummary[] };
-        if (!cancelled) setAnalyses(body.scenarios);
-      } catch {
-        // An empty Numbers tab is a worse answer than the rest of the page not
-        // rendering, so this fails quietly.
-        if (!cancelled) setAnalyses([]);
-      }
+      await loadAnalyses();
     })();
-    return () => {
-      cancelled = true;
-    };
-  }, [property?.id, ctxParams]);
+  }, [loadAnalyses]);
+
+  // ── Which analysis the modal has open, mirrored in the URL ────────────────
+  //
+  // `?numbers=new` or `?numbers=<analysisId>`, so a reload comes back to the
+  // same house with the same analysis open. History is written directly rather
+  // than through the router: this is modal state on a page that is already
+  // mounted, and a router.push would re-run the server component underneath it.
+  const [numbersTarget, setNumbersTarget] = useState<string | null>(null);
+
+  useEffect(() => {
+    const read = () => setNumbersTarget(new URLSearchParams(window.location.search).get("numbers"));
+    read();
+    // Back should close the modal, not leave the page.
+    window.addEventListener("popstate", read);
+    return () => window.removeEventListener("popstate", read);
+  }, []);
+
+  function openNumbers(target: string) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("numbers", target);
+    window.history.pushState({}, "", url);
+    setNumbersTarget(target);
+  }
+
+  function closeNumbers() {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("numbers");
+    window.history.pushState({}, "", url);
+    setNumbersTarget(null);
+  }
+
   const openTasks = (detail?.tasks ?? []).filter((t) => t.status === "open");
 
   return (
@@ -286,30 +319,32 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
             {tab === "Numbers" && (
               <div data-testid="panel-numbers">
-                {/* Both links are keyed by the house's UUID in the path, so the
-                    calculator opens bound to it. The old copy told the user to
+                {/* Everything here opens the modal over this page, bound to
+                    this page's property_id. The old copy told the user to
                     "save with this address" — retyping an address already on
                     file, which hashed differently on the second attempt and
                     created a second property row for one house. */}
                 {analyses.length === 0 ? (
                   <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
                     No analyses on this house yet.{" "}
-                    <a
-                      href={`/properties/${property?.id ?? ""}/numbers/new`}
+                    <button
+                      type="button"
+                      onClick={() => openNumbers("new")}
                       data-testid="run-numbers"
-                      className="text-(--color-accent)"
+                      className="text-(--color-accent) underline-offset-2 hover:underline"
                     >
                       Run the numbers
-                    </a>{" "}
+                    </button>{" "}
                     and the save lands on this house.
                   </p>
                 ) : (
                   analyses.map((a) => (
-                    <a
+                    <button
                       key={a.id}
-                      href={`/properties/${property?.id ?? ""}/numbers/${a.id}`}
+                      type="button"
+                      onClick={() => openNumbers(a.id)}
                       data-testid={`analysis-${a.id}`}
-                      className="flex items-center gap-2 py-2.5 border-b border-(--color-border-subtle) last:border-0"
+                      className="flex items-center gap-2 py-2.5 w-full text-left border-b border-(--color-border-subtle) last:border-0"
                     >
                       <span className="flex-1 min-w-0">
                         <span className="block text-[13px] text-(--color-text-primary) truncate">
@@ -327,22 +362,22 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                           {a.version > 1 && <> · v{a.version}</>}
                         </span>
                       </span>
-                    </a>
+                    </button>
                   ))
                 )}
 
                 {/* Reachable with analyses already present too — adding a
-                    second scenario should not require going back to Tools and
-                    retyping the address. */}
+                    second scenario should not require leaving the house. */}
                 {analyses.length > 0 && (
-                  <a
-                    href={`/tools/mortgage?property=${property?.id ?? ""}`}
+                  <button
+                    type="button"
+                    onClick={() => openNumbers("new")}
                     data-testid="run-numbers"
                     className="inline-flex items-center gap-1 mt-3 text-[12px] text-(--color-accent) font-medium"
                   >
                     <Plus size={12} />
                     Another scenario for this house
-                  </a>
+                  </button>
                 )}
               </div>
             )}
@@ -486,6 +521,31 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
           </>
         )}
       </div>
+
+      {/* Over the house, bound to the house. Mounted outside the scroll
+          container so the modal's own sticky footer is measured against the
+          viewport rather than the page. */}
+      {numbersTarget && property && (
+        <NumbersModal
+          propertyId={property.id}
+          heading={[property.address_line1, property.city, property.state]
+            .filter(Boolean)
+            .join(", ")}
+          target={numbersTarget}
+          initialLabel={
+            numbersTarget === "new"
+              ? ""
+              : (analyses.find((a) => a.id === numbersTarget)?.label ?? "")
+          }
+          onClose={closeNumbers}
+          onSaved={async () => {
+            closeNumbers();
+            // The Numbers tab and the header both read from these.
+            await Promise.all([loadAnalyses(), load()]);
+            setTab("Numbers");
+          }}
+        />
+      )}
     </AppShell>
   );
 }

@@ -109,7 +109,18 @@ TypeScript, Tailwind, Next.js, Supabase, Vercel. One new external service: RentC
 ## Decided
 
 - Flips come first. Rental is a rough estimate only.
-- The calculator can create properties, since screening an agent's houses requires it.
+- **Add is the only place a property gets created** — revised 2026-10-18. The
+  original decision was *"the calculator can create properties, since screening
+  an agent's houses requires it."* It did, and that is how 1900 Windsor Dr SW
+  ended up in the database twice: saving an analysis re-derived the house from a
+  typed address, a second spelling hashed differently, and `upsertProperty` made
+  a second house. Screening a batch of an agent's houses is what `/properties/new`
+  is for, so the calculator never needed the power.
+
+  Consequences: running the numbers on a house happens in a modal over that
+  house's page, bound to its `property_id`. `/tools/mortgage` asks for no
+  address and may optionally attach a save to a house that already exists. The
+  save route takes `property_id` or nothing.
 - The CRM that already exists (stages, tasks, notes, contacts) stays as it is. Each house tracks the flow with a progress checklist, so no new stages are added.
 - Adding a house puts it in the CRM pipeline at the first stage. Screening results appear as verdicts on the house, and a stage only changes when you change it.
 - Visiting is optional. A rehab estimate can come from the listing photos or from a walkthrough. You can also skip estimating and keep the reno budget you set.

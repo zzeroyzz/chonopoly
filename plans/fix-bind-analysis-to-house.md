@@ -163,17 +163,30 @@ Verified by reading the code. These satisfy parts of the spec already:
 | First analysis on a house claims `is_primary` | `scenarioService.ts:401–415` |
 | 10 Playwright tests at 390px | `tests/25-calculator-binding.spec.ts` |
 
-### New work — the route-keyed design
+### New work — the modal design
+
+**Revised 2026-10-18, before review**, at the owner's direction. The first
+implementation used two route-keyed pages, `/properties/[id]/numbers/new` and
+`/numbers/[analysisId]`. They worked and were tested, but the house is already
+on screen when you want its numbers, so the calculator is a modal over that
+page instead. The pages are **removed and refactored into the modal** — no
+parallel version. They survive only in this branch's intermediate commits.
 
 | File | Change |
 |---|---|
-| `app/properties/[id]/numbers/new/page.tsx` | **New.** Calculator keyed by the house's UUID in the path |
-| `app/properties/[id]/numbers/[analysisId]/page.tsx` | **New.** Opens one analysis; saving adds a version |
-| `components/mortgage/MortgageCalculator.tsx` | Accept `propertyId` / `scenarioId` as **props**; keep the `window.location` fallback for `/tools/mortgage`. Removes the `useSearchParams` suspension trap on the new routes rather than working around it |
-| `components/crm/PropertyDetailPage.tsx` | Both links point at the new routes instead of `?property=` |
-| `lib/mortgage/storage.ts` | Draft key becomes per-house (`mortgageCalculatorInputs:<propertyId>`), so house A's draft cannot surface on house B. **Tier 2: exported signature change** to `loadInputs`/`saveInputs` |
-| `tests/25-calculator-binding.spec.ts` | Refactor to the new routes; add reload-keeps-binding and version-2 assertions |
-| `tests/unit/scenarios.test.ts` | Extend for the storage key change |
+| `components/mortgage/CalculatorCore.tsx` | **New.** The calculator extracted from `MortgageCalculator` so the page and the modal share one copy. Owns inputs, the profile, the resolve and the panels; the host owns its chrome |
+| `components/mortgage/NumbersModal.tsx` | **New.** Centered modal over the house. Header names the house; body scrolls; footer is sticky with Name, Cancel and Save. Closing dirty asks first |
+| `lib/mortgage/scenarioClient.ts` | **New.** One `saveAnalysis` request, shared by the modal and the scenario bar. **Has no address parameter at all**, so no caller can create a property |
+| `components/crm/PropertyDetailPage.tsx` | Opens the modal from `?numbers=new` / `?numbers=<analysisId>`, written with `history.pushState` so the server component underneath is not re-run. `popstate` closes it, so Back leaves the modal and not the page. On save: close, reload analyses and detail, show the Numbers tab |
+| `components/mortgage/MortgageCalculator.tsx` | Reduced to AppShell + `CalculatorCore`. No house, no address, no required save |
+| `components/mortgage/ScenarioBar.tsx` | The three address inputs are replaced by an optional **"Save to a house"** picker that searches existing houses by address via `/api/properties/screen`. `boundProperty` prop removed — the modal supersedes it |
+| `components/mortgage/fields.tsx`, `InputPanel.tsx` | Optional `testId` on `NumberField`, used by the price field |
+| `lib/mortgage/storage.ts` | Draft key becomes per-house (`mortgageCalculatorInputs:<propertyId>`). Additive optional parameter, so no call site breaks. Plus `hasDraft`, which `loadInputs` cannot answer |
+| `lib/mortgage/resolveInputs.ts` | `housePrefill`, a pure function seeding a new analysis from the house |
+| `app/properties/[id]/numbers/**` | **Removed**, refactored into the modal |
+| `tests/25-calculator-binding.spec.ts` | Rewritten for the modal |
+| `tests/20-mortgage-scenarios.spec.ts` | The three tests that saved a typed address rewritten onto the picker. One of them — "a second save at the same address is flagged for review" — tested a lossy address match that can no longer happen here, so it became "the calculator cannot create a house" |
+| `tests/19-crm.spec.ts` | Stub updated to the property detail endpoint (see below) |
 
 **Prefill.** Price and reno budget come from the house's **primary financing
 analysis** (`inputs.homeValue`, `inputs.renovationBudget`) — there is no price
@@ -189,14 +202,29 @@ is nullable with `ON DELETE SET NULL` after Phase 1. Nothing to approve or run.
 ## Approach
 
 1. Branch off `origin/main`, carrying the four orphaned commits forward.
-2. Add the two route-keyed pages; `MortgageCalculator` takes props.
-3. Repoint both `PropertyDetailPage` links.
-4. Per-house draft key in `storage.ts`.
-5. Tighten the guard: confirm a bound save with an address fails loudly, and add
-   the unit coverage for it.
-6. Refactor `25-calculator-binding.spec.ts` onto the new routes, add the two new
-   cases.
-7. `npm run build`, `tsc`, `lint`, `jest`, then the Playwright spec.
+2. Per-house draft key in `storage.ts`, plus `housePrefill`.
+3. Extract `CalculatorCore` from `MortgageCalculator`.
+4. Build `NumbersModal` on top of it; mount it from `PropertyDetailPage` with
+   `?numbers=` in the URL.
+5. Remove the route-keyed pages.
+6. Replace the scenario bar's address inputs with the house picker.
+7. Rewrite the specs for the modal.
+8. `npm run build`, `tsc`, `lint`, `jest`, Playwright at 390px.
+
+## Two things found along the way, reported not fixed
+
+**1. `verdict.actual` on the results panel reads the draft, not the profile.**
+`defaultInputs()` zeroes `grossMonthlyIncome` and `storage.ts` strips it, so the
+figure is always `0` while the required figure beside it is built from the real
+profile. Pre-existing, and preserved exactly through the extraction — a refactor
+about binding must not quietly change a verdict on screen.
+
+**2. One path can still create a property outside Add.**
+`POST /api/mortgage/scenarios/[id]/address` attaches an address to an
+unassigned analysis and calls `upsertProperty`. It is the Phase 1 "Unassigned"
+affordance and is unreachable from the calculator now, but it contradicts the
+revised Decided rule. Left alone because closing it is an API change the owner
+did not ask for; recommended as a follow-up.
 
 ## Refactors, not duplicates
 
@@ -225,11 +253,14 @@ per-house draft key isolates houses; the old-key migration.
 Bound save writes `property_id` and leaves `properties` untouched.
 
 **Playwright at 390px** — the exact path, as specified:
-1. Open a house → Run the numbers → save → back on the house: one property, one
-   analysis, **no new pipeline entry**.
-2. Save again → same analysis, **version 2**.
-3. Reload mid-calculation → binding survives.
-4. `/tools/mortgage` still asks for an address (regression guard).
+1. Open a house → Run the numbers → Save → **modal closes**, the Numbers tab
+   shows the analysis: one property, one analysis, **no new pipeline entry**.
+2. Save an existing analysis → same row, **version 2**, shown on screen.
+3. Reload with the modal open → same house, modal still open.
+4. Closing dirty asks first; Keep editing preserves the work, Discard saves
+   nothing.
+5. The modal scrolls inside and **Save stays in the viewport** at 390px.
+6. The modal asks for no address, and the removed routes 404.
 
 No live RentCast calls: tests run on fixtures. No production writes.
 
@@ -238,4 +269,5 @@ No live RentCast calls: tests run on fixtures. No production writes.
 - Cleaning up the duplicate property and the stray analyses in production.
 - The six fixture comps on 1653 Sylvan Rd SW.
 - The missing `rentcast_requests` row.
+- Closing the `scenarios/[id]/address` property-creating path.
 - Phase 3 (Estimate, Visit, Check), which stays paused.
