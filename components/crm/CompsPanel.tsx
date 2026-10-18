@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, Plus, Trash2, AlertTriangle } from "lucide-react";
+import { RefreshCw, Plus, Trash2, AlertTriangle, Lock } from "lucide-react";
 import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
 import { type Comp, COMP_STATUS_LABELS } from "@/lib/comps/types";
@@ -22,8 +22,43 @@ interface CompsResponse {
   arv: ArvResult;
   degraded?: string | null;
   message?: string | null;
-  usage?: { used: number; limit: number; fraction: number } | null;
+  source?: "live" | "cached" | "rebuilt" | "mock" | null;
+  fetchedAt?: string | null;
+  nextRefreshAt?: string | null;
+  usage?: RefreshUsage | null;
 }
+
+interface RefreshUsage {
+  used: number;
+  cap: number;
+  planLimit: number;
+  remaining: number;
+  atCap: boolean;
+}
+
+/** What the tab needs to know before anyone presses anything. */
+interface RefreshStatus {
+  usage: RefreshUsage;
+  mode: "live" | "mock";
+  locked: boolean;
+  fetchedAt: string | null;
+  nextRefreshAt: string | null;
+  canForce: boolean;
+  canRebuild: boolean;
+  windowDays: number;
+}
+
+/** "Oct 18" — the form the lock message reads best in. */
+function shortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+const SOURCE_LABEL: Record<string, string> = {
+  cached: "from the saved response",
+  rebuilt: "rebuilt from the saved response",
+  mock: "sample data — this deployment doesn't call RentCast",
+  live: "fresh from RentCast",
+};
 
 const CONFIDENCE_LABEL: Record<ArvResult["confidence"], string> = {
   none: "No estimate",
@@ -118,12 +153,45 @@ export function CompsPanel({
   const [error, setError] = useState<string | null>(null);
   const [degraded, setDegraded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [status, setStatus] = useState<RefreshStatus | null>(null);
+  const [source, setSource] = useState<string | null>(null);
 
   const apply = useCallback((data: CompsResponse) => {
     setComps(data.comps ?? []);
     setArv(data.arv ?? null);
     setDegraded(data.message ?? null);
+    setSource(data.source ?? null);
+
+    // Fold the refresh metadata back into the status so the lock message
+    // updates without a second round trip.
+    if (data.nextRefreshAt || data.usage) {
+      setStatus((current) =>
+        current
+          ? {
+              ...current,
+              usage: data.usage ?? current.usage,
+              locked: data.nextRefreshAt ? true : current.locked,
+              fetchedAt: data.fetchedAt ?? current.fetchedAt,
+              nextRefreshAt: data.nextRefreshAt ?? current.nextRefreshAt,
+            }
+          : current
+      );
+    }
   }, []);
+
+  const loadStatus = useCallback(async () => {
+    if (!ctxParams) return;
+    try {
+      const res = await fetch(
+        `/api/properties/${propertyId}/comps/refresh?${ctxParams}`
+      );
+      if (!res.ok) return;
+      setStatus((await res.json()) as RefreshStatus);
+    } catch {
+      // The tab works without it; the button just won't know it is locked.
+      // Better than refusing to render the comps.
+    }
+  }, [ctxParams, propertyId]);
 
   const load = useCallback(async () => {
     if (!ctxParams) return;
@@ -144,10 +212,11 @@ export function CompsPanel({
     // PropertyDetailPage's loader.
     (async () => {
       await load();
+      await loadStatus();
     })();
-  }, [load]);
+  }, [load, loadStatus]);
 
-  async function refresh() {
+  async function refresh(options: { force?: boolean; rebuild?: boolean } = {}) {
     if (!ctx) return;
     setRefreshing(true);
     setError(null);
@@ -155,17 +224,37 @@ export function CompsPanel({
       const res = await fetch(`/api/properties/${propertyId}/comps/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ context_type: ctx.type, context_id: ctx.id }),
+        body: JSON.stringify({
+          context_type: ctx.type,
+          context_id: ctx.id,
+          ...(options.force ? { force: true } : {}),
+          ...(options.rebuild ? { rebuild: true } : {}),
+        }),
       });
       // A degraded lookup is a 200 carrying a reason, not an error — the comps
       // already held stay on screen either way. A real 500 throws with the
       // server's message.
       apply(await readResponse(res, "Failed to refresh comps"));
+      await loadStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to refresh comps");
     } finally {
       setRefreshing(false);
     }
+  }
+
+  /**
+   * A forced refresh spends one of a shared monthly allowance, so it asks
+   * first and says what it costs. "Are you sure?" with no number attached is a
+   * dialog people learn to dismiss.
+   */
+  async function forceRefresh() {
+    const remaining = status?.usage.remaining ?? 0;
+    const confirmed = window.confirm(
+      `Refresh now from RentCast?\n\nUses 1 of ${remaining} remaining this month.`
+    );
+    if (!confirmed) return;
+    await refresh({ force: true });
   }
 
   async function toggle(comp: Comp) {
@@ -232,17 +321,94 @@ export function CompsPanel({
             )}
           </div>
 
+          {/* Locked, at the cap, or free to call — three different buttons
+              rather than one that silently does something different. */}
+          {status?.usage.atCap ? (
+            <button
+              type="button"
+              disabled
+              data-testid="refresh-at-cap"
+              className="shrink-0 h-9 px-3 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium opacity-50"
+            >
+              Limit reached
+            </button>
+          ) : status?.locked ? (
+            <button
+              type="button"
+              onClick={() => void forceRefresh()}
+              disabled={refreshing || !ctx || !status.canForce}
+              data-testid="force-refresh-comps"
+              title={
+                status.canForce
+                  ? "Spends one request"
+                  : "Only the account owner can refresh early"
+              }
+              className="shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={refreshing ? "animate-spin" : undefined} />
+              {refreshing ? "Pulling…" : "Refresh early"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void refresh()}
+              disabled={refreshing || !ctx}
+              data-testid="refresh-comps"
+              className="shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={refreshing ? "animate-spin" : undefined} />
+              {refreshing ? "Pulling…" : "Refresh"}
+            </button>
+          )}
+        </div>
+
+        {/* ── When this house may be looked up again ─────────────────────── */}
+        {status?.locked && status.fetchedAt && status.nextRefreshAt && (
+          <p
+            data-testid="refresh-lock"
+            className="flex items-center gap-1.5 text-[11px] text-(--color-text-secondary) mt-2"
+          >
+            <Lock size={11} className="shrink-0" />
+            <span>
+              Comps from {shortDate(status.fetchedAt)} · refresh available{" "}
+              {shortDate(status.nextRefreshAt)}
+            </span>
+          </p>
+        )}
+
+        {status?.usage.atCap && (
+          <p
+            data-testid="refresh-cap-notice"
+            className="flex gap-1.5 text-[11px] text-red-400 mt-2 leading-relaxed"
+          >
+            <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+            <span>
+              {status.usage.used} of {status.usage.cap} monthly RentCast requests used.
+              Comps can still be added by hand, and this resets next month.
+            </span>
+          </p>
+        )}
+
+        {/* Where these comps came from. A cached or sample set must not be
+            mistaken for a fresh lookup. */}
+        {source && SOURCE_LABEL[source] && (
+          <p data-testid="comps-source" className="text-[11px] text-(--color-text-tertiary) mt-1">
+            Comps {SOURCE_LABEL[source]}
+          </p>
+        )}
+
+        {/* The request is already paid for; rebuilding costs nothing. */}
+        {status?.canRebuild && (
           <button
             type="button"
-            onClick={refresh}
+            onClick={() => void refresh({ rebuild: true })}
             disabled={refreshing || !ctx}
-            data-testid="refresh-comps"
-            className="shrink-0 flex items-center gap-1.5 h-9 px-3 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium disabled:opacity-50"
+            data-testid="rebuild-comps"
+            className="self-start text-[11px] text-(--color-accent) font-medium mt-2 disabled:opacity-50"
           >
-            <RefreshCw size={13} className={refreshing ? "animate-spin" : undefined} />
-            {refreshing ? "Pulling…" : "Refresh"}
+            Rebuild from saved response
           </button>
-        </div>
+        )}
 
         {/* What the number is built on. Stated, never implied. */}
         <p data-testid="arv-basis" className="text-[12px] text-(--color-text-secondary) mt-3">
