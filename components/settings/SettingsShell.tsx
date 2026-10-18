@@ -8,6 +8,7 @@ import { AppShell } from "@/components/shell/AppShell";
 const SETTINGS_TABS = [
   { href: "/settings/profile", label: "Income & debts" },
   { href: "/settings/defaults", label: "Defaults" },
+  { href: "/settings/integrations", label: "Integrations" },
   { href: "/settings/account", label: "Account" },
 ] as const;
 

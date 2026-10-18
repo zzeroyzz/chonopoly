@@ -11,6 +11,7 @@ import { cadenceDueDate } from "@/lib/crm/cadence";
 import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/types";
 import { StageMenu } from "./StageMenu";
 import { ContactCard } from "./ContactCard";
+import { CompsPanel } from "./CompsPanel";
 import { useCrmContext, useShellProfile } from "./useCrmContext";
 
 const ACTIVITY_LABEL: Record<ActivityType, string> = {
@@ -275,11 +276,8 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               </div>
             )}
 
-            {tab === "Comps" && (
-              <p data-testid="panel-comps" className="text-[12px] text-(--color-text-secondary) leading-relaxed">
-                Comparable sales arrive with the screening step, which pulls them
-                from RentCast and lets you check off the renovated ones.
-              </p>
+            {tab === "Comps" && property && (
+              <CompsPanel propertyId={property.id} ctx={ctx} ctxParams={ctxParams} />
             )}
 
             {tab === "Rehab" && (
