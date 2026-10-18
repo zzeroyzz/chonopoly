@@ -4,6 +4,7 @@ import {
   type RentCastValueResponse,
   type ValueEstimateParams,
 } from "./types";
+import fixture from "./fixtures/valueEstimate.json";
 
 /**
  * RentCast API client. Server-only, enforced by the import above.
@@ -25,6 +26,19 @@ const BASE = "https://api.rentcast.io/v1";
 
 /** Free Developer plan. Foundation is 1,000, Growth 5,000, Scale 25,000. */
 export const FREE_PLAN_MONTHLY_REQUESTS = 50;
+
+/**
+ * Stop calling here, five short of the plan limit.
+ *
+ * The gap is deliberate headroom. RentCast's own count is authoritative and
+ * ours can only ever be an estimate of it — a request that times out locally
+ * may still have been served and billed — so the app must stop before the real
+ * ceiling rather than discover it by being cut off mid-screening.
+ */
+export const MONTHLY_REQUEST_CAP = 45;
+
+/** One lookup per house per 30 days. */
+export const CACHE_WINDOW_DAYS = 30;
 
 /** Warn the user here rather than at the wall. */
 export const QUOTA_WARNING_FRACTION = 0.8;
@@ -55,11 +69,80 @@ export type RentCastFailure =
   | "bad_response";
 
 export type RentCastResult =
-  | { ok: true; data: RentCastValueResponse; statusCode: number; billable: true }
-  | { ok: false; failure: RentCastFailure; message: string; statusCode: number | null; billable: boolean };
+  | { ok: true; data: RentCastValueResponse; statusCode: number; billable: boolean; mode: RentCastMode }
+  | {
+      ok: false;
+      failure: RentCastFailure;
+      message: string;
+      statusCode: number | null;
+      billable: boolean;
+      mode: RentCastMode;
+    };
+
+/**
+ * `billable` means the HTTP request left this process — not that it came back
+ * useful.
+ *
+ * This was wrong, and the dashboard caught it: 401/403 were recorded as free on
+ * the theory that a rejected key does no work. RentCast counts them anyway.
+ * Three requests reached them while the app reported one, and an undercount is
+ * the dangerous direction — it reads as headroom that is not there.
+ *
+ * So the rule is now about reaching them, not about succeeding:
+ *
+ *   billable       any attempted call: 2xx, 4xx, 5xx, and a network error
+ *                  (which may have been served before the connection broke)
+ *   not billable   refused locally before any socket opened: no key, the
+ *                  monthly cap, a cache hit, a lock already held, mock mode
+ *
+ * When in doubt, count it. Over-reporting costs headroom; under-reporting
+ * costs a cut-off mid-screening with no warning.
+ */
+
+export type RentCastMode = "live" | "mock";
+
+/**
+ * Whether this deployment may spend real requests.
+ *
+ * Production calls RentCast. Everything else — local, preview, CI, tests —
+ * serves fixtures, because a preview deploy quietly eating the month's quota is
+ * a cost nobody notices until screening stops working. `RENTCAST_MODE` forces
+ * either way, so a deliberate live check from local is still possible.
+ *
+ * Fails safe: anything other than an explicit live signal is mock.
+ */
+export function rentCastMode(): RentCastMode {
+  const explicit = process.env.RENTCAST_MODE?.toLowerCase();
+  if (explicit === "mock") return "mock";
+  if (explicit === "live") return "live";
+
+  // Vercel sets VERCEL_ENV to production | preview | development.
+  if (process.env.VERCEL_ENV === "production") return "live";
+  if (process.env.VERCEL_ENV) return "mock";
+
+  // Not on Vercel at all: local or CI.
+  return "mock";
+}
 
 export function hasApiKey(): boolean {
   return Boolean(process.env.RENTCAST_API_KEY);
+}
+
+/**
+ * The fixture, restamped with the address that was asked for.
+ *
+ * The addresses matter: the caller caches on normalized address, so a mock that
+ * always claimed to be 128 Maple St would make every house in a test collapse
+ * onto one cache entry and hide exactly the bug this work exists to prevent.
+ * The comps and the subject facts stay as they are — they are the realistic
+ * part, and tests assert against their numbers.
+ */
+function mockResponse(address: string): RentCastValueResponse {
+  const base = fixture as unknown as RentCastValueResponse;
+  return {
+    ...base,
+    subjectProperty: { ...base.subjectProperty, formattedAddress: address },
+  };
 }
 
 function clampCompCount(requested: number | undefined): number {
@@ -79,6 +162,19 @@ export async function fetchValueEstimate(
   params: ValueEstimateParams,
   signal?: AbortSignal
 ): Promise<RentCastResult> {
+  const mode = rentCastMode();
+
+  // Fixtures outside production. No socket opens, so nothing is billed.
+  if (mode === "mock") {
+    return {
+      ok: true,
+      data: mockResponse(params.address),
+      statusCode: 200,
+      billable: false,
+      mode,
+    };
+  }
+
   const apiKey = process.env.RENTCAST_API_KEY;
 
   // Refused locally, so it never counts against the quota.
@@ -89,6 +185,7 @@ export async function fetchValueEstimate(
       message: "No RentCast API key is configured.",
       statusCode: null,
       billable: false,
+      mode,
     };
   }
 
@@ -119,12 +216,15 @@ export async function fetchValueEstimate(
       failure: "network_error",
       message: error instanceof Error ? error.message : "Network request failed.",
       statusCode: null,
-      billable: false,
+      // Counted. The request left this process and may well have been served
+      // before the connection broke; assuming otherwise undercounts.
+      billable: true,
+      mode,
     };
   }
 
   if (!response.ok) {
-    return mapErrorResponse(response.status, await readErrorMessage(response));
+    return mapErrorResponse(response.status, await readErrorMessage(response), mode);
   }
 
   let data: unknown;
@@ -139,6 +239,7 @@ export async function fetchValueEstimate(
       message: "RentCast returned a response that was not JSON.",
       statusCode: response.status,
       billable: true,
+      mode,
     };
   }
 
@@ -149,6 +250,7 @@ export async function fetchValueEstimate(
       message: "RentCast returned an unexpected response shape.",
       statusCode: response.status,
       billable: true,
+      mode,
     };
   }
 
@@ -157,20 +259,30 @@ export async function fetchValueEstimate(
     data: data as RentCastValueResponse,
     statusCode: response.status,
     billable: true,
+    mode,
   };
 }
 
-function mapErrorResponse(statusCode: number, message: string): RentCastResult {
+function mapErrorResponse(
+  statusCode: number,
+  message: string,
+  mode: RentCastMode
+): RentCastResult {
   // 401/403 — the key is present but not working. Same user action as a missing
   // key (go fix it in Settings), so it reports as no_key rather than inventing
   // a state with no remedy attached.
+  //
+  // Billable, which is the correction: RentCast counts a rejected key against
+  // the plan. Two of these were logged free while their dashboard counted them,
+  // which is the whole reason our number read 1 against their 3.
   if (statusCode === 401 || statusCode === 403) {
     return {
       ok: false,
       failure: "no_key",
       message: message || "RentCast rejected the API key.",
       statusCode,
-      billable: false,
+      billable: true,
+      mode,
     };
   }
 
@@ -184,6 +296,7 @@ function mapErrorResponse(statusCode: number, message: string): RentCastResult {
       statusCode,
       // Billable: the lookup ran and found nothing.
       billable: true,
+      mode,
     };
   }
 
@@ -198,7 +311,10 @@ function mapErrorResponse(statusCode: number, message: string): RentCastResult {
       failure: isQuota ? "quota" : "rate_limited",
       message: message || "RentCast rate limit reached.",
       statusCode,
-      billable: false,
+      // Counted. A 429 reached RentCast, and whether they bill it is their
+      // call, not ours to assume away.
+      billable: true,
+      mode,
     };
   }
 
@@ -207,7 +323,8 @@ function mapErrorResponse(statusCode: number, message: string): RentCastResult {
     failure: "http_error",
     message: message || `RentCast returned ${statusCode}.`,
     statusCode,
-    billable: statusCode < 500,
+    billable: true,
+    mode,
   };
 }
 

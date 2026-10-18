@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { stubDataEndpoints } from "./helpers";
-import fixture from "./fixtures/rentcast-value.json";
+import fixture from "@/lib/rentcast/fixtures/valueEstimate.json";
 import { mapComparables } from "@/lib/comps/fromRentCast";
 import { calculateArv } from "@/lib/comps/arv";
 import { type Comp } from "@/lib/comps/types";
@@ -95,7 +95,34 @@ interface StubOptions {
   /** Start with no comps, so the empty state and a refresh can be exercised. */
   startEmpty?: boolean;
   /** What a refresh does. "ok" stores the fixture comps. */
-  refresh?: "ok" | "no_key" | "quota" | "no_comps" | "crash_empty" | "crash_json";
+  refresh?: "ok" | "no_key" | "quota" | "no_comps" | "crash_empty" | "crash_json" | "in_flight" | "slow";
+  /** The quota guard's view of this house, as GET /comps/refresh reports it. */
+  status?: Partial<RefreshStatusStub>;
+}
+
+/** Mirrors what GET /api/properties/:id/comps/refresh returns. */
+interface RefreshStatusStub {
+  usage: { used: number; cap: number; planLimit: number; remaining: number; atCap: boolean };
+  mode: "live" | "mock";
+  locked: boolean;
+  fetchedAt: string | null;
+  nextRefreshAt: string | null;
+  canForce: boolean;
+  canRebuild: boolean;
+  windowDays: number;
+}
+
+function defaultStatus(): RefreshStatusStub {
+  return {
+    usage: { used: 3, cap: 45, planLimit: 50, remaining: 42, atCap: false },
+    mode: "live",
+    locked: false,
+    fetchedAt: null,
+    nextRefreshAt: null,
+    canForce: true,
+    canRebuild: false,
+    windowDays: 30,
+  };
 }
 
 /**
@@ -206,10 +233,47 @@ async function stubComps(page: Page, options: StubOptions = {}) {
     return route.fallback();
   });
 
+  // GET on the refresh route is the quota guard's status. Same URL as the POST
+  // below, so the handler branches on method.
+  const status = { ...defaultStatus(), ...(options.status ?? {}) };
+
   // Refresh — the RentCast-backed route. Degraded outcomes are 200s carrying a
   // reason, which is the contract the panel relies on.
-  await page.route(`**/api/properties/*/comps/refresh**`, (route) => {
+  await page.route(`**/api/properties/*/comps/refresh**`, async (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill(json(JSON.stringify(status)));
+    }
+
     const mode = options.refresh ?? "ok";
+
+    // Hold the response open long enough that a second tap would overlap it.
+    if (mode === "slow") {
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      comps = fixtureComps();
+      return route.fulfill(
+        json(
+          body({
+            degraded: null,
+            message: null,
+            source: "live",
+            fetchedAt: "2026-10-18T12:00:00.000Z",
+            nextRefreshAt: "2026-11-17T12:00:00.000Z",
+          })
+        )
+      );
+    }
+
+    // What the route returns when another caller already holds the lock.
+    if (mode === "in_flight") {
+      return route.fulfill(
+        json(
+          body({
+            degraded: "in_flight",
+            message: "A lookup for this address is already running. Give it a moment and reload.",
+          })
+        )
+      );
+    }
 
     if (mode === "no_key") {
       return route.fulfill(
@@ -261,7 +325,18 @@ async function stubComps(page: Page, options: StubOptions = {}) {
     }
 
     comps = fixtureComps();
-    return route.fulfill(json(body({ degraded: null, message: null })));
+    return route.fulfill(
+      json(
+        body({
+          degraded: null,
+          message: null,
+          source: "live",
+          fetchedAt: "2026-10-18T12:00:00.000Z",
+          nextRefreshAt: "2026-11-17T12:00:00.000Z",
+          usage: { used: 4, cap: 45, planLimit: 50, remaining: 41, atCap: false },
+        })
+      )
+    );
   });
 }
 
@@ -705,4 +780,256 @@ test("a crashed refresh leaves the comps and the ARV alone", async ({ page }) =>
   // A failed refresh must not empty the tab.
   await expect(page.getByTestId("comp-comp-0")).toBeVisible();
   await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
+});
+
+// ─── The quota guard ──────────────────────────────────────────────────────────
+
+const LOCKED = {
+  locked: true,
+  fetchedAt: "2026-10-18T12:00:00.000Z",
+  nextRefreshAt: "2026-11-17T12:00:00.000Z",
+  canRebuild: true,
+};
+
+test("a locked house says when it can be refreshed again", async ({ page }) => {
+  await stubComps(page, { status: LOCKED });
+  await openCompsTab(page);
+
+  // The exact sentence the owner asked for.
+  await expect(page.getByTestId("refresh-lock")).toHaveText(
+    "Comps from Oct 18 · refresh available Nov 17"
+  );
+});
+
+test("a locked house offers Refresh early instead of Refresh", async ({ page }) => {
+  await stubComps(page, { status: LOCKED });
+  await openCompsTab(page);
+
+  await expect(page.getByTestId("force-refresh-comps")).toBeVisible();
+  // Not a button that silently does something different.
+  await expect(page.getByTestId("refresh-comps")).toHaveCount(0);
+});
+
+test("an unlocked house just offers Refresh", async ({ page }) => {
+  await stubComps(page);
+  await openCompsTab(page);
+
+  await expect(page.getByTestId("refresh-comps")).toBeVisible();
+  await expect(page.getByTestId("force-refresh-comps")).toHaveCount(0);
+  await expect(page.getByTestId("refresh-lock")).toHaveCount(0);
+});
+
+test("forcing a refresh confirms, and says what it costs", async ({ page }) => {
+  await stubComps(page, { status: LOCKED });
+  await openCompsTab(page);
+
+  const messages: string[] = [];
+  page.on("dialog", (dialog) => {
+    messages.push(dialog.message());
+    void dialog.dismiss();
+  });
+
+  await page.getByTestId("force-refresh-comps").click();
+
+  // "Are you sure?" with no number attached is a dialog people learn to
+  // dismiss without reading.
+  expect(messages.join(" ")).toContain("Uses 1 of 42 remaining this month");
+});
+
+test("dismissing the confirm spends nothing", async ({ page }) => {
+  await stubComps(page, { status: LOCKED });
+  await openCompsTab(page);
+
+  let refreshPosts = 0;
+  page.on("request", (req) => {
+    if (req.method() === "POST" && req.url().includes("/comps/refresh")) refreshPosts += 1;
+  });
+  page.on("dialog", (dialog) => void dialog.dismiss());
+
+  await page.getByTestId("force-refresh-comps").click();
+  await expect(page.getByTestId("refresh-lock")).toBeVisible();
+
+  expect(refreshPosts).toBe(0);
+});
+
+test("accepting the confirm sends force", async ({ page }) => {
+  await stubComps(page, { status: LOCKED });
+  await openCompsTab(page);
+
+  const bodies: string[] = [];
+  page.on("request", (req) => {
+    if (req.method() === "POST" && req.url().includes("/comps/refresh")) {
+      bodies.push(req.postData() ?? "");
+    }
+  });
+  page.on("dialog", (dialog) => void dialog.accept());
+
+  await page.getByTestId("force-refresh-comps").click();
+  await expect(page.getByTestId("comps-source")).toBeVisible();
+
+  expect(bodies).toHaveLength(1);
+  expect(JSON.parse(bodies[0]).force).toBe(true);
+});
+
+test("a non-owner cannot force a refresh", async ({ page }) => {
+  await stubComps(page, { status: { ...LOCKED, canForce: false } });
+  await openCompsTab(page);
+
+  // The quota is shared, so spending it early is the owner's call. The route
+  // enforces this too — the disabled button is the courtesy, not the control.
+  await expect(page.getByTestId("force-refresh-comps")).toBeDisabled();
+});
+
+test("at the monthly cap the button is replaced and the reason given", async ({ page }) => {
+  await stubComps(page, {
+    status: { usage: { used: 45, cap: 45, planLimit: 50, remaining: 0, atCap: true } },
+  });
+  await openCompsTab(page);
+
+  await expect(page.getByTestId("refresh-at-cap")).toBeDisabled();
+  await expect(page.getByTestId("refresh-at-cap")).toHaveText("Limit reached");
+
+  const notice = page.getByTestId("refresh-cap-notice");
+  await expect(notice).toContainText("45 of 45");
+  await expect(notice).toContainText("resets next month");
+});
+
+test("manual comps still work at the cap", async ({ page }) => {
+  await stubComps(page, {
+    status: { usage: { used: 45, cap: 45, planLimit: 50, remaining: 0, atCap: true } },
+  });
+  await openCompsTab(page);
+
+  // Running out of API requests must not stop the work.
+  await page.getByTestId("add-comp-toggle").click();
+  await page.getByTestId("manual-comp-address").fill("9 Agent Closed Rd");
+  await page.getByTestId("manual-comp-price").fill("380000");
+  await page.getByTestId("manual-comp-save").click();
+
+  await expect(page.getByTestId("comp-manual-1")).toBeVisible();
+  await expect(page.getByTestId("comp-manual-1")).toContainText("Sold");
+});
+
+test("comps say when they came from the saved response", async ({ page }) => {
+  await stubComps(page);
+  await openCompsTab(page);
+
+  await page.getByTestId("refresh-comps").click();
+  // A cached or sample set must not be mistaken for a fresh lookup.
+  await expect(page.getByTestId("comps-source")).toContainText("fresh from RentCast");
+});
+
+test("rebuild is offered when a saved response exists, and never calls out", async ({ page }) => {
+  await stubComps(page, { status: LOCKED });
+  await openCompsTab(page);
+
+  const bodies: string[] = [];
+  page.on("request", (req) => {
+    if (req.method() === "POST" && req.url().includes("/comps/refresh")) {
+      bodies.push(req.postData() ?? "");
+    }
+  });
+
+  await expect(page.getByTestId("rebuild-comps")).toBeVisible();
+  await page.getByTestId("rebuild-comps").click();
+
+  await expect(page.getByTestId("comps-source")).toBeVisible();
+  expect(bodies).toHaveLength(1);
+  // The request the route refuses to make a call for.
+  expect(JSON.parse(bodies[0]).rebuild).toBe(true);
+  expect(JSON.parse(bodies[0]).force).toBeUndefined();
+});
+
+test("rebuild is hidden when nothing has been saved", async ({ page }) => {
+  await stubComps(page, { status: { canRebuild: false } });
+  await openCompsTab(page);
+
+  await expect(page.getByTestId("rebuild-comps")).toHaveCount(0);
+});
+
+test("the lock row fits 390px", async ({ page }) => {
+  await stubComps(page, { status: LOCKED });
+  await openCompsTab(page);
+
+  await expect(page.getByTestId("refresh-lock")).toBeVisible();
+
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflows).toBe(false);
+});
+
+
+// ─── One call in flight per address ───────────────────────────────────────────
+
+test("a double tap sends one request, not two", async ({ page }) => {
+  await stubComps(page, { refresh: "slow" });
+  await openCompsTab(page);
+
+  const posts: string[] = [];
+  page.on("request", (req) => {
+    if (req.method() === "POST" && req.url().includes("/comps/refresh")) posts.push(req.url());
+  });
+
+  // Two taps as fast as Playwright can deliver them. The button disables on the
+  // first, so the second lands on a disabled control.
+  const button = page.getByTestId("refresh-comps");
+  await button.click();
+  await button.click({ force: true, timeout: 2000 }).catch(() => {
+    // Expected once it is disabled — that is the point of the test.
+  });
+
+  await expect(page.getByTestId("comps-source")).toBeVisible();
+  expect(posts).toHaveLength(1);
+});
+
+test("the button is disabled while a refresh is running", async ({ page }) => {
+  await stubComps(page, { refresh: "slow" });
+  await openCompsTab(page);
+
+  await page.getByTestId("refresh-comps").click();
+  // The client-side half of "one call per address". The database lock is the
+  // half that survives two people on two devices.
+  await expect(page.getByTestId("refresh-comps")).toBeDisabled();
+  await expect(page.getByTestId("comps-source")).toBeVisible();
+  await expect(page.getByTestId("refresh-comps")).toBeEnabled();
+});
+
+test("losing the lock race reports it without emptying the tab", async ({ page }) => {
+  await stubComps(page, { refresh: "in_flight" });
+  await openCompsTab(page);
+
+  await page.getByTestId("refresh-comps").click();
+
+  await expect(page.getByTestId("comps-degraded")).toContainText("already running");
+  // Returning what we hold beats spending a second request on the same answer.
+  await expect(page.getByTestId("comp-comp-0")).toBeVisible();
+  await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
+});
+
+test("Integrations says when a deployment never calls RentCast", async ({ page }) => {
+  await stubDataEndpoints(page);
+  await page.route("**/api/integrations/rentcast**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        connected: false,
+        mode: "mock",
+        usage: { used: 0, limit: 45, planLimit: 50, fraction: 0, monthStart: "2026-10-01T00:00:00.000Z" },
+        cap: 45,
+        cacheWindowDays: 30,
+        warningFraction: 0.8,
+        nearLimit: false,
+        atLimit: false,
+      }),
+    })
+  );
+  await page.goto("/settings/integrations");
+
+  // A counter stuck at zero on preview should explain itself rather than look
+  // like a broken integration.
+  await expect(page.getByTestId("rentcast-mock-mode")).toContainText("never calls RentCast");
+  await expect(page.getByTestId("rentcast-integration")).toContainText("once every 30 days");
+  await expect(page.getByTestId("rentcast-integration")).toContainText("stops at 45");
 });
