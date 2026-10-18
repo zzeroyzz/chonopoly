@@ -438,3 +438,50 @@ test("the add screen fits 390px", async ({ page }) => {
   );
   expect(overflows).toBe(false);
 });
+
+// ─── Opening a house from the screen ──────────────────────────────────────────
+
+test("a row links to its property, not its pipeline entry", async ({ page }) => {
+  await stubScreen(page, [row({ propertyId: "prop-1" })]);
+  await page.goto("/properties");
+
+  // It used to link by entry id and fall back to "/properties" — the page you
+  // are already on — when the house had no entry. Since neither the calculator
+  // save nor a batch paste creates an entry, that was every house.
+  await expect(page.getByTestId("screen-open-prop-1")).toHaveAttribute(
+    "href",
+    "/properties/prop-1"
+  );
+});
+
+test("the whole card is clickable, not just the address", async ({ page }) => {
+  await stubScreen(page, [row({ propertyId: "prop-1" })]);
+  await page.goto("/properties");
+
+  // At 390px a single line of text is a thin thing to hit, so the figures and
+  // the checklist are inside the link too.
+  const link = page.getByTestId("screen-open-prop-1");
+  await expect(link).toContainText("$250,000");
+  await expect(link).toContainText("Numbers");
+});
+
+test("a house with no pipeline entry still opens", async ({ page }) => {
+  // The case that was broken: entryId null.
+  await stubScreen(page, [{ ...row({ propertyId: "prop-1" }), entryId: null }]);
+  await page.goto("/properties");
+
+  await expect(page.getByTestId("screen-open-prop-1")).toHaveAttribute(
+    "href",
+    "/properties/prop-1"
+  );
+});
+
+test("the listing link opens the listing, not the property", async ({ page }) => {
+  await stubScreen(page, [row({ propertyId: "prop-1", listingUrl: "https://zillow.com/x" })]);
+  await page.goto("/properties");
+
+  // It sits inside the card-wide link, so its click must not bubble.
+  const listing = page.getByTestId("screen-listing-prop-1");
+  await expect(listing).toHaveAttribute("href", "https://zillow.com/x");
+  await expect(listing).toHaveAttribute("target", "_blank");
+});

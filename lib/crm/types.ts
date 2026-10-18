@@ -135,7 +135,15 @@ export interface ContactWithChannels {
 
 /** Everything the property detail screen renders. */
 export interface PropertyDetail {
-  entry: PipelineEntry;
+  /**
+   * Null when the house is not on the pipeline.
+   *
+   * A property exists whether or not it is a lead — one added from the
+   * calculator or a batch paste has no entry until someone works it, and it
+   * still has an address, facts, comps and analyses worth looking at. Treating
+   * the entry as required meant those houses had no viewable page at all.
+   */
+  entry: PipelineEntry | null;
   property: PropertyLike | null;
   contacts: ContactWithChannels[];
   tasks: Task[];

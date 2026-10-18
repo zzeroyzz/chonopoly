@@ -182,12 +182,15 @@ test("saving twice under the same label stays one row", async ({ page }) => {
   await page.goto(`/tools/mortgage?property=${PROPERTY_ID}`);
   await expect(page.getByTestId("bound-property")).toBeVisible();
 
-  for (const _ of [1, 2]) {
-    await page.getByTestId("scenario-label").fill("at asking");
-    await page.getByTestId("scenario-save").click();
-    await expect.poll(() => recorded.saves.length).toBeGreaterThan(0);
-  }
+  // Waiting on an exact count each time. `toBeGreaterThan(0)` was satisfied by
+  // the first save, so the second click raced it — and the save clears the
+  // label field, so the refill has to happen after the first has landed.
+  await page.getByTestId("scenario-label").fill("at asking");
+  await page.getByTestId("scenario-save").click();
+  await expect.poll(() => recorded.saves.length).toBe(1);
 
+  await page.getByTestId("scenario-label").fill("at asking");
+  await page.getByTestId("scenario-save").click();
   await expect.poll(() => recorded.saves.length).toBe(2);
   // Both bound to the same house under the same label — the service matches on
   // (property, label) and versions rather than inserting again.
