@@ -2,16 +2,28 @@ import type { Metadata, Viewport } from "next";
 import { Playfair_Display, IBM_Plex_Sans, IBM_Plex_Mono, Syne, DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-// Playfair Display, Syne, DM Sans and JetBrains Mono are variable fonts. Asking
-// next/font/google for explicit `weight` arrays on a variable font makes
-// Turbopack's font resolver emit one @font-face per weight, which it then fails
-// to resolve ("next/font/google queries have exactly one entry") — the build
-// error that broke the first cache-less deploy. Omitting `weight` uses the
-// font's variable axis instead, which covers every weight we were asking for.
-// IBM Plex Mono is a static family, so its explicit weights are required.
-// IBM Plex Sans is variable but keeps its weight array deliberately: it builds
-// clean today and dropping it would change how that family loads. Worth
-// revisiting if the resolver error ever surfaces for ibm_plex_sans.
+// Every variable family here omits `weight` on purpose.
+//
+// Asking next/font/google for an explicit `weight` array on a variable font
+// makes the font resolver emit one @font-face per weight and then fail to
+// resolve each one, with "next/font/google queries have exactly one entry"
+// against the generated <family>.module.css.
+//
+// It only fails on Vercel, and not for the reason you would guess. The module
+// it cannot resolve is `@vercel/turbopack-next/internal/font/google/font` —
+// Vercel's own build pipeline. `next build` and `next build --turbopack` run a
+// different resolver locally and both pass with the array in place, cache or
+// no cache, so this is not reproducible on a developer machine. Verified by
+// trying: clean builds both ways, array restored, zero errors.
+//
+// IBM Plex Sans was the last family still carrying a weight array. A comment
+// here flagged it as worth revisiting if the error ever surfaced for it; it
+// surfaced, so the array is gone. Its wght axis spans 100-700, which covers
+// the 300/400/500/600 that array asked for, so nothing about how the family
+// renders changes.
+//
+// IBM Plex Mono is the one genuinely static family in this list — no variable
+// axis — so its explicit weights are required and must stay.
 const playfair = Playfair_Display({
   subsets: ["latin"],
   variable: "--font-playfair",
@@ -19,7 +31,6 @@ const playfair = Playfair_Display({
 
 const ibmPlexSans = IBM_Plex_Sans({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
   variable: "--font-ibm-plex-sans",
 });
 
