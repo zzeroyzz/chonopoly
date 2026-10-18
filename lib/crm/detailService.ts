@@ -44,32 +44,87 @@ export async function getDetail(
   if (!entry) return null;
   const typedEntry = entry as PipelineEntry;
 
+  return assemble(client, typedEntry.property_id, typedEntry, ctx);
+}
+
+/**
+ * The same detail, found by the house rather than by its pipeline entry.
+ *
+ * This is the one the property page uses. A house added from the calculator or
+ * a batch paste has no pipeline entry, and keying the page on the entry left
+ * those houses unreachable — the Properties list linked nowhere for them.
+ */
+export async function getDetailByProperty(
+  propertyId: string,
+  ctx: RequestContext
+): Promise<PropertyDetail | null> {
+  const client = db();
+
+  const { data: property } = await client
+    .from("properties")
+    .select("id")
+    .eq("id", propertyId)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id)
+    .maybeSingle();
+
+  if (!property) return null;
+
+  // The entry is optional. Most houses will not have one.
+  const { data: entry } = await client
+    .from("pipeline_entries")
+    .select("*")
+    .eq("property_id", propertyId)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id)
+    .maybeSingle();
+
+  return assemble(client, propertyId, (entry as PipelineEntry | null) ?? null, ctx);
+}
+
+/**
+ * Everything hanging off one house, with the pipeline parts filled in only when
+ * there is an entry to hang them from.
+ *
+ * Tasks, activities and stage history are keyed on the pipeline entry, so a
+ * house with no entry has none of them — which is correct, not an error.
+ */
+async function assemble(
+  client: SupabaseClient,
+  propertyId: string,
+  typedEntry: PipelineEntry | null,
+  ctx: RequestContext
+): Promise<PropertyDetail | null> {
+  const entryId = typedEntry?.id ?? null;
+
   const { data: property } = await client
     .from("properties")
     .select("*")
-    .eq("id", typedEntry.property_id)
+    .eq("id", propertyId)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id)
     .maybeSingle();
 
   const [links, tasks, activities, history] = await Promise.all([
     client
       .from("property_contacts")
       .select("contact_id, relationship, is_primary")
-      .eq("property_id", typedEntry.property_id),
+      .eq("property_id", propertyId),
     client
       .from("tasks")
       .select("*")
-      .eq("pipeline_entry_id", entryId)
+      .eq("pipeline_entry_id", entryId ?? "00000000-0000-0000-0000-000000000000")
       .order("due_date", { ascending: true }),
     client
       .from("activities")
       .select("*")
-      .eq("pipeline_entry_id", entryId)
+      .eq("pipeline_entry_id", entryId ?? "00000000-0000-0000-0000-000000000000")
       .order("occurred_at", { ascending: false })
       .limit(100),
     client
       .from("property_stage_history")
       .select("*")
-      .eq("pipeline_entry_id", entryId)
+      .eq("pipeline_entry_id", entryId ?? "00000000-0000-0000-0000-000000000000")
       .order("changed_at", { ascending: false }),
   ]);
 

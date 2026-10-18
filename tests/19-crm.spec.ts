@@ -253,13 +253,21 @@ const DETAIL = {
 
 async function stubDetail(page: Page) {
   await stubDataEndpoints(page);
-  await page.route("**/api/crm/entry/**", (route) =>
+
+  const detail = (route: Parameters<Parameters<Page["route"]>[1]>[0]) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ detail: DETAIL }),
-    })
-  );
+    });
+
+  // The property page reads its detail from the property route now, not from
+  // the CRM entry route. Both are stubbed: the entry route is still live for
+  // other callers, and leaving only the old one here is what made this spec
+  // render an empty page while the component waited on a request nobody
+  // answered.
+  await page.route("**/api/properties/**", detail);
+  await page.route("**/api/crm/entry/**", detail);
 }
 
 test("a suppressed number stays visible, struck through, with its reason", async ({ page }) => {

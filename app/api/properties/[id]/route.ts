@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveContext } from "@/lib/context";
 import { getProperty, updatePropertyFacts, type PropertyFactsPatch } from "@/lib/property/propertyService";
+import { getDetail, getDetailByProperty } from "@/lib/crm/detailService";
 
 /**
  * Read and edit one house's own facts.
@@ -56,6 +57,20 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const { id } = await params;
+
+    // `detail=1` returns everything the property page shows. Without it this
+    // stays the lean property-only read the calculator's binding uses.
+    if (searchParams.get("detail") === "1") {
+      // Resolve as a property first, then fall back to a pipeline entry id.
+      // Both forms are live: the Properties list links by property, and
+      // /crm/<entryId> redirects still arrive here carrying an entry id.
+      const detail =
+        (await getDetailByProperty(id, ctx)) ?? (await getDetail(id, ctx));
+
+      if (!detail) return NextResponse.json({ error: "Property not found" }, { status: 404 });
+      return NextResponse.json({ detail });
+    }
+
     const property = await getProperty(id, ctx);
     if (!property) return NextResponse.json({ error: "Property not found" }, { status: 404 });
 

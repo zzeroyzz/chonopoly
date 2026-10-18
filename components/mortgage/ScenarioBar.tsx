@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { Save, Trash2, History, RotateCcw, X, AlertCircle, Home, MapPin } from "lucide-react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import {
@@ -10,6 +10,7 @@ import {
   diffInputs,
 } from "@/lib/mortgage/scenarioService";
 import { snapshotChanges } from "@/lib/mortgage/resolveInputs";
+import { saveAnalysis } from "@/lib/mortgage/scenarioClient";
 import { Card, SectionLabel } from "./fields";
 import { dollars } from "./format";
 
@@ -18,6 +19,13 @@ interface Props {
   monthlyPayment: number;
   /** Replaces the working draft. Only ever called from an explicit click. */
   onLoad: (inputs: MortgageInputs) => void;
+  /**
+   * A scenario to open on arrival, from a legacy `?scenario=` link.
+   *
+   * Running the numbers on a house happens in NumbersModal now, which opens an
+   * analysis by id itself. This stays so older links keep working.
+   */
+  openScenarioId?: string | null;
 }
 
 /** Field names as they read in the UI, for the compare view. */
@@ -220,20 +228,37 @@ function AttachAddressForm({
   );
 }
 
-export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
+export function ScenarioBar({
+  inputs,
+  monthlyPayment,
+  onLoad,
+  openScenarioId = null,
+}: Props) {
   const [scenarios, setScenarios] = useState<ScenarioSummary[]>([]);
   const [label, setLabel] = useState("");
-  // The house. Optional — quick math still works with no address, and those
-  // saves land under "Unassigned" with an action to attach one later.
-  const [address, setAddress] = useState("");
-  const [city, setCity] = useState("");
-  const [zip, setZip] = useState("");
+  // The house, optional and chosen from the ones that already exist.
+  //
+  // This used to be three text inputs — street, city, ZIP — which went through
+  // upsertProperty and could create a property. Two spellings of one address
+  // hashed differently and made two houses. Properties are created in one
+  // place now, Add, so this only picks from what is there.
+  const [houses, setHouses] = useState<{ propertyId: string; address: string }[]>([]);
+  const [houseQuery, setHouseQuery] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedHouse, setSelectedHouse] = useState<{ id: string; address: string } | null>(null);
   const [matchNote, setMatchNote] = useState<string | null>(null);
   const [attachingTo, setAttachingTo] = useState<ScenarioSummary | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [historyFor, setHistoryFor] = useState<ScenarioSummary | null>(null);
   const [versions, setVersions] = useState<ScenarioVersion[]>([]);
+
+  // The Numbers tab has linked `?scenario=<id>` since it was written and
+  // nothing ever read it, so that link silently opened a blank calculator.
+  //
+  // A ref rather than state: this is a one-shot latch, nothing renders from it,
+  // and setting state in the effect that reads it cascades renders.
+  const openedScenario = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -256,37 +281,38 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
     void refresh();
   }, [refresh]);
 
+  /** The houses that already exist, for the picker. Loaded when it opens. */
+  const loadHouses = useCallback(async () => {
+    try {
+      const res = await fetch("/api/properties/screen?context_type=personal");
+      if (!res.ok) return;
+      const body = (await res.json()) as {
+        rows: { propertyId: string; address: string }[];
+      };
+      setHouses(body.rows.map((r) => ({ propertyId: r.propertyId, address: r.address })));
+    } catch {
+      // No list means the picker shows nothing to pick, not a broken page.
+    }
+  }, []);
+
   async function save() {
     if (!label.trim() || busy) return;
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/mortgage/scenarios", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          label: label.trim(),
-          inputs,
-          monthly_payment: monthlyPayment,
-          address: address.trim()
-            ? { address_line1: address.trim(), city: city.trim() || null, zip: zip.trim() || null }
-            : null,
-          context_type: "personal",
-        }),
+      // One request, shared with the modal. No address parameter exists, so
+      // this cannot create a property however it is called.
+      const result = await saveAnalysis({
+        label,
+        inputs,
+        monthlyPayment,
+        propertyId: selectedHouse?.id ?? null,
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Could not save");
-      }
-      const body = (await res.json()) as {
-        scenario: ScenarioSummary;
-        matchedOn?: "parcel" | "address" | "created";
-      };
-      setMatchNote(matchMessage(body.matchedOn, body.scenario.property));
+      setMatchNote(matchMessage(result.matchedOn, result.scenario.property));
       setLabel("");
-      setAddress("");
-      setCity("");
-      setZip("");
+      setSelectedHouse(null);
+      setPickerOpen(false);
+      setHouseQuery("");
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save");
@@ -306,6 +332,17 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
       setError(e instanceof Error ? e.message : "Could not open that scenario");
     }
   }
+
+  // Open the deep-linked scenario once, after the list has loaded. Once only:
+  // re-applying it would overwrite edits the user made after arriving.
+  useEffect(() => {
+    if (!openScenarioId || openedScenario.current) return;
+    openedScenario.current = true;
+    void load(openScenarioId);
+    // `load` is recreated each render; depending on it would re-run this on
+    // every render, which the latch above would block but pointlessly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openScenarioId]);
 
   async function remove(id: string) {
     setError(null);
@@ -370,6 +407,7 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
         <input
           type="text"
           value={label}
+          data-testid="scenario-label"
           onChange={(e) => setLabel(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
@@ -386,45 +424,93 @@ export function ScenarioBar({ inputs, monthlyPayment, onLoad }: Props) {
           onClick={() => void save()}
           disabled={!label.trim() || busy}
           className="h-9 px-3 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[13px] font-semibold disabled:opacity-40 transition-opacity shrink-0 inline-flex items-center gap-1.5"
+          data-testid="scenario-save"
         >
           <Save size={14} />
           {busy ? "Saving…" : "Save"}
         </button>
       </div>
 
-      {/* The house. Optional: quick math works without one, and the save lands
-          under "Unassigned" with an action to attach an address later. */}
-      <div className="grid gap-2 mt-2">
-        <input
-          type="text"
-          value={address}
-          onChange={(e) => setAddress(e.target.value)}
-          placeholder="Street address (optional)"
-          aria-label="Street address"
-          data-testid="scenario-address"
-          className={control}
-        />
-        {address.trim() !== "" && (
-          <div className="flex items-center gap-2">
+      {/* Attaching to a house is optional, and the house has to already exist.
+          There is no address field anywhere here: typing one is what created a
+          second property row for an address already on file. Houses are created
+          in one place, Add. */}
+      <div className="mt-2">
+        {selectedHouse ? (
+          <div
+            data-testid="scenario-house"
+            className="flex items-center gap-2 rounded-[var(--radius-md)] border border-(--color-accent) bg-(--color-accent-glow) px-3 py-2"
+          >
+            <Home size={13} className="shrink-0 text-(--color-accent)" />
+            <span className="flex-1 min-w-0 text-[12px] text-(--color-text-primary) truncate">
+              {selectedHouse.address}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedHouse(null)}
+              data-testid="scenario-house-clear"
+              aria-label="Save without a house"
+              className="shrink-0 text-[11px] text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors"
+            >
+              Clear
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setPickerOpen((open) => !open);
+              if (houses.length === 0) void loadHouses();
+            }}
+            data-testid="scenario-pick-house"
+            className="inline-flex items-center gap-1.5 text-[12px] text-(--color-accent)"
+          >
+            <Home size={12} />
+            Save to a house (optional)
+          </button>
+        )}
+
+        {pickerOpen && !selectedHouse && (
+          <div data-testid="scenario-house-picker" className="grid gap-2 mt-2">
             <input
               type="text"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="City"
-              aria-label="City"
-              data-testid="scenario-city"
-              className={`${control} flex-1 min-w-0`}
+              value={houseQuery}
+              onChange={(e) => setHouseQuery(e.target.value)}
+              placeholder="Search your houses by address"
+              aria-label="Search houses by address"
+              data-testid="scenario-house-search"
+              className={control}
             />
-            <input
-              type="text"
-              inputMode="numeric"
-              value={zip}
-              onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
-              placeholder="ZIP"
-              aria-label="ZIP"
-              data-testid="scenario-zip"
-              className={`${control} w-24 shrink-0 font-(--font-mono)`}
-            />
+            <div className="max-h-40 overflow-y-auto">
+              {houses.filter((h) =>
+                h.address.toLowerCase().includes(houseQuery.trim().toLowerCase())
+              ).length === 0 ? (
+                <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
+                  No house matches. Houses are added from{" "}
+                  <span className="text-(--color-text-secondary)">+ Add</span> — saving
+                  here never creates one.
+                </p>
+              ) : (
+                houses
+                  .filter((h) =>
+                    h.address.toLowerCase().includes(houseQuery.trim().toLowerCase())
+                  )
+                  .map((h) => (
+                    <button
+                      key={h.propertyId}
+                      type="button"
+                      onClick={() => {
+                        setSelectedHouse({ id: h.propertyId, address: h.address });
+                        setPickerOpen(false);
+                      }}
+                      data-testid={`scenario-house-${h.propertyId}`}
+                      className="block w-full text-left text-[12px] text-(--color-text-primary) py-2 border-b border-(--color-border-subtle) last:border-0 truncate"
+                    >
+                      {h.address}
+                    </button>
+                  ))
+              )}
+            </div>
           </div>
         )}
       </div>

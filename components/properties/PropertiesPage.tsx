@@ -139,19 +139,30 @@ export function PropertiesPage() {
  * new type every pass and remounts the whole list.
  */
 function ScreenCard({ row }: { row: ScreenRow }) {
-  const href = row.entryId ? `/properties/${row.entryId}` : `/properties`;
+  // Always the property id. It used to be the pipeline entry id, falling back
+  // to "/properties" — the page you are already on — when the house had no
+  // entry. Since neither the calculator save nor a batch paste creates an
+  // entry, that was every house: the row looked like a link and did nothing.
+  const href = `/properties/${row.propertyId}`;
 
   return (
     <li
       data-testid={`screen-row-${row.propertyId}`}
-      className="rounded-xl border border-(--color-border-default) bg-(--color-elevated) p-3"
+      className="rounded-xl border border-(--color-border-default) bg-(--color-elevated) transition-colors hover:border-(--color-border-strong)"
     >
+      {/* The whole card is the target, not just the address. At 390px a line
+          of text is a thin thing to hit. */}
+      <Link
+        href={href}
+        data-testid={`screen-open-${row.propertyId}`}
+        className="block p-3"
+      >
       <div className="flex items-start justify-between gap-2">
-        <Link href={href} className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1">
           <p className="text-[13px] font-medium leading-snug wrap-break-word text-(--color-text-primary)">
             {row.address}
           </p>
-        </Link>
+        </div>
 
         {row.listingUrl && (
           <a
@@ -160,6 +171,9 @@ function ScreenCard({ row }: { row: ScreenRow }) {
             rel="noopener noreferrer"
             aria-label="Open the listing"
             data-testid={`screen-listing-${row.propertyId}`}
+            // Inside a card-wide link, so the click has to be stopped from
+            // bubbling or this opens the property instead of the listing.
+            onClick={(e) => e.stopPropagation()}
             className="shrink-0 text-(--color-text-tertiary) hover:text-(--color-accent) transition-colors"
           >
             <ExternalLink size={13} />
@@ -259,6 +273,7 @@ function ScreenCard({ row }: { row: ScreenRow }) {
           {row.checklist.done}/4
         </span>
       </div>
+      </Link>
     </li>
   );
 }

@@ -40,9 +40,32 @@ interface StoredScenario {
  * A stand-in for the table, so save → list → load behaves as it would against
  * the database without touching it.
  */
-async function stubScenarioApi(page: Page, seed: StoredScenario[] = []) {
+async function stubScenarioApi(
+  page: Page,
+  seed: StoredScenario[] = [],
+  /** Houses that already exist, which is the only thing the picker can offer. */
+  houses: StoredProperty[] = []
+) {
   const store: StoredScenario[] = [...seed];
-  const properties: StoredProperty[] = seed.map((s) => s.property).filter((p): p is StoredProperty => !!p);
+  const properties: StoredProperty[] = [
+    ...seed.map((s) => s.property).filter((p): p is StoredProperty => !!p),
+    ...houses,
+  ];
+
+  // What the "Save to a house" picker lists. Houses come from Add; this only
+  // reads them.
+  await page.route("**/api/properties/screen**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        rows: properties.map((p) => ({
+          propertyId: p.id,
+          address: [p.addressLine1, p.city, p.state].filter(Boolean).join(", "),
+        })),
+      }),
+    })
+  );
 
   // The real route maps rows to camelCase before returning them. The stub has
   // to do the same or it is testing a contract the app does not have.
@@ -74,27 +97,29 @@ async function stubScenarioApi(page: Page, seed: StoredScenario[] = []) {
       monthly_payment: number;
     };
 
-    // Mirrors upsertProperty: one property per normalised address, so saving
-    // twice at one address yields one house and two analyses.
+    // A save names an existing house by id, or no house at all. There is no
+    // address in the payload any more, so nothing here can create a property —
+    // which is the point: two spellings of one address made two houses.
     let property: StoredProperty | null = null;
     let matchedOn: "parcel" | "address" | "created" | undefined;
-    const line1 = (body as { address?: { address_line1?: string } }).address?.address_line1;
-    if (line1) {
-      const key = line1.trim().toLowerCase();
-      const found = properties.find((p) => p.addressLine1.trim().toLowerCase() === key);
-      if (found) {
-        property = found;
-        matchedOn = "address";
-        found.needsAddressReview = true;
-      } else {
-        property = {
-          id: `prop-${properties.length + 1}`,
-          addressLine1: line1.trim(),
-          city: null, state: "GA", zip: null, needsAddressReview: false,
-        };
-        properties.push(property);
-        matchedOn = "created";
+    const propertyId = (body as { property_id?: string }).property_id;
+    if (propertyId) {
+      property = properties.find((p) => p.id === propertyId) ?? null;
+      if (!property) {
+        return route.fulfill({
+          status: 404,
+          contentType: "application/json",
+          body: '{"error":"Property not found"}',
+        });
       }
+    }
+    // An address alongside a property id is a caller bug the route rejects.
+    if ((body as { address?: unknown }).address) {
+      return route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: '{"error":"Send property_id or address, not both"}',
+      });
     }
 
     // Same name on the same house is an update, not a second row.
@@ -188,7 +213,7 @@ test("the save control is on the page with nothing saved yet", async ({ page }) 
   await openCalculator(page);
 
   await expect(nameField(page)).toBeVisible();
-  await expect(page.getByRole("button", { name: /save/i })).toBeDisabled();
+  await expect(page.getByTestId("scenario-save")).toBeDisabled();
   await expect(page.getByText(/Save the current numbers under a name/)).toBeVisible();
 });
 
@@ -196,7 +221,7 @@ test("save is disabled until the scenario has a name", async ({ page }) => {
   await stubScenarioApi(page);
   await openCalculator(page);
 
-  const save = page.getByRole("button", { name: /save/i });
+  const save = page.getByTestId("scenario-save");
   await expect(save).toBeDisabled();
 
   await nameField(page).fill("Maple St");
@@ -215,7 +240,7 @@ test("saving a scenario lists it with its price and payment", async ({ page }) =
   await priceField(page).blur();
 
   await nameField(page).fill("Maple St");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
 
   await expect(page.getByText("Maple St")).toBeVisible();
   await expect(page.getByText(/\$250,000 · \$[\d,]+\/mo/)).toBeVisible();
@@ -230,7 +255,7 @@ test("opening a saved scenario puts its numbers back in the form", async ({ page
   await priceField(page).fill("412000");
   await priceField(page).blur();
   await nameField(page).fill("Oak Ave");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
   await expect(page.getByText("Oak Ave")).toBeVisible();
 
   // Move away from the saved numbers, then load them back.
@@ -249,13 +274,13 @@ test("saving again under the same name keeps one row and bumps the version", asy
   await priceField(page).fill("250000");
   await priceField(page).blur();
   await nameField(page).fill("Maple St");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
   await expect(page.getByText("Maple St")).toBeVisible();
 
   await priceField(page).fill("265000");
   await priceField(page).blur();
   await nameField(page).fill("Maple St");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
 
   // One row, not two that look identical in the list.
   await expect(page.getByText("Maple St")).toHaveCount(1);
@@ -269,7 +294,7 @@ test("deleting a scenario removes it from the list", async ({ page }) => {
   await openCalculator(page);
 
   await nameField(page).fill("Scratch");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
   await expect(page.getByText("Scratch")).toBeVisible();
 
   await page.getByRole("button", { name: /Delete Scratch/i }).click();
@@ -301,67 +326,82 @@ test("the saved list fits 390px without horizontal overflow", async ({ page }) =
 
 // ─── The property spine ───────────────────────────────────────────────────────
 
-test("saving with an address groups the scenario under that house", async ({ page }) => {
-  await stubScenarioApi(page);
+/** The house the picker will offer in these tests. */
+const MAPLE = {
+  id: "prop-maple",
+  addressLine1: "128 Maple St",
+  city: null,
+  state: "GA",
+  zip: null,
+  needsAddressReview: false,
+};
+
+/** Opens the picker and chooses a house by id. */
+async function pickHouse(page: Page, propertyId: string) {
+  await page.getByTestId("scenario-pick-house").click();
+  await page.getByTestId(`scenario-house-${propertyId}`).click();
+  await expect(page.getByTestId("scenario-house")).toBeVisible();
+}
+
+test("saving to a picked house groups the scenario under that house", async ({ page }) => {
+  await stubScenarioApi(page, [], [MAPLE]);
   await openCalculator(page);
 
-  await page.getByTestId("scenario-address").fill("128 Maple St");
+  await pickHouse(page, MAPLE.id);
   await nameField(page).fill("at asking");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
 
   // Scoped to the group heading: the match note names the address too, so a
   // bare text match is ambiguous and only passes by timing luck.
   await expect(page.getByRole("paragraph").filter({ hasText: /^128 Maple St$/ })).toBeVisible();
   await expect(page.getByText("at asking")).toBeVisible();
-  await expect(page.getByTestId("match-note")).toContainText("Added 128 Maple St");
 });
 
-test("two scenarios on one address give one house and two rows", async ({ page }) => {
-  await stubScenarioApi(page);
+test("two scenarios on one house give one house and two rows", async ({ page }) => {
+  await stubScenarioApi(page, [], [MAPLE]);
   await openCalculator(page);
 
   for (const label of ["at asking", "at $240k"]) {
-    await page.getByTestId("scenario-address").fill("128 Maple St");
+    await pickHouse(page, MAPLE.id);
     await nameField(page).fill(label);
-    await page.getByRole("button", { name: /save/i }).click();
+    await page.getByTestId("scenario-save").click();
     await expect(page.getByText(label)).toBeVisible();
   }
 
-  // One heading, two scenarios under it. Scoped to the heading: the match note
-  // names the address too, so a bare text match finds both.
+  // One heading, two scenarios under it.
   await expect(page.getByRole("paragraph").filter({ hasText: /^128 Maple St$/ })).toHaveCount(1);
   await expect(page.getByText("at asking")).toBeVisible();
   await expect(page.getByText("at $240k")).toBeVisible();
 });
 
-test("a second save at the same address is flagged for review", async ({ page }) => {
-  await stubScenarioApi(page);
+test("the calculator cannot create a house", async ({ page }) => {
+  // Replaces a test that saved a typed address twice and asserted the second
+  // was flagged for review. That path is gone: the calculator has no address
+  // field at all, so there is no lossy match to flag. Houses come from Add.
+  await stubScenarioApi(page, [], [MAPLE]);
   await openCalculator(page);
 
-  await page.getByTestId("scenario-address").fill("128 Maple St");
-  await nameField(page).fill("at asking");
-  await page.getByRole("button", { name: /save/i }).click();
-  await expect(page.getByText("at asking")).toBeVisible();
+  await expect(page.getByTestId("scenario-address")).toHaveCount(0);
+  await expect(page.getByTestId("scenario-city")).toHaveCount(0);
+  await expect(page.getByTestId("scenario-zip")).toHaveCount(0);
 
-  await page.getByTestId("scenario-address").fill("128 Maple St");
-  await nameField(page).fill("with 10% down");
-  await page.getByRole("button", { name: /save/i }).click();
-
-  // Normalisation is lossy, so an address match says so rather than implying
-  // certainty.
-  await expect(page.getByTestId("match-note")).toContainText("check it before working it");
-  await expect(page.getByTestId("needs-review")).toBeVisible();
+  // The picker offers only what exists, and says so when nothing matches.
+  await page.getByTestId("scenario-pick-house").click();
+  await page.getByTestId("scenario-house-search").fill("9 Nonexistent Way");
+  await expect(page.getByTestId("scenario-house-picker")).toContainText("never creates one");
 });
 
-test("a save with no address lands under Unassigned", async ({ page }) => {
+test("a save with no house lands under Unassigned", async ({ page }) => {
   await stubScenarioApi(page);
   await openCalculator(page);
 
   await nameField(page).fill("quick math");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
 
   await expect(page.getByText("Unassigned")).toBeVisible();
-  await expect(page.getByText("quick math")).toBeVisible();
+  // Exact: the page's own "Quick math — nothing to fill in but the numbers"
+  // blurb also contains this label as a substring.
+  await expect(page.getByText("quick math", { exact: true })).toBeVisible();
 });
 
 test("an Unassigned save can have an address attached", async ({ page }) => {
@@ -394,12 +434,13 @@ test("an Unassigned save can have an address attached", async ({ page }) => {
 });
 
 test("the grouped list fits 390px", async ({ page }) => {
-  await stubScenarioApi(page);
+  const sylvan = { ...MAPLE, id: "prop-sylvan", addressLine1: "1653 Sylvan Rd SW", city: "Atlanta" };
+  await stubScenarioApi(page, [], [sylvan]);
   await openCalculator(page);
 
-  await page.getByTestId("scenario-address").fill("1653 Sylvan Rd SW, Atlanta");
+  await pickHouse(page, sylvan.id);
   await nameField(page).fill("203(k) with $60k of work");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
   await expect(page.getByText("203(k) with $60k of work")).toBeVisible();
 
   const overflows = await page.evaluate(

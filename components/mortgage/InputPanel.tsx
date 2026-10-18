@@ -92,6 +92,7 @@ export function InputPanel({ inputs, onChange, profileState, onSetIncome }: Prop
 
           <NumberField
             label="Sales price"
+            testId="input-home-value"
             value={inputs.homeValue}
             // Hold the down payment PERCENT steady as the price moves. Keeping the
             // dollar figure fixed instead makes the percentage jump on every

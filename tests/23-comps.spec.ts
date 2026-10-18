@@ -158,6 +158,16 @@ async function stubComps(page: Page, options: StubOptions = {}) {
     route.fulfill(json(JSON.stringify(entryDetail())))
   );
 
+  // The property page reads its detail from the property route now, not from
+  // the CRM entry route above. Registered here, ahead of the comps routes, so
+  // the reverse-order rule below still leaves those in charge of their URLs.
+  // Without this the detail request went unstubbed, the page never rendered,
+  // and every test in this file timed out waiting for a tab.
+  await page.route("**/api/properties/*", (route) => {
+    if (!route.request().url().includes("detail=1")) return route.fallback();
+    return route.fulfill(json(JSON.stringify(entryDetail())));
+  });
+
   await page.route("**/api/crm/pipeline**", (route) =>
     route.fulfill(json(JSON.stringify({ rows: [] })))
   );
