@@ -325,18 +325,23 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     file, which hashed differently on the second attempt and
                     created a second property row for one house. */}
                 {analyses.length === 0 ? (
-                  <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
-                    No analyses on this house yet.{" "}
+                  <div>
+                    <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+                      No analyses on this house yet. The save lands on this house.
+                    </p>
+                    {/* Its own line rather than inline in the sentence: a
+                        button is inline-block, so its label cannot break
+                        across lines and pushed the paragraph past 390px. */}
                     <button
                       type="button"
                       onClick={() => openNumbers("new")}
                       data-testid="run-numbers"
-                      className="text-(--color-accent) underline-offset-2 hover:underline"
+                      className="inline-flex items-center gap-1 mt-2 text-[12px] text-(--color-accent) font-medium"
                     >
+                      <Plus size={12} />
                       Run the numbers
-                    </button>{" "}
-                    and the save lands on this house.
-                  </p>
+                    </button>
+                  </div>
                 ) : (
                   analyses.map((a) => (
                     <button

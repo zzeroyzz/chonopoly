@@ -213,7 +213,7 @@ test("the save control is on the page with nothing saved yet", async ({ page }) 
   await openCalculator(page);
 
   await expect(nameField(page)).toBeVisible();
-  await expect(page.getByRole("button", { name: /save/i })).toBeDisabled();
+  await expect(page.getByTestId("scenario-save")).toBeDisabled();
   await expect(page.getByText(/Save the current numbers under a name/)).toBeVisible();
 });
 
@@ -221,7 +221,7 @@ test("save is disabled until the scenario has a name", async ({ page }) => {
   await stubScenarioApi(page);
   await openCalculator(page);
 
-  const save = page.getByRole("button", { name: /save/i });
+  const save = page.getByTestId("scenario-save");
   await expect(save).toBeDisabled();
 
   await nameField(page).fill("Maple St");
@@ -240,7 +240,7 @@ test("saving a scenario lists it with its price and payment", async ({ page }) =
   await priceField(page).blur();
 
   await nameField(page).fill("Maple St");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
 
   await expect(page.getByText("Maple St")).toBeVisible();
   await expect(page.getByText(/\$250,000 · \$[\d,]+\/mo/)).toBeVisible();
@@ -255,7 +255,7 @@ test("opening a saved scenario puts its numbers back in the form", async ({ page
   await priceField(page).fill("412000");
   await priceField(page).blur();
   await nameField(page).fill("Oak Ave");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
   await expect(page.getByText("Oak Ave")).toBeVisible();
 
   // Move away from the saved numbers, then load them back.
@@ -274,13 +274,13 @@ test("saving again under the same name keeps one row and bumps the version", asy
   await priceField(page).fill("250000");
   await priceField(page).blur();
   await nameField(page).fill("Maple St");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
   await expect(page.getByText("Maple St")).toBeVisible();
 
   await priceField(page).fill("265000");
   await priceField(page).blur();
   await nameField(page).fill("Maple St");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
 
   // One row, not two that look identical in the list.
   await expect(page.getByText("Maple St")).toHaveCount(1);
@@ -294,7 +294,7 @@ test("deleting a scenario removes it from the list", async ({ page }) => {
   await openCalculator(page);
 
   await nameField(page).fill("Scratch");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
   await expect(page.getByText("Scratch")).toBeVisible();
 
   await page.getByRole("button", { name: /Delete Scratch/i }).click();
@@ -391,15 +391,17 @@ test("the calculator cannot create a house", async ({ page }) => {
   await expect(page.getByTestId("scenario-house-picker")).toContainText("never creates one");
 });
 
-test("a save with no address lands under Unassigned", async ({ page }) => {
+test("a save with no house lands under Unassigned", async ({ page }) => {
   await stubScenarioApi(page);
   await openCalculator(page);
 
   await nameField(page).fill("quick math");
-  await page.getByRole("button", { name: /save/i }).click();
+  await page.getByTestId("scenario-save").click();
 
   await expect(page.getByText("Unassigned")).toBeVisible();
-  await expect(page.getByText("quick math")).toBeVisible();
+  // Exact: the page's own "Quick math — nothing to fill in but the numbers"
+  // blurb also contains this label as a substring.
+  await expect(page.getByText("quick math", { exact: true })).toBeVisible();
 });
 
 test("an Unassigned save can have an address attached", async ({ page }) => {
