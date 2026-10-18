@@ -16,6 +16,7 @@ import {
   DEFAULT_MAX_RADIUS_MILES,
   DEFAULT_DAYS_OLD,
   rentCastMode,
+  hasApiKey,
   CACHE_WINDOW_DAYS,
   type RentCastFailure,
 } from "@/lib/rentcast/client";
@@ -361,6 +362,10 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({
       usage,
       mode: rentCastMode(),
+      // Mock mode is "connected" for the UI's purposes: it serves fixtures
+      // happily and a refresh there is useful. Only a missing key means
+      // nothing can be pulled at all.
+      connected: hasApiKey() || rentCastMode() === "mock",
       endpoint: ENDPOINT,
       /** Locked means a refresh would reuse the cache rather than call. */
       locked: Boolean(cached),

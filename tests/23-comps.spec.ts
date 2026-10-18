@@ -104,6 +104,7 @@ interface StubOptions {
 interface RefreshStatusStub {
   usage: { used: number; cap: number; planLimit: number; remaining: number; atCap: boolean };
   mode: "live" | "mock";
+  connected: boolean;
   locked: boolean;
   fetchedAt: string | null;
   nextRefreshAt: string | null;
@@ -116,6 +117,7 @@ function defaultStatus(): RefreshStatusStub {
   return {
     usage: { used: 3, cap: 45, planLimit: 50, remaining: 42, atCap: false },
     mode: "live",
+    connected: true,
     locked: false,
     fetchedAt: null,
     nextRefreshAt: null,
@@ -890,18 +892,23 @@ test("a non-owner cannot force a refresh", async ({ page }) => {
   await expect(page.getByTestId("force-refresh-comps")).toBeDisabled();
 });
 
-test("at the monthly cap the button is replaced and the reason given", async ({ page }) => {
+test("at the monthly cap Refresh is removed and the reason given", async ({ page }) => {
   await stubComps(page, {
     status: { usage: { used: 45, cap: 45, planLimit: 50, remaining: 0, atCap: true } },
   });
   await openCompsTab(page);
 
-  await expect(page.getByTestId("refresh-at-cap")).toBeDisabled();
-  await expect(page.getByTestId("refresh-at-cap")).toHaveText("Limit reached");
+  // This previously showed a disabled "Limit reached" button. A control that
+  // cannot do anything is worse than no control, so it is gone and the reason
+  // stands in its place.
+  await expect(page.getByTestId("refresh-comps")).toHaveCount(0);
+  await expect(page.getByTestId("force-refresh-comps")).toHaveCount(0);
+  await expect(page.getByTestId("refresh-at-cap")).toHaveCount(0);
 
   const notice = page.getByTestId("refresh-cap-notice");
   await expect(notice).toContainText("45 of 45");
-  await expect(notice).toContainText("resets next month");
+  await expect(notice).toContainText("until next month");
+  await expect(notice).toContainText("by hand");
 });
 
 test("manual comps still work at the cap", async ({ page }) => {
@@ -1042,4 +1049,53 @@ test("Integrations says when a deployment never calls RentCast", async ({ page }
   await expect(page.getByTestId("rentcast-mock-mode")).toContainText("never calls RentCast");
   await expect(page.getByTestId("rentcast-integration")).toContainText("once every 30 days");
   await expect(page.getByTestId("rentcast-integration")).toContainText("stops at 45");
+});
+
+// ─── Refresh is hidden when it cannot work ────────────────────────────────────
+
+test("no RentCast key hides Refresh and says why", async ({ page }) => {
+  await stubComps(page, { status: { connected: false } });
+  await openCompsTab(page);
+
+  // A button that cannot do anything is worse than no button.
+  await expect(page.getByTestId("refresh-comps")).toHaveCount(0);
+  await expect(page.getByTestId("force-refresh-comps")).toHaveCount(0);
+
+  const notice = page.getByTestId("refresh-unavailable");
+  await expect(notice).toContainText("isn't connected");
+  await expect(notice).toContainText("by hand");
+});
+
+test("manual comps still work with no key", async ({ page }) => {
+  await stubComps(page, { status: { connected: false } });
+  await openCompsTab(page);
+
+  // Losing the integration must not stop the work.
+  await page.getByTestId("add-comp-toggle").click();
+  await page.getByTestId("manual-comp-address").fill("9 Agent Closed Rd");
+  await page.getByTestId("manual-comp-price").fill("380000");
+  await page.getByTestId("manual-comp-save").click();
+
+  await expect(page.getByTestId("comp-manual-1")).toBeVisible();
+});
+
+// ─── The ARV card says one thing, not two ─────────────────────────────────────
+
+test("an empty ARV card does not say the same thing twice", async ({ page }) => {
+  await stubComps(page, { startEmpty: true });
+  await openCompsTab(page);
+
+  await expect(page.getByTestId("arv-value")).toHaveText("—");
+
+  // It said "Built on no comps" directly above "No comps are included yet".
+  await expect(page.getByTestId("arv-basis")).toHaveCount(0);
+  await expect(page.getByTestId("arv-warning").filter({ hasText: "No comps are included" })).toBeVisible();
+});
+
+test("the basis line returns once there is a number", async ({ page }) => {
+  await stubComps(page);
+  await openCompsTab(page);
+
+  await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
+  await expect(page.getByTestId("arv-basis")).toContainText("4 removed listings");
 });

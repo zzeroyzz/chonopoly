@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Plus } from "lucide-react";
+import { ArrowLeft, Check, Plus, Pencil } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
 import { dollars } from "@/components/mortgage/format";
@@ -12,6 +12,8 @@ import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/ty
 import { StageMenu } from "./StageMenu";
 import { ContactCard } from "./ContactCard";
 import { CompsPanel } from "./CompsPanel";
+import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
+import { propertyTypeLabel } from "@/lib/property/types";
 import { useCrmContext, useShellProfile } from "./useCrmContext";
 
 const ACTIVITY_LABEL: Record<ActivityType, string> = {
@@ -65,6 +67,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const [editingHouse, setEditingHouse] = useState(false);
   const [noteBody, setNoteBody] = useState("");
   const [noteType, setNoteType] = useState<ActivityType>("call");
 
@@ -162,12 +165,28 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
         {detail && (
           <>
-            <h1 className="text-[19px] font-semibold text-(--color-text-primary)">
-              {property?.address_line1 ?? "Address unknown"}
-            </h1>
-            <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
-              {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
-            </p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h1 className="text-[19px] font-semibold text-(--color-text-primary) wrap-break-word">
+                  {property?.address_line1 ?? "Address unknown"}
+                </h1>
+                <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
+                  {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
+                </p>
+              </div>
+
+              {property && (
+                <button
+                  type="button"
+                  onClick={() => setEditingHouse((v) => !v)}
+                  data-testid="edit-house-toggle"
+                  className="shrink-0 flex items-center gap-1 h-8 px-2.5 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium"
+                >
+                  <Pencil size={12} />
+                  {editingHouse ? "Close" : "Edit"}
+                </button>
+              )}
+            </div>
 
             <div className="flex items-center gap-2 mt-3 flex-wrap">
               <div className="relative">
@@ -200,7 +219,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 {[
                   ["Parcel", property.parcel_number],
                   ["County", property.county],
-                  ["Type", property.property_type],
+                  ["Type", propertyTypeLabel(property.property_type)],
                   ["Beds / baths", property.beds || property.baths ? `${property.beds ?? "—"} / ${property.baths ?? "—"}` : null],
                   ["Sqft", property.sqft ? property.sqft.toLocaleString() : null],
                   ["Year built", property.year_built],
@@ -213,6 +232,18 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     </div>
                   ))}
               </dl>
+            )}
+
+            {property && editingHouse && (
+              <EditHouseForm
+                house={property as unknown as EditableHouse}
+                ctx={ctx}
+                onSaved={async () => {
+                  setEditingHouse(false);
+                  await load();
+                }}
+                onCancel={() => setEditingHouse(false)}
+              />
             )}
 
             {/* The five tabs. Present even when empty, so the page does not

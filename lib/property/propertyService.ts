@@ -175,3 +175,109 @@ export async function confirmAddressMatch(id: string, ctx: RequestContext): Prom
 
   if (error) throw new Error(`Failed to confirm address match: ${error.message}`);
 }
+
+export interface PropertyFactsPatch {
+  addressLine1?: string;
+  city?: string | null;
+  /** NOT NULL in the schema with a 'GA' default, so it cannot be cleared. */
+  state?: string;
+  zip?: string | null;
+  propertyType?: string;
+  beds?: number | null;
+  baths?: number | null;
+  sqft?: number | null;
+  lotSqft?: number | null;
+  yearBuilt?: number | null;
+  annualTaxes?: number | null;
+  listingUrl?: string | null;
+}
+
+/**
+ * Edit a house by hand.
+ *
+ * Sets `facts_source = 'manual'`, which is the point: a figure someone typed
+ * after standing in the house outranks RentCast's, and `applySubjectFacts`
+ * only ever fills blanks, so a corrected value is never overwritten by a later
+ * refresh.
+ *
+ * Changing the address re-derives `address_hash`, so the house keeps deduping
+ * against the right thing — and clears `needs_address_review`, because a human
+ * typing the address IS the review that flag was asking for.
+ */
+export async function updatePropertyFacts(
+  id: string,
+  patch: PropertyFactsPatch,
+  ctx: RequestContext
+): Promise<Property> {
+  const existing = await getProperty(id, ctx);
+  if (!existing) throw new Error("Property not found");
+
+  // The generated Update type, so a mistyped column fails to compile.
+  type PropertyUpdate = Database["public"]["Tables"]["properties"]["Update"];
+  const update: PropertyUpdate = { updated_at: new Date().toISOString() };
+
+  const addressChanged =
+    patch.addressLine1 !== undefined ||
+    patch.city !== undefined ||
+    patch.state !== undefined ||
+    patch.zip !== undefined;
+
+  if (patch.addressLine1 !== undefined) {
+    const line = patch.addressLine1.trim();
+    if (!line) throw new Error("A house needs an address");
+    update.address_line1 = line;
+  }
+  if (patch.city !== undefined) update.city = patch.city;
+  if (patch.state !== undefined) update.state = patch.state;
+  if (patch.zip !== undefined) update.zip = patch.zip;
+
+  if (addressChanged) {
+    update.address_hash = addressHash({
+      addressLine1: (update.address_line1 as string) ?? existing.address_line1,
+      city: (patch.city !== undefined ? patch.city : existing.city) ?? null,
+      state: (patch.state !== undefined ? patch.state : existing.state) ?? null,
+      zip: (patch.zip !== undefined ? patch.zip : existing.zip) ?? null,
+    });
+    // Typing the address by hand is the review the flag was asking for.
+    update.needs_address_review = false;
+  }
+
+  // Facts. Only the keys actually sent, so an omitted field is left alone
+  // rather than nulled.
+  const factKeys: [keyof PropertyFactsPatch, keyof PropertyUpdate][] = [
+    ["propertyType", "property_type"],
+    ["beds", "beds"],
+    ["baths", "baths"],
+    ["sqft", "sqft"],
+    ["lotSqft", "lot_sqft"],
+    ["yearBuilt", "year_built"],
+    ["annualTaxes", "annual_taxes"],
+    ["listingUrl", "listing_url"],
+  ];
+
+  let touchedFacts = false;
+  for (const [key, column] of factKeys) {
+    const value = patch[key];
+    if (value !== undefined) {
+      Object.assign(update, { [column]: value });
+      touchedFacts = true;
+    }
+  }
+
+  if (touchedFacts) {
+    update.facts_source = "manual";
+    update.facts_updated_at = new Date().toISOString();
+  }
+
+  const { data, error } = await db()
+    .from("properties")
+    .update(update)
+    .eq("id", id)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(`Failed to update the house: ${error.message}`);
+  return data as unknown as Property;
+}
