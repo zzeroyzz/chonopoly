@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Home } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { loadProfile } from "@/lib/supabase/profile";
 import { useEffect } from "react";
@@ -21,8 +22,49 @@ import { AmortizationSection } from "./AmortizationSection";
 import { RateLookup } from "./RateLookup";
 import { ScenarioBar } from "./ScenarioBar";
 
+/** The house this calculator is bound to, when it was opened from one. */
+interface BoundProperty {
+  id: string;
+  address_line1: string;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+}
+
 export default function MortgageCalculator() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // ── The house, when the calculator was opened from one ────────────────────
+  //
+  // Previously there was no binding at all: the Numbers tab told the user to
+  // "run the numbers in the mortgage calculator and save with this address",
+  // which meant retyping an address that was already on file. Two slightly
+  // different spellings hashed differently and produced two property rows for
+  // one house, which is the bug this exists to close.
+  const propertyId = searchParams.get("property");
+  const scenarioId = searchParams.get("scenario");
+
+  const [boundProperty, setBoundProperty] = useState<BoundProperty | null>(null);
+
+  useEffect(() => {
+    if (!propertyId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/properties/${propertyId}?context_type=personal`);
+        if (!res.ok) return;
+        const body = (await res.json()) as { property: BoundProperty };
+        if (!cancelled) setBoundProperty(body.property);
+      } catch {
+        // Unbound rather than broken: the calculator still works, it just
+        // saves under "Unassigned" instead of onto the house.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId]);
 
   // One serializable object rather than a field per useState — which is what
   // makes persisting the whole thing a one-liner.
@@ -133,9 +175,34 @@ export default function MortgageCalculator() {
         <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">
           Mortgage calculator
         </h1>
+        {/* Which house this is for, stated at the top. Without it there is no
+            way to tell a bound calculator from the standalone one, and the
+            save behaves differently in each. */}
+        {boundProperty && (
+          <div
+            data-testid="bound-property"
+            className="flex items-start gap-2 rounded-lg border border-(--color-accent) bg-(--color-accent-glow) px-3 py-2 mb-4"
+          >
+            <Home size={13} className="shrink-0 mt-0.5 text-(--color-accent)" />
+            <div className="min-w-0">
+              <p className="text-[12px] font-medium text-(--color-text-primary) wrap-break-word">
+                {boundProperty.address_line1}
+              </p>
+              <p className="text-[11px] text-(--color-text-secondary)">
+                {[boundProperty.city, boundProperty.state, boundProperty.zip]
+                  .filter(Boolean)
+                  .join(", ")}
+                {" · saves to this house"}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-baseline justify-between gap-4 mb-5">
           <p className="text-[12px] text-(--color-text-secondary)">
-            Your inputs stay put between visits. Save a scenario to keep it on your account.
+            {boundProperty
+              ? "Saving keeps this analysis on the house above."
+              : "Your inputs stay put between visits. Save a scenario to keep it on your account."}
           </p>
           <button
             type="button"
@@ -185,6 +252,8 @@ export default function MortgageCalculator() {
             <ScenarioBar
               inputs={resolved}
               monthlyPayment={result.totalMonthlyWithMortgageInsurance}
+              boundProperty={boundProperty}
+              openScenarioId={scenarioId}
               // Replaces the working draft, and only from an explicit click.
               onLoad={(loaded) => setInputs(loaded)}
             />

@@ -302,7 +302,19 @@ export interface SaveScenarioInput {
   label: string;
   inputs: MortgageInputs;
   monthlyPayment: number;
-  /** Omitted for quick math with no house attached yet. */
+  /**
+   * The house this analysis belongs to, when the calculator was opened from
+   * one.
+   *
+   * Takes precedence over `address` and skips upsertProperty entirely. That is
+   * the whole point: the house is already known, so there is nothing to look
+   * up and nothing to dedupe. Re-deriving it from a retyped address is what
+   * created two property rows for one house — "Atlanta, GA" in the city field
+   * once and "Atlanta" the next time hashed differently, and the second save
+   * made a second house.
+   */
+  propertyId?: string | null;
+  /** Only for the standalone calculator, which has no house to bind to. */
   address?: ScenarioAddress | null;
 }
 
@@ -338,10 +350,11 @@ export async function saveScenario(
   // properties — it dedupes on parcel first and normalized address second, so
   // saving numbers on a house already in the pipeline matches it rather than
   // creating a second record of the same place.
-  let propertyId: string | null = null;
+  let propertyId: string | null = input.propertyId ?? null;
   let matchedOn: PropertyMatch | undefined;
 
-  if (input.address?.addressLine1?.trim()) {
+  // Only when no house was bound. A bound save never touches upsertProperty.
+  if (!propertyId && input.address?.addressLine1?.trim()) {
     const result = await upsertProperty(
       {
         address_line1: input.address.addressLine1.trim(),
@@ -378,12 +391,38 @@ export async function saveScenario(
 
   const existing = await existingQuery.maybeSingle();
 
+  // The first financing analysis on a house becomes its primary.
+  //
+  // Nothing was ever setting this, so `is_primary` was false on every row and
+  // "the primary financing scenario" — the one the Comps, Rehab and screen
+  // tabs mean when they say "the price" — never resolved to anything. The
+  // partial unique index already guarantees at most one per house, so this
+  // only claims the slot when it is empty.
+  let isPrimary = false;
+  if (propertyId && !existing.data?.id) {
+    const { data: currentPrimary } = await db()
+      .from(TABLE)
+      .select("id")
+      .eq("owner_type", ctx.type)
+      .eq("owner_id", ctx.id)
+      .eq("kind", KIND)
+      .eq("property_id", propertyId)
+      .eq("is_primary", true)
+      .is("archived_at", null)
+      .maybeSingle();
+
+    isPrimary = !currentPrimary;
+  }
+
   const payload = {
     owner_type: ctx.type,
     owner_id: ctx.id,
     kind: KIND,
     property_id: propertyId,
     label,
+    // Only on an insert. An update must not change which analysis is primary —
+    // that is a deliberate choice, not a side effect of re-saving.
+    ...(existing.data?.id ? {} : { is_primary: isPrimary }),
     inputs: asJson(input.inputs),
     outputs: asJson({ monthlyPayment: input.monthlyPayment }),
     inputs_version: CURRENT_INPUTS_VERSION,

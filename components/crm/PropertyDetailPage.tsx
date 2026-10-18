@@ -269,19 +269,28 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
             {tab === "Numbers" && (
               <div data-testid="panel-numbers">
+                {/* Both links carry ?property=<id>, which binds the calculator
+                    to this house. The old copy told the user to "save with
+                    this address" — retyping an address already on file, which
+                    hashed differently on the second attempt and created a
+                    second property row for one house. */}
                 {analyses.length === 0 ? (
                   <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
-                    No analyses on this house yet. Run the numbers in the{" "}
-                    <a href="/tools/mortgage" className="text-(--color-accent)">
-                      mortgage calculator
+                    No analyses on this house yet.{" "}
+                    <a
+                      href={`/tools/mortgage?property=${property?.id ?? ""}`}
+                      data-testid="run-numbers"
+                      className="text-(--color-accent)"
+                    >
+                      Run the numbers
                     </a>{" "}
-                    and save with this address.
+                    and the save lands on this house.
                   </p>
                 ) : (
                   analyses.map((a) => (
                     <a
                       key={a.id}
-                      href={`/tools/mortgage?scenario=${a.id}`}
+                      href={`/tools/mortgage?property=${property?.id ?? ""}&scenario=${a.id}`}
                       data-testid={`analysis-${a.id}`}
                       className="flex items-center gap-2 py-2.5 border-b border-(--color-border-subtle) last:border-0"
                     >
@@ -303,6 +312,20 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                       </span>
                     </a>
                   ))
+                )}
+
+                {/* Reachable with analyses already present too — adding a
+                    second scenario should not require going back to Tools and
+                    retyping the address. */}
+                {analyses.length > 0 && (
+                  <a
+                    href={`/tools/mortgage?property=${property?.id ?? ""}`}
+                    data-testid="run-numbers"
+                    className="inline-flex items-center gap-1 mt-3 text-[12px] text-(--color-accent) font-medium"
+                  >
+                    <Plus size={12} />
+                    Another scenario for this house
+                  </a>
                 )}
               </div>
             )}
