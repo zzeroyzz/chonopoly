@@ -2,7 +2,6 @@
 
 import { type MortgageInputs } from "./types";
 import { type ScenarioSummary } from "./scenarioService";
-import { type PropertyMatch } from "../property/types";
 
 /**
  * Saving an analysis, from the browser.
@@ -30,7 +29,6 @@ export interface SaveAnalysisInput {
 
 export interface SaveAnalysisResult {
   scenario: ScenarioSummary;
-  matchedOn?: PropertyMatch;
 }
 
 export async function saveAnalysis(input: SaveAnalysisInput): Promise<SaveAnalysisResult> {

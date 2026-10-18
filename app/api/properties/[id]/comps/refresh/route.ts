@@ -18,6 +18,7 @@ import {
   rentCastMode,
   hasApiKey,
   CACHE_WINDOW_DAYS,
+  MockModeWriteError,
   type RentCastFailure,
 } from "@/lib/rentcast/client";
 import {
@@ -101,6 +102,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     return await refresh(request, params);
   } catch (e) {
+    // A refused fixture write is a configuration answer, not a server fault.
+    // It reads as "nothing was stored", which is exactly what happened.
+    if (e instanceof MockModeWriteError) {
+      return NextResponse.json({ error: e.message, mode: "mock" }, { status: 409 });
+    }
     const message = e instanceof Error ? e.message : "Failed to refresh comps";
     console.error("Comps refresh failed:", message);
     return NextResponse.json({ error: message }, { status: 500 });

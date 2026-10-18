@@ -4,7 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 import { type Database, type Json } from "../supabase/database.types";
 import { type RequestContext } from "../context";
 import { type RentCastValueResponse } from "./types";
-import { MONTHLY_REQUEST_CAP, CACHE_WINDOW_DAYS, FREE_PLAN_MONTHLY_REQUESTS } from "./client";
+import {
+  MONTHLY_REQUEST_CAP,
+  CACHE_WINDOW_DAYS,
+  FREE_PLAN_MONTHLY_REQUESTS,
+  assertNotMockMode,
+} from "./client";
 
 /**
  * Everything that stands between a button press and a billable request.
@@ -192,6 +197,10 @@ export async function claimRequest(
   propertyId: string | null,
   ctx: RequestContext
 ): Promise<ClaimResult> {
+  // The lock IS a row, so claiming one in mock mode writes to the database and
+  // can leave a real house locked against a refresh it never made.
+  assertNotMockMode("a RentCast request lock");
+
   const { data, error } = await db()
     .from("rentcast_requests")
     .insert({

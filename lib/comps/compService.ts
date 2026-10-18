@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { type Database } from "../supabase/database.types";
 import { type RequestContext } from "../context";
 import { type Comp, type CompStatus, type ManualCompInput } from "./types";
+import { assertNotMockMode } from "../rentcast/client";
 import { type MappedComp, type MappedSubjectFacts } from "./fromRentCast";
 
 /**
@@ -172,6 +173,10 @@ export async function saveRentCastComps(
   ctx: RequestContext,
   userId: string
 ): Promise<Comp[]> {
+  // Fixture comps are not comps. Six Duluth addresses once landed on a house
+  // in Atlanta this way.
+  assertNotMockMode("RentCast comps");
+
   if (comps.length === 0) return listComps(propertyId, ctx);
 
   const { data: existingRows, error: readError } = await db()
@@ -356,6 +361,10 @@ export async function applySubjectFacts(
   facts: MappedSubjectFacts,
   ctx: RequestContext
 ): Promise<void> {
+  // The fixture subject would otherwise fill this house's blank columns and
+  // stamp facts_source = 'rentcast' over data nobody got from RentCast.
+  assertNotMockMode("RentCast subject facts");
+
   if (Object.keys(facts).length === 0) return;
 
   const { data: existing, error: readError } = await db()
