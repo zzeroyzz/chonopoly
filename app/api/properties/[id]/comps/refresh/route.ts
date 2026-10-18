@@ -55,7 +55,25 @@ function addressFor(property: {
     .join(", ");
 }
 
+/**
+ * Every response from this route is JSON, including a failure.
+ *
+ * An unhandled throw here used to produce a 500 with an empty body, which the
+ * client then tried to parse — turning a readable PostgREST message into
+ * "Unexpected end of JSON input" and hiding the actual cause. A route the UI
+ * parses must never be able to answer with something unparseable.
+ */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    return await refresh(request, params);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Failed to refresh comps";
+    console.error("Comps refresh failed:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+async function refresh(request: Request, params: Promise<{ id: string }>) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -126,8 +144,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const mapped = mapComparables(result.data.comparables);
 
-  // Subject facts come from the same call, so there is no second request. A
-  // hand-corrected value still wins — the service checks facts_source.
+  // Subject facts come from the same call, so there is no second request. Only
+  // blank columns are filled, so anything a person typed is left alone.
   await applySubjectFacts(id, mapSubjectFacts(result.data.subjectProperty), ctx);
 
   const comps = await saveRentCastComps(id, mapped, ctx, user.id);

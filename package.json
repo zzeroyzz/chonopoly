@@ -10,7 +10,8 @@
     "test": "playwright test",
     "test:ui": "playwright test --ui",
     "test:unit": "jest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "db:types": "supabase gen types typescript --linked > lib/supabase/database.types.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { type Database } from "../supabase/database.types";
 import { type RequestContext } from "../context";
 import {
   type BuyerProfile,
@@ -8,8 +9,13 @@ import {
   type IncomeType,
 } from "./types";
 
-function db(): SupabaseClient {
-  return createClient(
+/**
+ * Typed against the generated schema (`lib/supabase/database.types.ts`), so a
+ * column that does not exist is a compile error instead of a 500. Regenerate
+ * with `npm run db:types` after every migration.
+ */
+function db() {
+  return createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
@@ -239,7 +245,9 @@ export async function updateProfile(
   if (!existing) throw new Error("Profile not found");
 
   const d = input.defaults;
-  const patch: Record<string, unknown> = {};
+  // The generated Update type rather than Record<string, unknown>, so a
+  // mistyped column name fails to compile instead of erroring at runtime.
+  const patch: Database["public"]["Tables"]["buyer_profiles"]["Update"] = {};
   if (input.cashAvailable !== undefined) patch.cash_available = Math.max(0, input.cashAvailable);
   if (input.cashReserves !== undefined) patch.cash_reserves = Math.max(0, input.cashReserves);
   if (d?.loanType !== undefined) patch.loan_type = d.loanType;

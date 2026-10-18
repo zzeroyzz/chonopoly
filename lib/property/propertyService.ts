@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { type Database } from "../supabase/database.types";
 import { RequestContext } from "../context";
 import { addressHash } from "./address";
 import {
@@ -8,8 +9,13 @@ import {
   type UpsertPropertyResult,
 } from "./types";
 
-function db(): SupabaseClient {
-  return createClient(
+/**
+ * Typed against the generated schema (`lib/supabase/database.types.ts`), so a
+ * column that does not exist is a compile error instead of a 500. Regenerate
+ * with `npm run db:types` after every migration.
+ */
+function db() {
+  return createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );

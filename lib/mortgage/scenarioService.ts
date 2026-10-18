@@ -1,13 +1,22 @@
-import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { type RequestContext } from "../context";
+import { type Database, type Json } from "../supabase/database.types";
 import { type MortgageInputs } from "./types";
 import { defaultInputs } from "./defaults";
+import { calculateMortgage } from "./calculate";
 import { upsertProperty } from "../property/propertyService";
 import { type PropertyMatch } from "../property/types";
 import { snapshotOf, type ProfileSnapshot } from "./resolveInputs";
 
-function db(): SupabaseClient {
-  return createClient(
+/**
+ * Typed against the generated schema, so naming a column that does not exist
+ * is a compile error rather than a 500 in production. This service previously
+ * selected home_value, loan_type and monthly_payment — mortgage_scenarios
+ * columns that `analyses` never had — and nothing caught it, because the tests
+ * stub the API and never reach PostgREST.
+ */
+function db() {
+  return createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
@@ -76,17 +85,46 @@ export interface ScenarioVersion {
 interface Row {
   id: string;
   label: string;
-  home_value: number;
-  loan_type: string;
-  monthly_payment: number;
   version: number;
   updated_at: string;
   property_id?: string | null;
   is_primary?: boolean;
   properties?: PropertyJoin | PropertyJoin[] | null;
   profile_snapshot?: unknown;
+  // The price and the loan type live in `inputs`; the payment lives in
+  // `outputs`. `analyses` holds one jsonb of each rather than a column per
+  // field — see the reshape migration for why.
   inputs?: unknown;
+  outputs?: unknown;
   inputs_version?: number;
+}
+
+/**
+ * jsonb columns are typed as `Json`, which an interface cannot satisfy without
+ * an index signature. One cast in one place, rather than loosening the column
+ * types and losing the protection that caught the home_value bug.
+ */
+function asJson(value: unknown): Json {
+  return value as Json;
+}
+
+/** What `outputs` carries for a financing analysis. */
+interface FinancingOutputs {
+  monthlyPayment?: number;
+}
+
+/**
+ * The monthly payment for a stored analysis.
+ *
+ * Prefers the saved figure. Falls back to recomputing it from `inputs` for
+ * rows written before the payment was stored in `outputs` — including the row
+ * copied over from mortgage_scenarios, which would otherwise show $0 in the
+ * list and read as a free house.
+ */
+export function monthlyPaymentOf(outputs: unknown, inputs: MortgageInputs): number {
+  const stored = (outputs as FinancingOutputs | null)?.monthlyPayment;
+  if (typeof stored === "number" && Number.isFinite(stored)) return stored;
+  return calculateMortgage(inputs).totalMonthlyWithMortgageInsurance;
 }
 
 /**
@@ -143,12 +181,13 @@ function toProperty(join: Row["properties"]): ScenarioProperty | null {
 }
 
 function toSummary(row: Row): ScenarioSummary {
+  const inputs = readInputs(row.inputs, row.inputs_version ?? 1);
   return {
     id: row.id,
     label: row.label,
-    homeValue: Number(row.home_value),
-    loanType: row.loan_type,
-    monthlyPayment: Number(row.monthly_payment),
+    homeValue: inputs.homeValue,
+    loanType: inputs.loanType,
+    monthlyPayment: monthlyPaymentOf(row.outputs, inputs),
     version: row.version,
     updatedAt: row.updated_at,
     profileSnapshot: (row.profile_snapshot as ProfileSnapshot | null) ?? null,
@@ -157,12 +196,51 @@ function toSummary(row: Row): ScenarioSummary {
   };
 }
 
+/**
+ * Column lists are built from `keyof Row`, not written as free text.
+ *
+ * This is the part that actually closes the hole. A typed client is NOT enough
+ * on its own: supabase-js does not validate column names inside a `.select()`
+ * string, so `.select("home_value")` compiles cleanly against a schema with no
+ * such column — verified both as a concatenated string and as a single
+ * `as const` literal. Naming the fields as typed keys is what turns a column
+ * that does not exist into a compile error.
+ */
+type AnalysisColumn = keyof Database["public"]["Tables"]["analyses"]["Row"];
+type AnalysisVersionColumn = keyof Database["public"]["Tables"]["analysis_versions"]["Row"];
+
+const SUMMARY_FIELDS: AnalysisColumn[] = [
+  "id",
+  "label",
+  "version",
+  "updated_at",
+  // inputs and outputs rather than three scalar columns: the price and loan
+  // type come out of the stored inputs blob, the payment out of outputs.
+  "inputs",
+  "inputs_version",
+  "outputs",
+  "profile_snapshot",
+  "property_id",
+  "is_primary",
+];
+
+const VERSION_FIELDS: AnalysisVersionColumn[] = [
+  "id",
+  "version",
+  "label",
+  "inputs",
+  "inputs_version",
+  "outputs",
+  "superseded_at",
+];
+
 const SUMMARY_COLUMNS =
-  "id, label, home_value, loan_type, monthly_payment, version, updated_at, " +
-  "profile_snapshot, property_id, is_primary, " +
+  SUMMARY_FIELDS.join(", ") +
   // The house, in the same round trip. The list groups by it, so fetching it
   // separately would be a query per row.
-  "properties(id, address_line1, city, state, zip, needs_address_review)";
+  ", properties(id, address_line1, city, state, zip, needs_address_review)";
+
+const VERSION_COLUMNS = VERSION_FIELDS.join(", ");
 
 /**
  * Scenarios for one context, newest first.
@@ -306,15 +384,13 @@ export async function saveScenario(
     kind: KIND,
     property_id: propertyId,
     label,
-    home_value: input.inputs.homeValue,
-    loan_type: input.inputs.loanType,
-    monthly_payment: input.monthlyPayment,
-    inputs: input.inputs,
+    inputs: asJson(input.inputs),
+    outputs: asJson({ monthlyPayment: input.monthlyPayment }),
     inputs_version: CURRENT_INPUTS_VERSION,
     // Profile and defaults keys only — never the whole object. startMonth
     // resolves to "today", so a full snapshot would mark every scenario stale
     // on the first of the month.
-    profile_snapshot: snapshotOf(input.inputs),
+    profile_snapshot: asJson(snapshotOf(input.inputs)),
     created_by: userId,
   };
 
@@ -429,22 +505,23 @@ export async function listVersions(
 
   const { data, error } = await db()
     .from(VERSIONS)
-    .select("id, version, label, home_value, loan_type, monthly_payment, inputs, inputs_version, superseded_at")
+    .select(VERSION_COLUMNS)
     .eq("analysis_id", id)
     .order("version", { ascending: false });
 
   if (error) throw new Error(error.message);
 
   return (data ?? []).map((r) => {
-    const row = r as Row & { superseded_at: string };
+    const row = r as unknown as Row & { superseded_at: string };
+    const inputs = readInputs(row.inputs, row.inputs_version ?? 1);
     return {
       id: row.id,
       version: row.version,
       label: row.label,
-      homeValue: Number(row.home_value),
-      loanType: row.loan_type,
-      monthlyPayment: Number(row.monthly_payment),
-      inputs: readInputs(row.inputs, row.inputs_version ?? 1),
+      homeValue: inputs.homeValue,
+      loanType: inputs.loanType,
+      monthlyPayment: monthlyPaymentOf(row.outputs, inputs),
+      inputs,
       supersededAt: row.superseded_at,
     };
   });
@@ -474,10 +551,8 @@ export async function restoreVersion(
       // The name is not restored: it identifies the scenario, and changing it
       // under someone looking at a list is worse than leaving it.
       label: current.label,
-      home_value: target.homeValue,
-      loan_type: target.loanType,
-      monthly_payment: target.monthlyPayment,
-      inputs: target.inputs,
+      inputs: asJson(target.inputs),
+      outputs: asJson({ monthlyPayment: target.monthlyPayment }),
       inputs_version: CURRENT_INPUTS_VERSION,
       created_by: userId,
     })

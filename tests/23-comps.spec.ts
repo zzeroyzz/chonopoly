@@ -95,7 +95,7 @@ interface StubOptions {
   /** Start with no comps, so the empty state and a refresh can be exercised. */
   startEmpty?: boolean;
   /** What a refresh does. "ok" stores the fixture comps. */
-  refresh?: "ok" | "no_key" | "quota" | "no_comps";
+  refresh?: "ok" | "no_key" | "quota" | "no_comps" | "crash_empty" | "crash_json";
 }
 
 /**
@@ -242,6 +242,22 @@ async function stubComps(page: Page, options: StubOptions = {}) {
           })
         )
       );
+    }
+
+    // A crashed route with no body at all — what a thrown PostgREST error used
+    // to produce, and what turned a real message into
+    // "Unexpected end of JSON input".
+    if (mode === "crash_empty") {
+      return route.fulfill({ status: 500, contentType: "application/json", body: "" });
+    }
+
+    // The same crash after the fix: still a 500, but carrying the reason.
+    if (mode === "crash_json") {
+      return route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: 'column analyses.home_value does not exist' }),
+      });
     }
 
     comps = fixtureComps();
@@ -646,4 +662,47 @@ test("Integrations is reachable from the settings nav at 390px", async ({ page }
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
   );
   expect(overflows).toBe(false);
+});
+
+
+// ─── A crashed route ──────────────────────────────────────────────────────────
+
+test("a 500 carrying a reason shows that reason", async ({ page }) => {
+  await stubComps(page, { refresh: "crash_json" });
+  await openCompsTab(page);
+
+  await page.getByTestId("refresh-comps").click();
+
+  // The server's actual message, not a parser complaint.
+  const error = page.getByTestId("comps-error");
+  await expect(error).toContainText("column analyses.home_value does not exist");
+  await expect(error).not.toContainText("Unexpected end of JSON input");
+});
+
+test("a 500 with an empty body still reads as a server error", async ({ page }) => {
+  await stubComps(page, { refresh: "crash_empty" });
+  await openCompsTab(page);
+
+  await page.getByTestId("refresh-comps").click();
+
+  // This is the exact shape that produced "Unexpected end of JSON input" on
+  // production. The status is checked before parsing, so the user gets
+  // something attributable instead.
+  const error = page.getByTestId("comps-error");
+  await expect(error).toContainText("HTTP 500");
+  await expect(error).not.toContainText("Unexpected end of JSON input");
+  await expect(error).not.toContainText("JSON.parse");
+});
+
+test("a crashed refresh leaves the comps and the ARV alone", async ({ page }) => {
+  await stubComps(page, { refresh: "crash_empty" });
+  await openCompsTab(page);
+
+  await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
+  await page.getByTestId("refresh-comps").click();
+
+  await expect(page.getByTestId("comps-error")).toBeVisible();
+  // A failed refresh must not empty the tab.
+  await expect(page.getByTestId("comp-comp-0")).toBeVisible();
+  await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
 });
