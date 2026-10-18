@@ -54,7 +54,6 @@ export default function MortgageCalculator() {
     const params = new URLSearchParams(window.location.search);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPropertyId(params.get("property"));
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setScenarioId(params.get("scenario"));
   }, []);
 
