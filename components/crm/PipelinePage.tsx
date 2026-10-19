@@ -2,14 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CalendarClock, Check, ChevronRight, Plus, X } from "lucide-react";
+import { AlertCircle, CalendarClock, Check, ChevronRight, Plus } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { STAGE_LABEL } from "@/lib/crm/stages";
 import { daysInStage } from "@/lib/crm/stages";
 import { nextTask, todayKey } from "@/lib/crm/sort";
 import { type PipelineRow, type Stage } from "@/lib/crm/types";
 import { StageMenu } from "./StageMenu";
-import { AddLeadForm } from "./AddLeadForm";
 import { useCrmContext, useShellProfile } from "./useCrmContext";
 
 /**
@@ -65,7 +64,7 @@ function DueBadge({ row }: { row: PipelineRow }) {
 export function PipelinePage() {
   const router = useRouter();
   const profile = useShellProfile();
-  const { ctx, ctxParams } = useCrmContext();
+  const { ctxParams } = useCrmContext();
 
   const [rows, setRows] = useState<PipelineRow[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -74,7 +73,6 @@ export function PipelinePage() {
   const [showTerminal, setShowTerminal] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
 
   // No setState before the first await — this runs from an effect, and a
   // synchronous set there cascades a render before the fetch has even started.
@@ -170,23 +168,13 @@ export function PipelinePage() {
           <button
             type="button"
             data-testid="open-add-lead"
-            onClick={() => setAdding((v) => !v)}
+            onClick={() => router.push("/properties/new")}
             className="inline-flex items-center gap-1 text-[12px] px-2.5 py-1.5 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors shrink-0"
           >
-            {adding ? <X size={12} /> : <Plus size={12} />}
-            {adding ? "Cancel" : "Add lead"}
+            <Plus size={12} />
+            Add a house
           </button>
         </div>
-
-        {adding && ctx && (
-          <AddLeadForm
-            ctx={ctx}
-            onAdded={async () => {
-              setAdding(false);
-              await load();
-            }}
-          />
-        )}
 
         {error && (
           <div className="mb-3 text-[12px] text-(--color-danger) border border-(--color-danger) rounded-[var(--radius-md)] px-3 py-2">

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Home } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { ToolSwitch } from "./ToolSwitch";
 import { loadProfile } from "@/lib/supabase/profile";
 import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
@@ -155,6 +156,7 @@ export default function FlipTool() {
         <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">
           Flip profit
         </h1>
+        <ToolSwitch active="flip" />
         <p className="text-[12px] text-(--color-text-secondary) mb-5">
           Quick math on a listing. Nothing here is required, and nothing is saved
           unless you pick a house.

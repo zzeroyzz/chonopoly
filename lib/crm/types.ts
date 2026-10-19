@@ -171,6 +171,8 @@ export interface PropertyLike {
   needs_address_review: boolean;
   /** The listing, for working the rehab estimate from photos. */
   listing_url: string | null;
+  /** The house's picture, shown in the header and on its card. */
+  photo_url: string | null;
   /** Set when a walkthrough is recorded, which drives the progress checklist. */
   visit_completed_at: string | null;
 }

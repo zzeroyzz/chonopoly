@@ -36,6 +36,7 @@ const PROPERTY_FIELDS: PropertyColumn[] = [
   "sqft",
   "annual_taxes",
   "listing_url",
+  "photo_url",
   "needs_address_review",
   "visit_completed_at",
   "created_at",
@@ -67,6 +68,7 @@ export async function loadScreenRows(
     sqft: number | null;
     annual_taxes: number | null;
     listing_url: string | null;
+    photo_url: string | null;
     needs_address_review: boolean;
     visit_completed_at: string | null;
   }[];
@@ -176,6 +178,7 @@ export async function loadScreenRows(
       sqft: row.sqft,
       annualTaxes: row.annual_taxes,
       listingUrl: row.listing_url,
+      photoUrl: row.photo_url,
       needsAddressReview: row.needs_address_review,
       visitCompletedAt: row.visit_completed_at,
       isFinalist: row.is_finalist ?? false,

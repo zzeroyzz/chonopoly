@@ -29,19 +29,19 @@ export interface NavDestination extends ShellNavItem {
 
 export const NAV_DESTINATIONS: NavDestination[] = [
   {
+    id: "properties",
+    label: "Properties",
+    icon: <Home size={16} />,
+    // /properties/new belongs to Add, so it is excluded below by longest match.
+    matches: ["/properties"],
+    href: "/properties",
+  },
+  {
     id: "pipeline",
     label: "Pipeline",
     icon: <ListChecks size={16} />,
     href: "/pipeline",
     matches: ["/pipeline", "/crm"],
-  },
-  {
-    id: "properties",
-    label: "Properties",
-    icon: <Home size={16} />,
-    href: "/properties",
-    // /properties/new belongs to Add, so it is excluded below by longest match.
-    matches: ["/properties"],
   },
   {
     id: "add",

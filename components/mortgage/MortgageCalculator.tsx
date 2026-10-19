@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/shell/AppShell";
+import { ToolSwitch } from "./ToolSwitch";
 import { loadProfile } from "@/lib/supabase/profile";
 import { clearInputs } from "@/lib/mortgage/storage";
 import { CalculatorCore } from "./CalculatorCore";
@@ -65,6 +66,7 @@ export default function MortgageCalculator() {
         <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">
           Mortgage calculator
         </h1>
+        <ToolSwitch active="mortgage" />
 
         <div className="flex items-baseline justify-between gap-4 mb-5">
           <p className="text-[12px] text-(--color-text-secondary)">

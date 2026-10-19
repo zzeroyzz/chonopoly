@@ -40,7 +40,17 @@ const DEAL_STYLE: Record<DealVerdict, string> = {
   does_not_work: "bg-red-500/10 text-red-400",
 };
 
-const CHECKLIST_STEPS = ["Numbers", "Comps", "Estimate", "Visit"] as const;
+/**
+ * The same four steps the property page shows, in the same order, so the card
+ * and the page agree about where a house has got to.
+ */
+const FLOW_STEPS = [
+  // A house exists the moment it is added, so this one is always done.
+  { label: "Details", done: () => true },
+  { label: "ARV", done: (r: ScreenRow) => r.arv !== null },
+  { label: "Numbers", done: (r: ScreenRow) => r.checklist.numbers },
+  { label: "Deal", done: (r: ScreenRow) => r.walkAwayCash !== null },
+] as const;
 
 export function PropertiesPage() {
   const router = useRouter();
@@ -319,13 +329,24 @@ function ScreenCard({
               thin thing to hit — but it is reached with an overlay rather than
               by wrapping the card. The listing link used to be a descendant of
               this one, which is invalid HTML and threw a hydration error. */}
-          <Link
-            href={href}
-            data-testid={`screen-open-${row.propertyId}`}
-            className="text-[13px] font-medium leading-snug wrap-break-word text-(--color-text-primary) after:absolute after:inset-0 after:rounded-xl after:content-['']"
-          >
-            {row.address}
-          </Link>
+          <span className="flex gap-2.5 items-start">
+            {row.photoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={row.photoUrl}
+                alt=""
+                data-testid={`screen-photo-${row.propertyId}`}
+                className="w-12 h-12 rounded-md object-cover shrink-0 border border-(--color-border-subtle)"
+              />
+            )}
+            <Link
+              href={href}
+              data-testid={`screen-open-${row.propertyId}`}
+              className="text-[13px] font-medium leading-snug wrap-break-word text-(--color-text-primary) after:absolute after:inset-0 after:rounded-xl after:content-['']"
+            >
+              {row.address}
+            </Link>
+          </span>
         </div>
 
         {/* Both sit above the card-wide link overlay, as siblings of it. */}
@@ -483,20 +504,13 @@ function ScreenCard({
         data-testid={`checklist-${row.propertyId}`}
         className="flex items-center gap-1.5 mt-2.5 flex-wrap"
       >
-        {CHECKLIST_STEPS.map((step) => {
-          const key = step.toLowerCase() as "numbers" | "comps" | "estimate" | "visit";
-          const done = row.checklist[key];
-          // "Estimate ✓ photos" says more than "Estimate ✓": a photo estimate
-          // and a walkthrough carry different contingencies and different
-          // confidence, and the chip is where that difference is visible.
-          const label =
-            key === "estimate" && done && row.rehabSource
-              ? `${step} ${row.rehabSource === "visit" ? "visit" : "photos"}`
-              : step;
+        {FLOW_STEPS.map((step) => {
+          const done = step.done(row);
+          const label = step.label;
           return (
             <span
-              key={step}
-              data-testid={`checklist-${key}-${row.propertyId}`}
+              key={step.label}
+              data-testid={`checklist-${step.label.toLowerCase()}-${row.propertyId}`}
               data-done={done ? "yes" : "no"}
               className={`text-[10px] px-1.5 py-0.5 rounded border ${
                 done
@@ -509,7 +523,7 @@ function ScreenCard({
           );
         })}
         <span className="text-[10px] text-(--color-text-tertiary)">
-          {row.checklist.done}/4
+          {FLOW_STEPS.filter((s2) => s2.done(row)).length}/4
         </span>
       </div>
     </li>
