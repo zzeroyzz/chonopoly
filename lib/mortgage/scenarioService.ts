@@ -73,11 +73,18 @@ export interface ScenarioSummary {
   monthlyPayment: number;
   version: number;
   updatedAt: string;
-}
-
-export interface Scenario extends ScenarioSummary {
+  /**
+   * The stored inputs.
+   *
+   * The list query already selected these to derive the price and loan type,
+   * and threw the rest away. Returning them lets the Numbers tab compute every
+   * scenario's walk-away and true profit from one request instead of a detail
+   * fetch per row.
+   */
   inputs: MortgageInputs;
 }
+
+export type Scenario = ScenarioSummary;
 
 export interface ScenarioVersion {
   id: string;
@@ -201,6 +208,7 @@ function toSummary(row: Row): ScenarioSummary {
     profileSnapshot: (row.profile_snapshot as ProfileSnapshot | null) ?? null,
     property: toProperty(row.properties),
     isPrimary: row.is_primary ?? false,
+    inputs,
   };
 }
 
@@ -453,6 +461,51 @@ export async function attachToProperty(
 
   if (error) throw new Error(error.message);
   return { scenario: toSummary(data as unknown as Row) };
+}
+
+/**
+ * Make one scenario the house's primary.
+ *
+ * The primary is what the Profit card, the Properties list and both verdicts
+ * mean by "the price" and "the rehab", and until now it was set once on the
+ * first save and never again — so there was no way to change your mind. A
+ * partial unique index allows only one per house, so the old one is cleared
+ * before the new one is set rather than relying on the write order.
+ */
+export async function setPrimary(
+  id: string,
+  ctx: RequestContext
+): Promise<ScenarioSummary> {
+  const target = await getScenario(id, ctx);
+  if (!target.property?.id) {
+    throw new Error("Only a scenario attached to a house can be primary");
+  }
+
+  const { error: clearError } = await db()
+    .from(TABLE)
+    .update({ is_primary: false })
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id)
+    .eq("kind", KIND)
+    .eq("property_id", target.property.id)
+    .is("archived_at", null);
+
+  if (clearError) throw new Error(clearError.message);
+
+  const { data, error } = await db()
+    .from(TABLE)
+    .update({ is_primary: true })
+    .eq("id", id)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id)
+    .eq("kind", KIND)
+    .is("archived_at", null)
+    .select(SUMMARY_COLUMNS)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Scenario not found");
+  return toSummary(data as unknown as Row);
 }
 
 export async function renameScenario(

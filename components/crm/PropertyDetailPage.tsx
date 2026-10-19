@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Plus, Pencil } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
-import { dollars } from "@/components/mortgage/format";
 import { STAGE_LABEL, daysInStage } from "@/lib/crm/stages";
 import { cadenceDueDate } from "@/lib/crm/cadence";
 import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/types";
@@ -13,6 +12,8 @@ import { StageMenu } from "./StageMenu";
 import { ContactCard } from "./ContactCard";
 import { CompsPanel } from "./CompsPanel";
 import { NumbersModal } from "@/components/mortgage/NumbersModal";
+import { ScenarioRows } from "./ScenarioRows";
+import { type BuyerProfile } from "@/lib/profile/types";
 import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
 import { propertyTypeLabel } from "@/lib/property/types";
@@ -59,6 +60,12 @@ type Tab = (typeof TABS)[number];
 export function PropertyDetailPage({ entryId }: { entryId: string }) {
   const [tab, setTab] = useState<Tab>("Overview");
   const [analyses, setAnalyses] = useState<ScenarioSummary[]>([]);
+  // The scenario rows cost every scenario themselves, so they need the same
+  // profile and ARV the Profit card uses.
+  const [buyerProfile, setBuyerProfile] = useState<BuyerProfile | null>(null);
+  const [arv, setArv] = useState<number | null>(null);
+  /** Bumped to remount the Profit card when the primary moves. */
+  const [dealKey, setDealKey] = useState(0);
   const router = useRouter();
   const profile = useShellProfile();
   const { ctx, ctxParams } = useCrmContext();
@@ -143,6 +150,29 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
     })();
   }, [loadAnalyses]);
 
+  useEffect(() => {
+    if (!propertyId || !ctxParams) return;
+    let cancelled = false;
+    (async () => {
+      const [profileRes, compsRes] = await Promise.all([
+        fetch("/api/profile/buyer").catch(() => null),
+        fetch(`/api/properties/${propertyId}/comps?${ctxParams}`).catch(() => null),
+      ]);
+      if (cancelled) return;
+      if (profileRes?.ok) {
+        const body = (await profileRes.json()) as { profile: BuyerProfile | null };
+        setBuyerProfile(body.profile);
+      }
+      if (compsRes?.ok) {
+        const body = (await compsRes.json()) as { arv?: { value: number | null } | null };
+        setArv(body.arv?.value ?? null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [propertyId, ctxParams]);
+
   // ── Which analysis the modal has open, mirrored in the URL ────────────────
   //
   // `?numbers=new` or `?numbers=<analysisId>`, so a reload comes back to the
@@ -150,6 +180,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   // than through the router: this is modal state on a page that is already
   // mounted, and a router.push would re-run the server component underneath it.
   const [numbersTarget, setNumbersTarget] = useState<string | null>(null);
+
 
   useEffect(() => {
     const read = () => setNumbersTarget(new URLSearchParams(window.location.search).get("numbers"));
@@ -344,32 +375,18 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     </button>
                   </div>
                 ) : (
-                  analyses.map((a) => (
-                    <button
-                      key={a.id}
-                      type="button"
-                      onClick={() => openNumbers(a.id)}
-                      data-testid={`analysis-${a.id}`}
-                      className="flex items-center gap-2 py-2.5 w-full text-left border-b border-(--color-border-subtle) last:border-0"
-                    >
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-[13px] text-(--color-text-primary) truncate">
-                          {a.label}
-                          {/* The scenario the other tabs mean when they say
-                              "the price" and "the reno budget". */}
-                          {a.isPrimary && (
-                            <span className="ml-1.5 text-[10px] uppercase tracking-widest text-(--color-accent)">
-                              primary
-                            </span>
-                          )}
-                        </span>
-                        <span className="block text-[11px] text-(--color-text-tertiary)">
-                          {dollars(a.homeValue, 0)} · {dollars(a.monthlyPayment, 0)}/mo
-                          {a.version > 1 && <> · v{a.version}</>}
-                        </span>
-                      </span>
-                    </button>
-                  ))
+                  <ScenarioRows
+                    scenarios={analyses}
+                    profile={buyerProfile}
+                    arv={arv}
+                    state={property?.state ?? null}
+                    ctxParams={ctxParams ?? ""}
+                    onOpen={openNumbers}
+                    onChanged={async () => {
+                      await loadAnalyses();
+                      setDealKey((k) => k + 1);
+                    }}
+                  />
                 )}
 
                 {/* Reachable with analyses already present too — adding a
@@ -389,9 +406,11 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 {/* What the deal makes, worked back from the analysis above. */}
                 {property && (
                   <DealPanel
+                    key={dealKey}
                     propertyId={property.id}
                     ctxParams={ctxParams ?? ""}
                     state={property.state}
+                    onPrimaryChanged={() => void loadAnalyses()}
                   />
                 )}
               </div>

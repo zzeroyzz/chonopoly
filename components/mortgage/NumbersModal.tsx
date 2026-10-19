@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import { saveAnalysis } from "@/lib/mortgage/scenarioClient";
 import { CalculatorCore, type CalculatorNumbers } from "./CalculatorCore";
+import { suggestScenarioName } from "@/lib/mortgage/scenarioName";
 
 /**
  * Running the numbers on a house, over the house's own page.
@@ -43,10 +44,21 @@ export function NumbersModal({
   const isNew = target === "new";
   const [label, setLabel] = useState(initialLabel);
   const [numbers, setNumbers] = useState<CalculatorNumbers | null>(null);
+  /** The name offered once the loan is known. Suggested, never imposed. */
+  const [nameTouched, setNameTouched] = useState(false);
   const [touched, setTouched] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingClose, setConfirmingClose] = useState(false);
+
+  // A name that describes the scenario rather than the house, offered as soon
+  // as the loan is known. Only while the user has not typed their own: a name
+  // somebody picked is not ours to overwrite.
+  useEffect(() => {
+    if (!isNew || nameTouched || !numbers) return;
+    const suggested = suggestScenarioName(numbers.inputs);
+    setLabel((current) => (current.trim() === "" ? suggested : current));
+  }, [isNew, nameTouched, numbers]);
 
   // Escape closes, through the same guard as Cancel.
   useEffect(() => {
@@ -176,6 +188,7 @@ export function NumbersModal({
               value={label}
               onChange={(e) => {
                 setLabel(e.target.value);
+                setNameTouched(true);
                 setTouched(true);
               }}
               placeholder="at asking"

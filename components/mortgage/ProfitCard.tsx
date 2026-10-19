@@ -40,6 +40,19 @@ interface Props {
   saving?: boolean;
   /** What is missing, when there is no ARV to work from. */
   missingArvNote?: string;
+  /**
+   * Which scenario these figures come from, and the others available.
+   *
+   * The card read the primary financing analysis and never said so, which made
+   * the numbers look like facts about the house rather than consequences of
+   * one scenario.
+   */
+  basedOn?: {
+    name: string;
+    options: { id: string; label: string; isPrimary: boolean }[];
+    onPick: (id: string) => void;
+    busy?: boolean;
+  };
 }
 
 function Line({
@@ -163,6 +176,7 @@ export function ProfitCard({
   onSave,
   saving = false,
   missingArvNote,
+  basedOn,
 }: Props) {
   const { params, result, hardMoney, holdMonths } = built;
   const set = (patch: ProfitCardEdits) => onChange({ ...edits, ...patch });
@@ -173,6 +187,30 @@ export function ProfitCard({
   return (
     <Card>
       <SectionLabel>What this deal makes</SectionLabel>
+
+      {basedOn && (
+        <div className="flex items-center gap-2 mb-3 flex-wrap">
+          <span className="text-[11px] text-(--color-text-secondary)">
+            Based on: <span className="text-(--color-text-primary)">{basedOn.name}</span>
+          </span>
+          {basedOn.options.length > 1 && (
+            <select
+              value={basedOn.options.find((o) => o.isPrimary)?.id ?? ""}
+              onChange={(e) => basedOn.onPick(e.target.value)}
+              disabled={basedOn.busy}
+              aria-label="Which scenario the profit is based on"
+              data-testid="based-on-switcher"
+              className="h-7 rounded-md bg-(--color-elevated) border border-(--color-border-default) px-2 text-[11px] text-(--color-text-primary) focus:outline-none focus:border-(--color-accent) disabled:opacity-40"
+            >
+              {basedOn.options.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
 
       {result.missingArv ? (
         <div
