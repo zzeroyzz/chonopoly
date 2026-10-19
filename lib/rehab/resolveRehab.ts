@@ -71,18 +71,31 @@ export function splitRehabFunding(
   loanType: LoanType,
   renovationProgram: RenovationProgram,
   /** Hard money only: what the lender actually funded, after the ARV ceiling. */
-  hardMoneyFunded: number | null
+  hardMoneyFunded: number | null,
+  /**
+   * The reno budget the loan was actually sized on.
+   *
+   * A 203(k) or a hard money loan was underwritten against the budget that
+   * existed when the numbers were run. An estimate that comes in higher does
+   * not quietly enlarge the loan — the lender already committed — so the
+   * difference is cash the buyer brings until the numbers are re-run at the
+   * new figure. Omitted means the budget and the estimate are the same thing.
+   */
+  fundedBudget?: number
 ): RehabFunding {
   const total = Math.max(0, rehabTotal);
+  // The loan cannot cover more than it was sized for.
+  const ceiling = fundedBudget === undefined ? total : Math.max(0, Math.min(fundedBudget, total));
 
   if (loanType === "hardMoney") {
-    const funded = Math.max(0, Math.min(hardMoneyFunded ?? 0, total));
+    const funded = Math.max(0, Math.min(hardMoneyFunded ?? 0, ceiling));
     return { inLoan: funded, inCash: total - funded };
   }
 
-  // A renovation program finances the work: that is the entire point of one.
+  // A renovation program finances the work: that is the entire point of one —
+  // but only up to what it was written for.
   if (renovationProgram !== "none") {
-    return { inLoan: total, inCash: 0 };
+    return { inLoan: ceiling, inCash: total - ceiling };
   }
 
   // FHA or conventional with no renovation program. Every dollar is yours, and

@@ -6,6 +6,8 @@ import { resolveInputs } from "@/lib/mortgage/resolveInputs";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { buildDeal } from "@/lib/deal/buildDeal";
 import { resolveRehab } from "@/lib/rehab/resolveRehab";
+import { calculateRehab, budgetCheck } from "@/lib/rehab/calculateRehab";
+import { type RehabEstimate } from "@/lib/rehab/types";
 import { saveAnalysis } from "@/lib/mortgage/scenarioClient";
 import { type BuyerProfile } from "@/lib/profile/types";
 import { taxDefaultsFrom } from "@/lib/mortgage/capitalGains";
@@ -27,9 +29,17 @@ interface Props {
   state?: string | null;
   /** So the page can re-read its scenario rows when the primary moves. */
   onPrimaryChanged?: () => void;
+  /** Opens Run the numbers prefilled at the estimate. */
+  onRerunAtEstimate?: (rehabBudget: number) => void;
 }
 
-export function DealPanel({ propertyId, ctxParams, state = null, onPrimaryChanged }: Props) {
+export function DealPanel({
+  propertyId,
+  ctxParams,
+  state = null,
+  onPrimaryChanged,
+  onRerunAtEstimate,
+}: Props) {
   const [profile, setProfile] = useState<BuyerProfile | null>(null);
   const [arv, setArv] = useState<number | null>(null);
   const [primaryInputs, setPrimaryInputs] = useState<MortgageInputs | null>(null);
@@ -38,6 +48,7 @@ export function DealPanel({ propertyId, ctxParams, state = null, onPrimaryChange
     { id: string; label: string; isPrimary: boolean }[]
   >([]);
   const [switching, setSwitching] = useState(false);
+  const [rehabEstimate, setRehabEstimate] = useState<RehabEstimate | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [edits, setEdits] = useState<ProfitCardEdits>({});
   const [saving, setSaving] = useState(false);
@@ -45,11 +56,17 @@ export function DealPanel({ propertyId, ctxParams, state = null, onPrimaryChange
 
   const load = useCallback(async () => {
     // Three independent reads, so they go together.
-    const [profileRes, compsRes, listRes] = await Promise.all([
+    const [profileRes, compsRes, listRes, rehabRes] = await Promise.all([
       fetch("/api/profile/buyer").catch(() => null),
       fetch(`/api/properties/${propertyId}/comps?${ctxParams}`).catch(() => null),
       fetch(`/api/mortgage/scenarios?${ctxParams}&property_id=${propertyId}`).catch(() => null),
+      fetch(`/api/properties/${propertyId}/rehab?${ctxParams}`).catch(() => null),
     ]);
+
+    if (rehabRes?.ok) {
+      const body = (await rehabRes.json()) as { rehab: { estimate: RehabEstimate } | null };
+      setRehabEstimate(body.rehab?.estimate ?? null);
+    }
 
     if (profileRes?.ok) {
       const body = (await profileRes.json()) as { profile: BuyerProfile | null };
@@ -94,8 +111,17 @@ export function DealPanel({ propertyId, ctxParams, state = null, onPrimaryChange
     if (!primaryInputs) return null;
     const inputs = resolveInputs(profile, primaryInputs);
     const result = calculateMortgage(inputs);
-    // One resolver. Phase 3's estimate plugs in as the first argument.
-    const rehab = resolveRehab(null, inputs.renovationBudget);
+    // One resolver, with the estimate plugged in. When there is none it falls
+    // back to the budget and reads "Budget only".
+    const contingency = {
+      photosPct: profile?.defaults.contingencyPhotosPct ?? 20,
+      visitPct: profile?.defaults.contingencyVisitPct ?? 10,
+    };
+    const estimated = rehabEstimate ? calculateRehab(rehabEstimate, contingency) : null;
+    const rehab = resolveRehab(
+      estimated ? { total: estimated.total, source: estimated.source } : null,
+      inputs.renovationBudget
+    );
 
     return buildDeal(
       {
@@ -109,7 +135,7 @@ export function DealPanel({ propertyId, ctxParams, state = null, onPrimaryChange
       },
       edits
     );
-  }, [primaryInputs, profile, arv, edits, state]);
+  }, [primaryInputs, profile, arv, edits, state, rehabEstimate]);
 
   if (loaded && !primaryInputs) {
     return (
@@ -170,6 +196,15 @@ export function DealPanel({ propertyId, ctxParams, state = null, onPrimaryChange
         built={built}
         edits={edits}
         onChange={setEdits}
+        budget={{
+          check: budgetCheck(
+            primaryInputs?.renovationBudget ?? 0,
+            built?.params.rehabTotal ?? 0
+          ),
+          onRerun: onRerunAtEstimate
+            ? () => onRerunAtEstimate(built?.params.rehabTotal ?? 0)
+            : undefined,
+        }}
         basedOn={{
           name: primaryLabel ?? "this house's numbers",
           options,

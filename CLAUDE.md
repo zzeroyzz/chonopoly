@@ -42,6 +42,22 @@ are fine — deletion as a bugfix is not.
 
 # Git & PR Workflow
 
+## Stop At The Commit (overrides everything below)
+- Work on a new branch. Commit locally and stop. Do NOT push, do NOT open a
+  PR, do NOT merge.
+- Push and open a PR ONLY when the owner's current message says "push".
+  Merge ONLY when it says "merge".
+- Migrations stay written but NOT run until the owner says "run the migration".
+- No tests. Run `npm run build` and `tsc` before stopping.
+
+### What to report when stopping
+Every hand-off states, in this order:
+1. **What changed**, in plain language — not a list of commit subjects.
+2. **The files touched.**
+3. **How to try it on the owner's Mac** — the exact commands and the URL.
+4. **Anything risky**: migrations written, data that would change, anything
+   irreversible, and anything deliberately left undone.
+
 ## Branching Rules
 - Committing on a non-main branch is allowed without per-commit approval.
   NEVER commit on main. NEVER push, under any circumstances, without explicit

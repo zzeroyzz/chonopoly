@@ -4,6 +4,8 @@ import { type RequestContext } from "../context";
 import { type Comp } from "../comps/types";
 import { listComps } from "../comps/compService";
 import { getPersonalProfile } from "../profile/buyerProfileService";
+import { rehabEstimatesByProperty } from "../rehab/rehabService";
+import { calculateRehab } from "../rehab/calculateRehab";
 import { readInputs } from "../mortgage/scenarioService";
 import { type HouseInputs } from "../mortgage/resolveInputs";
 import { buildScreenRow, sortScreenRows, type ScreenHouse, type ScreenRow } from "./screenRow";
@@ -93,12 +95,25 @@ export async function loadScreenRows(
 
   if (entryError) throw new Error(`Failed to load pipeline entries: ${entryError.message}`);
 
-  const [profile, compsByProperty] = await Promise.all([
+  const [rawRehab, profile, compsByProperty] = await Promise.all([
+    rehabEstimatesByProperty(propertyIds, ctx),
     // The user's own profile, not the property's context. Swallowing the error
     // here is what turned a team context into "Set your income" on every card.
     getPersonalProfile(userId),
     loadCompsByProperty(propertyIds, ctx),
   ]);
+
+  // Totals need the contingency percentages, which live on the profile — so
+  // they are built after it resolves rather than inside the batch above.
+  const contingency = {
+    photosPct: profile?.defaults.contingencyPhotosPct ?? 20,
+    visitPct: profile?.defaults.contingencyVisitPct ?? 10,
+  };
+  const rehabTotals = new Map<string, { total: number; source: "photos" | "visit" }>();
+  for (const [propertyId, estimate] of rawRehab) {
+    const result = calculateRehab(estimate, contingency);
+    rehabTotals.set(propertyId, { total: result.total, source: result.source });
+  }
 
   const entryByProperty = new Map<string, string>();
   for (const entry of entries ?? []) {
@@ -165,6 +180,9 @@ export async function loadScreenRows(
       analysisInputs,
       analysisLabel: primary?.label ?? null,
       hasRehabEstimate: rehabProperties.has(row.id),
+      // The estimate itself, so the resolver returns it instead of the budget
+      // and every card, verdict and profit figure picks it up at once.
+      rehabEstimate: rehabTotals.get(row.id) ?? null,
       comps,
       compsReviewed,
     };

@@ -169,6 +169,10 @@ export interface PropertyLike {
   sqft: number | null;
   year_built: number | null;
   needs_address_review: boolean;
+  /** The listing, for working the rehab estimate from photos. */
+  listing_url: string | null;
+  /** Set when a walkthrough is recorded, which drives the progress checklist. */
+  visit_completed_at: string | null;
 }
 
 /** A row in the pipeline list, joined for display. */

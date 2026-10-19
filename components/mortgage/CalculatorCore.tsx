@@ -49,6 +49,8 @@ export interface CalculatorCoreProps {
   propertyId?: string | null;
   /** An existing analysis to open. */
   scenarioId?: string | null;
+  /** Overrides the house's reno budget, for re-running at a new estimate. */
+  rehabBudget?: number | null;
   /** The live numbers, so a host can save them from its own footer. */
   onNumbersChange?: (numbers: CalculatorNumbers) => void;
   /** Whether the user has edited anything, for an unsaved-changes prompt. */
@@ -73,6 +75,7 @@ export interface CalculatorCoreProps {
 export function CalculatorCore({
   propertyId = null,
   scenarioId = null,
+  rehabBudget = null,
   onNumbersChange,
   onTouchedChange,
   showBoundBanner = false,
@@ -149,6 +152,9 @@ export function CalculatorCore({
 
         if (cancelled) return;
         const seed = housePrefill(property, primaryInputs);
+        // Applied last: re-running at the estimate is the whole reason this
+        // calculator was opened, so it wins over the house's stored budget.
+        if (rehabBudget !== null) seed.renovationBudget = rehabBudget;
         if (Object.keys(seed).length > 0) setInputs((prev) => ({ ...prev, ...seed }));
       } catch {
         // Unbound rather than broken: the calculator still works, it just
@@ -158,7 +164,7 @@ export function CalculatorCore({
     return () => {
       cancelled = true;
     };
-  }, [propertyId, scenarioId]);
+  }, [propertyId, scenarioId, rehabBudget]);
 
   // An existing analysis, opened by id. Once only: re-applying it would
   // overwrite edits made after arriving.

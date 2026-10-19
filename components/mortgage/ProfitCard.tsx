@@ -7,6 +7,7 @@ import { type BuiltDeal } from "@/lib/deal/buildDeal";
 import { type OtherFee } from "@/lib/mortgage/flip";
 import { Card, SectionLabel, NumberField } from "./fields";
 import { dollars } from "./format";
+import { BudgetCheckLine } from "@/components/crm/BudgetCheckLine";
 
 /**
  * What the deal makes.
@@ -47,6 +48,8 @@ interface Props {
    * the numbers look like facts about the house rather than consequences of
    * one scenario.
    */
+  /** The rehab budget check, where the rehab number appears. */
+  budget?: { check: import("@/lib/rehab/calculateRehab").BudgetCheck; onRerun?: () => void };
   basedOn?: {
     name: string;
     options: { id: string; label: string; isPrimary: boolean }[];
@@ -176,6 +179,7 @@ export function ProfitCard({
   onSave,
   saving = false,
   missingArvNote,
+  budget,
   basedOn,
 }: Props) {
   const { params, result, hardMoney, holdMonths } = built;
@@ -369,6 +373,11 @@ export function ProfitCard({
       <Line label="Buyer closing costs" line={params.buyerClosingCosts} negative />
       <Line label="Points" line={params.points} negative />
       <Line label="Rehab paid in cash" line={params.rehabPaidInCash} negative />
+      {budget && (
+        <div className="py-1.5">
+          <BudgetCheckLine check={budget.check} onRerun={budget.onRerun} />
+        </div>
+      )}
       {params.loanShortfall.value > 0 && (
         <Line label="Loan ceiling shortfall" line={params.loanShortfall} negative />
       )}
