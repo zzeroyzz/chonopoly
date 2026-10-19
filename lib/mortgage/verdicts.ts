@@ -269,7 +269,7 @@ export function assessDeal(input: DealInput): DealAssessment {
       text:
         margin < t.dealMarginWorksPct
           ? `${margin.toFixed(0)}% margin is under the ${t.dealMarginWorksPct}% target`
-          : `${money(profit)} profit is under the ${money(t.dealMinProfitWorks)} target`,
+          : `${money(profit)} true profit is under the ${money(t.dealMinProfitWorks)} target`,
     });
   } else {
     verdict = "does_not_work";
@@ -280,7 +280,7 @@ export function assessDeal(input: DealInput): DealAssessment {
           ? `Loses ${money(Math.abs(profit))} at this price`
           : margin < t.dealMarginThinPct
             ? `${margin.toFixed(0)}% margin is under the ${t.dealMarginThinPct}% floor`
-            : `${money(profit)} profit is under the ${money(t.dealMinProfitThin)} floor`,
+            : `${money(profit)} true profit is under the ${money(t.dealMinProfitThin)} floor`,
     });
   }
 
