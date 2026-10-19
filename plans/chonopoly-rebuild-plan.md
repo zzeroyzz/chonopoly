@@ -1,9 +1,14 @@
 # Chonopoly rebuild: one house, one flow
 
-**Status: User approved — 2026-10-17.** Verified against the repo and revised
+**Status: Phases 0–4 shipped. Phase 5 deferred — see the phase list.**
+Originally user approved 2026-10-17. Verified against the repo and revised
 after Approver review (CHANGES REQUESTED, all 11 items addressed).
-Phase 0 only is authorised. The migration is written but **not run**.
 Replaces the earlier draft, *"Saved scenarios belong to properties."*
+
+Every migration through `20261019040000_finalists_and_offers` has been applied
+to production. The two lines that used to sit here — "Phase 0 only is
+authorised" and "the migration is written but not run" — were true on
+2026-10-17 and are not any more.
 
 ---
 
@@ -504,7 +509,7 @@ Each phase's migrations are written and reviewed but **not run until approved**.
 3. `mortgage_scenarios` is copied into `analyses` (`kind: financing`, `property_id: null`, with versions). The old table stays, read-only. *(Phase 1)*
 4. Property fact columns (beds, baths, sqft, year built, annual taxes, listing URL), adding only the ones that don't already exist. *(Phase 2)*
 5. `property_comps`, `valuations`, `rentcast_requests`. *(Phase 2)*
-6. Drop `mortgage_scenarios` and `mortgage_scenario_versions`, **only once the copy is verified and the drop is explicitly approved**. *(Phase 5)*
+6. Drop `mortgage_scenarios` and `mortgage_scenario_versions`, **only once the copy is verified and the drop is explicitly approved**. *(Phase 5 — deferred, see the phase list)*
 
 The existing `analyses` table isn't in use — **confirmed 0 rows on 2026-10-17**. `mortgage_scenarios` holds 1 row and `properties` holds 0, so the Phase 1 copy has exactly one record to carry and nowhere yet to attach it.
 
@@ -547,10 +552,26 @@ Each phase gets its own branch and PR, can ship by itself, and leaves the app in
 - *(The flip analysis tab moved to Phase 2.5 — the deal numbers are needed to
   screen, not just to compare finalists.)*
 
-**Phase 5: Rental estimate and cleanup**
-- A rough rental estimate in `/tools/rental` using RentCast's rent AVM, which costs one request per house.
-- Remove dead routes and components, and drop the old scenario tables once approved.
-- Drop the legacy cash-flow columns from `analyses` once the rental estimate is settled. They were kept through Phase 1 because they are all defaulted and cost nothing to carry; the rental work is what decides whether any of them are still wanted.
+**Phase 5: Rental estimate and cleanup — TODO (deferred 2026-10-19)**
+
+Not being built. Nothing here blocks the flow the app now supports: add,
+screen, analyze, estimate, compare, offer. Every item is either a feature
+nobody has asked for yet or a tidy-up whose cost is carrying columns that are
+already defaulted and inert.
+
+Listed so that deferring it is a decision on the record rather than a gap.
+
+| # | Item | Why it was deferred, and what it needs |
+|---|---|---|
+| 1 | **Rental estimate** in `/tools/rental`, using RentCast's rent AVM | A feature, not a cleanup. It costs one RentCast request per house against a 50-a-month allowance, and flips — not rentals — are what the pipeline is for. Needs the quota guard to cover a second endpoint |
+| 2 | **Drop `mortgage_scenarios` and `mortgage_scenario_versions`** | The copy into `analyses` ran in Phase 1 and the old tables have been read-only since. Dropping them needs the copy verified row by row and an explicit approval — a drop is the one migration with no cheap undo |
+| 3 | **Drop the legacy cash-flow columns on `analyses`** | `purchase_price`, `closing_costs`, `closing_cost_items`, `repair_costs`, `down_payment`, `loan_term_years` and the rest of that block. Superseded by the `inputs` jsonb, all defaulted, all inert. They cost nothing to carry, which is exactly why this never became urgent |
+| 4 | **The `facts_source` default** | It defaults to `'manual'`, which once made every property permanently ineligible for RentCast facts — `applySubjectFacts` gated on `facts_source !== 'manual'` and skipped everything. The gate is gone (it fills blanks instead), so the default is now harmless but still misleading: a house whose facts came from RentCast reads `'manual'` until something writes them. Worth either a sensible default or removing the column |
+| 5 | **Dead-code cleanup** | Dead routes and components left behind by the rebuild. Also the migration-tolerant paths added before the migrations ran — the properties select that retries without `is_finalist`, the offers read that degrades when the table is absent, the profile read that retries without the tax columns. Those are deliberate today, because they let a fresh local database run the app; they become dead the moment local dev is seeded from migrations |
+| 6 | **A separate dev database for local work** | The largest item, and the one with a real incident behind it: a local session pointed at production wrote six Duluth fixture comps onto a house in Atlanta and filled its blank facts from the fixture. The write-side guard (`assertNotMockMode`) closed the fixture hole; it did not stop a local session writing real-looking data to production. Fully specified in `plans/local-dev-database.md` — local Supabase recommended, with the step that actually closes it being moving the production credentials out of `.env.local` |
+
+**If any of it gets picked up first, item 6.** It is the only one that prevents
+a recurrence rather than tidying up after one.
 
 ---
 
