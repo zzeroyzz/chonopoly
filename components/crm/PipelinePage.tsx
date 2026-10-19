@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CalendarClock, Check, ChevronRight, Plus } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { Skeleton, SkeletonCard, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import { STAGE_LABEL } from "@/lib/crm/stages";
 import { daysInStage } from "@/lib/crm/stages";
 import { nextTask, todayKey } from "@/lib/crm/sort";
@@ -161,9 +162,13 @@ export function PipelinePage() {
         <div className="flex items-baseline justify-between gap-3 mb-4">
           <div>
             <h1 className="text-[18px] font-semibold text-(--color-text-primary)">Pipeline</h1>
-            <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
-              {loading ? "Loading…" : `${activeTotal} active ${activeTotal === 1 ? "lead" : "leads"}`}
-            </p>
+            {loading ? (
+              <Skeleton className="h-3 w-24 mt-1.5" />
+            ) : (
+              <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
+                {`${activeTotal} active ${activeTotal === 1 ? "lead" : "leads"}`}
+              </p>
+            )}
           </div>
           <button
             type="button"
@@ -186,6 +191,29 @@ export function PipelinePage() {
           <div className="text-[13px] text-(--color-text-secondary) border border-(--color-border-default) rounded-[var(--radius-lg)] px-4 py-8 text-center">
             Nothing in the pipeline yet.
           </div>
+        )}
+
+        {loading && (
+          <SkeletonRegion label="Loading your pipeline" testId="pipeline-loading">
+            <SkeletonList count={4} gap="gap-2">
+              {() => (
+                <SkeletonCard>
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0 grid gap-1.5">
+                      <Skeleton className="h-3.5 w-3/5" />
+                      <Skeleton className="h-2.5 w-1/4" />
+                    </div>
+                    <Skeleton className="h-3.5 w-3.5 shrink-0 rounded-full" />
+                  </div>
+                  {/* The stage badge and the days-in-stage line below it. */}
+                  <div className="flex items-center gap-2 mt-2.5">
+                    <Skeleton className="h-6 w-20 rounded-full" />
+                    <Skeleton className="h-2.5 w-16" />
+                  </div>
+                </SkeletonCard>
+              )}
+            </SkeletonList>
+          </SkeletonRegion>
         )}
 
         {/* Closed and dead are the only thing the list hides, and this is the

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { type ScreenRow } from "@/lib/screen/screenRow";
 import { useCrmContext } from "@/components/crm/useCrmContext";
 import { dollars } from "@/components/mortgage/format";
@@ -217,7 +218,21 @@ export function ComparePage() {
 
         <h1 className="text-[18px] font-semibold text-(--color-text-primary) mb-1">Compare</h1>
 
-        {loading && <p className="text-[13px] text-(--color-text-secondary)">Loading…</p>}
+        {loading && (
+          <SkeletonRegion label="Loading the houses you picked" testId="compare-loading">
+            {/* A label column and three value columns, which is what the real
+                table looks like at 390px before it scrolls sideways. */}
+            <div className="grid gap-2 mt-3">
+              {Array.from({ length: 8 }, (_, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Skeleton className="h-3 w-28 shrink-0" />
+                  <Skeleton className="h-3 flex-1" />
+                  <Skeleton className="h-3 flex-1" />
+                </div>
+              ))}
+            </div>
+          </SkeletonRegion>
+        )}
         {error && <p className="text-[12px] text-(--color-danger)">{error}</p>}
 
         {!loading && !error && chosen.length < MIN && (

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Plus, Pencil } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
 import { dollars } from "@/components/mortgage/format";
 import { type ScreenRow } from "@/lib/screen/screenRow";
@@ -86,6 +87,17 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   const [arv, setArv] = useState<number | null>(null);
   /** This house's screen row — the same figures the Properties card shows. */
   const [row, setRow] = useState<ScreenRow | null>(null);
+  /**
+   * Whether the two follow-up reads have settled.
+   *
+   * Needed because every value the step bar tests is null both before it
+   * loads and when the house genuinely has no answer, and these reads cannot
+   * even start until the detail fetch hands over a property id. Without this
+   * the bar read "nothing is done" on every load and offered "Next: ARV" for
+   * a moment on houses that were already past it.
+   */
+  const [analysesLoaded, setAnalysesLoaded] = useState(false);
+  const [screenLoaded, setScreenLoaded] = useState(false);
   /** Bumped to remount the Profit card when the primary moves. */
   const [dealKey, setDealKey] = useState(0);
   /** Carried into Run the numbers when re-running at the estimate. */
@@ -181,6 +193,10 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
       // An empty Numbers tab is a worse answer than the rest of the page not
       // rendering, so this fails quietly.
       setAnalyses([]);
+    } finally {
+      // Settled either way. The step bar needs to know the difference between
+      // "no analyses" and "not asked yet".
+      setAnalysesLoaded(true);
     }
   }, [propertyId, ctxParams]);
 
@@ -214,6 +230,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
         const body = (await screenRes.json()) as { rows: ScreenRow[] };
         setRow(body.rows.find((r) => r.propertyId === propertyId) ?? null);
       }
+      setScreenLoaded(true);
     })();
     return () => {
       cancelled = true;
@@ -293,7 +310,11 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
     numbers: analyses.length > 0,
     deal: row?.walkAwayCash !== null && row?.walkAwayCash !== undefined,
   };
-  const nextStep = STEPS.find((step) => !stepDone[step.id]) ?? null;
+
+  // Only once both follow-up reads are in. Before that every test above is
+  // false for want of data, not because the work is undone.
+  const stepsReady = analysesLoaded && screenLoaded;
+  const nextStep = stepsReady ? (STEPS.find((step) => !stepDone[step.id]) ?? null) : null;
 
   const headline = row
     ? {
@@ -337,7 +358,34 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
           </div>
         )}
 
-        {loading && <p className="text-[13px] text-(--color-text-secondary)">Loading…</p>}
+        {loading && (
+          <SkeletonRegion label="Loading this house" testId="detail-loading">
+            {/* Photo and address, then the headline numbers, then the steps —
+                the same three bands the loaded page opens with, so nothing
+                jumps when it arrives. */}
+            <div className="flex gap-3">
+              <Skeleton className="w-16 h-16 rounded-lg shrink-0" />
+              <div className="min-w-0 flex-1 grid gap-2">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-2.5 w-1/2" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <Skeleton className="h-14 rounded-[var(--radius-lg)]" />
+              <Skeleton className="h-14 rounded-[var(--radius-lg)]" />
+            </div>
+
+            <div className="flex gap-1.5 mt-4 overflow-hidden">
+              <Skeleton className="h-7 w-16 rounded-[var(--radius-pill)] shrink-0" />
+              <Skeleton className="h-7 w-16 rounded-[var(--radius-pill)] shrink-0" />
+              <Skeleton className="h-7 w-16 rounded-[var(--radius-pill)] shrink-0" />
+              <Skeleton className="h-7 w-16 rounded-[var(--radius-pill)] shrink-0" />
+            </div>
+
+            <Skeleton className="h-40 w-full rounded-[var(--radius-lg)] mt-4" />
+          </SkeletonRegion>
+        )}
 
         {detail && (
           <>
@@ -359,6 +407,16 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
                     {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
                   </p>
+                  {/* The numbers and the two verdicts arrive on the screen
+                      read, one round trip after the address. Holding their
+                      space stops the header growing under your thumb. */}
+                  {!screenLoaded && (
+                    <>
+                      <Skeleton className="h-3 w-48 mt-1.5" />
+                      <Skeleton className="h-4 w-32 mt-2 rounded" />
+                    </>
+                  )}
+
                   {headline && (
                     <p className="text-[12px] font-(--font-mono) mt-1">
                       <span className="text-(--color-text-secondary)">
@@ -526,7 +584,9 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               className="flex items-center gap-1.5 mt-4 overflow-x-auto pb-1"
             >
               {STEPS.map((step) => {
-                const done = stepDone[step.id];
+                // The pills stay tappable while the reads are in flight; only
+                // the ✓ waits, so no step claims to be done before it is known.
+                const done = stepsReady && stepDone[step.id];
                 return (
                   <button
                     key={step.id}
@@ -549,7 +609,11 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               })}
             </div>
 
-            {nextStep && (
+            {/* The space is held while the step reads land, so the button does
+                not shove the tabs down when it arrives. */}
+            {!stepsReady && <Skeleton className="w-full h-10 mt-2 rounded-[var(--radius-pill)]" />}
+
+            {stepsReady && nextStep && (
               <button
                 type="button"
                 onClick={() => setTab(nextStep.tab)}

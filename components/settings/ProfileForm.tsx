@@ -11,6 +11,7 @@ import {
 } from "@/lib/profile/types";
 import { Card, SectionLabel, NumberField, ToggleRow } from "@/components/mortgage/fields";
 import { dollars } from "@/components/mortgage/format";
+import { Skeleton, SkeletonField, SkeletonRegion } from "@/components/ui/Skeleton";
 
 /**
  * Settings → profile. The one place income and debts are edited after the
@@ -121,7 +122,18 @@ export function ProfileForm() {
     savedSnapshot !== null && profile !== null && JSON.stringify(profile) === savedSnapshot;
 
   if (loading) {
-    return <p className="text-[12px] text-(--color-text-tertiary)">Loading…</p>;
+    return (
+      <SkeletonRegion label="Loading your profile" testId="profile-loading">
+        <Card>
+          <Skeleton className="h-2.5 w-24 mb-3" />
+          <div className="grid gap-3">
+            <SkeletonField labelWidth="w-16" />
+            <SkeletonField labelWidth="w-28" />
+            <SkeletonField labelWidth="w-20" />
+          </div>
+        </Card>
+      </SkeletonRegion>
+    );
   }
 
   if (!profile) {
