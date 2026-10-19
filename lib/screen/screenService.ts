@@ -3,7 +3,7 @@ import { type Database } from "../supabase/database.types";
 import { type RequestContext } from "../context";
 import { type Comp } from "../comps/types";
 import { listComps } from "../comps/compService";
-import { getProfile } from "../profile/buyerProfileService";
+import { getPersonalProfile } from "../profile/buyerProfileService";
 import { readInputs } from "../mortgage/scenarioService";
 import { type HouseInputs } from "../mortgage/resolveInputs";
 import { buildScreenRow, sortScreenRows, type ScreenHouse, type ScreenRow } from "./screenRow";
@@ -39,7 +39,11 @@ const PROPERTY_FIELDS: PropertyColumn[] = [
   "created_at",
 ];
 
-export async function loadScreenRows(ctx: RequestContext): Promise<ScreenRow[]> {
+export async function loadScreenRows(
+  ctx: RequestContext,
+  /** The signed-in user. Their personal profile supplies income and debts. */
+  userId: string
+): Promise<ScreenRow[]> {
   const client = db();
 
   const { data: properties, error: propertyError } = await client
@@ -90,7 +94,9 @@ export async function loadScreenRows(ctx: RequestContext): Promise<ScreenRow[]> 
   if (entryError) throw new Error(`Failed to load pipeline entries: ${entryError.message}`);
 
   const [profile, compsByProperty] = await Promise.all([
-    getProfile(ctx).catch(() => null),
+    // The user's own profile, not the property's context. Swallowing the error
+    // here is what turned a team context into "Set your income" on every card.
+    getPersonalProfile(userId),
     loadCompsByProperty(propertyIds, ctx),
   ]);
 

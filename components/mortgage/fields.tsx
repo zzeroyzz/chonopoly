@@ -14,6 +14,10 @@ const inputClass =
   "focus:outline-none focus:border-(--color-accent) transition-colors";
 
 export function FieldLabel({ children, hint }: { children: ReactNode; hint?: string }) {
+  // Nothing to say, nothing to reserve space for. Lets a row sit under a shared
+  // column header instead of carrying its own repeated one.
+  if (children === "" || children === null || children === undefined) return null;
+
   return (
     <div className="flex items-baseline gap-2 mb-1">
       <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
@@ -43,6 +47,9 @@ export function NumberField({
   note,
   min,
   testId,
+  placeholder,
+  blankWhenZero = false,
+  ariaLabel,
 }: {
   label: string;
   value: number;
@@ -58,10 +65,25 @@ export function NumberField({
   min?: number;
   /** Stable handle for tests that assert on a specific field's value. */
   testId?: string;
+  /** Ghost text while the field is empty. */
+  placeholder?: string;
+  /**
+   * Render zero as an empty box rather than a literal "0".
+   *
+   * Opt-in, because a zero is a real answer in most of the calculator — an HOA
+   * of $0 should say $0. It is not a real answer on a form someone is filling
+   * in for the first time: a box that already contains "0" reads as answered,
+   * so the eye skips it and the figure goes in the next empty-looking box. A
+   * profile was saved with its income in the name field exactly that way.
+   */
+  blankWhenZero?: boolean;
+  /** For a field whose visible label sits elsewhere, such as a column header. */
+  ariaLabel?: string;
 }) {
   // null means "not being edited" — show the model value.
   const [draft, setDraft] = useState<string | null>(null);
-  const shown = draft ?? (Number.isFinite(value) ? String(value) : "");
+  const settled = blankWhenZero && value === 0 ? "" : Number.isFinite(value) ? String(value) : "";
+  const shown = draft ?? settled;
 
   function handle(raw: string) {
     // Strip rather than reject. Rejecting made pasting impossible — "$350,000"
@@ -103,6 +125,8 @@ export function NumberField({
           type="text"
           inputMode="decimal"
           data-testid={testId}
+          placeholder={placeholder}
+          aria-label={ariaLabel}
           value={shown}
           onChange={(e) => handle(e.target.value)}
           onFocus={(e) => {

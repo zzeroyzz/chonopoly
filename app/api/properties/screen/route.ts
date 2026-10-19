@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     );
     if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    return NextResponse.json({ rows: await loadScreenRows(ctx) });
+    return NextResponse.json({ rows: await loadScreenRows(ctx, user.id) });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to load the screen";
     return NextResponse.json({ error: message }, { status: 500 });

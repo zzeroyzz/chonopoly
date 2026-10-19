@@ -23,6 +23,9 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Always the signed-in user's own profile, never the active context's. A
+  // team context has no profile, and resolving one here would hand back null
+  // for a user whose income is on file.
   const ctx = await resolveContext("personal", null, user.id);
   if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -45,19 +48,38 @@ interface Row {
 /** Validated at the boundary so a bad figure is a 400 naming the field. */
 function readAmountRows(
   rows: unknown,
-  field: "grossMonthly" | "monthlyPayment"
+  field: "grossMonthly" | "monthlyPayment",
+  /**
+   * Income only. A zero income is not a saved profile, it is the "set your
+   * income" state wearing a saved profile's clothes.
+   *
+   * This is the bug that reached production: an amount typed into the name
+   * box left `gross_monthly` at 0, the row passed every check here, the server
+   * returned 200, Settings said "Saved." — and every house went on reading
+   * "Set your income" with a DTI of 0%, because the total income really was
+   * zero. Nothing in that chain was wrong except that zero was allowed through.
+   */
+  requirePositive = false
 ): { label: string; amount: number }[] | { error: string } {
   if (!Array.isArray(rows)) return { error: `${field} rows must be an array` };
+
+  const noun = field === "grossMonthly" ? "income" : "debt";
 
   const out: { label: string; amount: number }[] = [];
   for (const raw of rows) {
     const r = raw as Row;
     const label = typeof r.label === "string" ? r.label.trim() : "";
-    if (!label) return { error: "each row needs a name" };
+    if (!label) return { error: `Every ${noun} needs a name` };
 
     const amount = Number(r[field]);
-    if (!Number.isFinite(amount)) return { error: `${field} must be a number` };
-    if (amount < 0) return { error: `${field} cannot be negative` };
+    // The label is the user's own text and safe to echo. The amount never is.
+    if (!Number.isFinite(amount)) return { error: `"${label}" needs a monthly amount` };
+    if (amount < 0) return { error: `"${label}" cannot be negative` };
+    if (requirePositive && amount === 0) {
+      return {
+        error: `"${label}" has no monthly amount. Put the name in the first box and the amount in the second.`,
+      };
+    }
 
     out.push({ label, amount });
   }
@@ -80,7 +102,7 @@ export async function POST(request: Request) {
   const ctx = await resolveContext("personal", null, user.id);
   if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const incomes = readAmountRows(body.incomes ?? [], "grossMonthly");
+  const incomes = readAmountRows(body.incomes ?? [], "grossMonthly", true);
   if ("error" in incomes) return NextResponse.json({ error: incomes.error }, { status: 400 });
 
   const debts = readAmountRows(body.debts ?? [], "monthlyPayment");
@@ -129,7 +151,7 @@ export async function PUT(request: Request) {
   if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   if (body.incomes) {
-    const check = readAmountRows(body.incomes, "grossMonthly");
+    const check = readAmountRows(body.incomes, "grossMonthly", true);
     if ("error" in check) return NextResponse.json({ error: check.error }, { status: 400 });
   }
   if (body.debts) {

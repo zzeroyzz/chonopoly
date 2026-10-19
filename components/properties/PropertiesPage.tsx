@@ -49,6 +49,33 @@ export function PropertiesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Re-read when the profile has changed since this list was built.
+   *
+   * Every verdict on this page is computed server-side from the profile, so a
+   * list rendered before the income was saved keeps saying "Set your income"
+   * until something forces a refetch. Settings stamps localStorage on a
+   * confirmed save; coming back to this tab picks it up.
+   */
+  const [profileStamp, setProfileStamp] = useState<string | null>(null);
+
+  useEffect(() => {
+    const read = () => {
+      try {
+        setProfileStamp(window.localStorage.getItem("buyerProfileUpdatedAt"));
+      } catch {
+        // Private mode: the focus listener below still refetches.
+      }
+    };
+    read();
+    window.addEventListener("focus", read);
+    document.addEventListener("visibilitychange", read);
+    return () => {
+      window.removeEventListener("focus", read);
+      document.removeEventListener("visibilitychange", read);
+    };
+  }, []);
+
   useEffect(() => {
     if (!ctxParams) return;
     let cancelled = false;
@@ -82,7 +109,7 @@ export function PropertiesPage() {
     return () => {
       cancelled = true;
     };
-  }, [ctxParams]);
+  }, [ctxParams, profileStamp]);
 
   return (
     <AppShell
@@ -169,22 +196,24 @@ function ScreenCard({ row }: { row: ScreenRow }) {
   const href = `/properties/${row.propertyId}`;
 
   return (
+    // `relative` is what the stretched link below anchors to.
     <li
       data-testid={`screen-row-${row.propertyId}`}
-      className="rounded-xl border border-(--color-border-default) bg-(--color-elevated) transition-colors hover:border-(--color-border-strong)"
+      className="relative rounded-xl border border-(--color-border-default) bg-(--color-elevated) p-3 transition-colors hover:border-(--color-border-strong)"
     >
-      {/* The whole card is the target, not just the address. At 390px a line
-          of text is a thin thing to hit. */}
-      <Link
-        href={href}
-        data-testid={`screen-open-${row.propertyId}`}
-        className="block p-3"
-      >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium leading-snug wrap-break-word text-(--color-text-primary)">
+          {/* The whole card is still the target — at 390px a line of text is a
+              thin thing to hit — but it is reached with an overlay rather than
+              by wrapping the card. The listing link used to be a descendant of
+              this one, which is invalid HTML and threw a hydration error. */}
+          <Link
+            href={href}
+            data-testid={`screen-open-${row.propertyId}`}
+            className="text-[13px] font-medium leading-snug wrap-break-word text-(--color-text-primary) after:absolute after:inset-0 after:rounded-xl after:content-['']"
+          >
             {row.address}
-          </p>
+          </Link>
         </div>
 
         {row.listingUrl && (
@@ -194,10 +223,9 @@ function ScreenCard({ row }: { row: ScreenRow }) {
             rel="noopener noreferrer"
             aria-label="Open the listing"
             data-testid={`screen-listing-${row.propertyId}`}
-            // Inside a card-wide link, so the click has to be stopped from
-            // bubbling or this opens the property instead of the listing.
-            onClick={(e) => e.stopPropagation()}
-            className="shrink-0 text-(--color-text-tertiary) hover:text-(--color-accent) transition-colors"
+            // A sibling of the card link now, lifted above its overlay. No
+            // stopPropagation: nothing is nested, so nothing bubbles.
+            className="relative z-10 shrink-0 text-(--color-text-tertiary) hover:text-(--color-accent) transition-colors"
           >
             <ExternalLink size={13} />
           </a>
@@ -327,7 +355,6 @@ function ScreenCard({ row }: { row: ScreenRow }) {
           {row.checklist.done}/4
         </span>
       </div>
-      </Link>
     </li>
   );
 }
