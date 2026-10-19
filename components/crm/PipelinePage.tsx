@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, CalendarClock, Check, ChevronRight, Plus, X } from "lucide-react";
+import { AlertCircle, CalendarClock, Check, ChevronRight, Plus } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { Skeleton, SkeletonCard, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import { STAGE_LABEL } from "@/lib/crm/stages";
 import { daysInStage } from "@/lib/crm/stages";
 import { nextTask, todayKey } from "@/lib/crm/sort";
 import { type PipelineRow, type Stage } from "@/lib/crm/types";
 import { StageMenu } from "./StageMenu";
-import { AddLeadForm } from "./AddLeadForm";
 import { useCrmContext, useShellProfile } from "./useCrmContext";
 
 /**
@@ -65,7 +65,7 @@ function DueBadge({ row }: { row: PipelineRow }) {
 export function PipelinePage() {
   const router = useRouter();
   const profile = useShellProfile();
-  const { ctx, ctxParams } = useCrmContext();
+  const { ctxParams } = useCrmContext();
 
   const [rows, setRows] = useState<PipelineRow[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -74,7 +74,6 @@ export function PipelinePage() {
   const [showTerminal, setShowTerminal] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
 
   // No setState before the first await — this runs from an effect, and a
   // synchronous set there cascades a render before the fetch has even started.
@@ -163,30 +162,24 @@ export function PipelinePage() {
         <div className="flex items-baseline justify-between gap-3 mb-4">
           <div>
             <h1 className="text-[18px] font-semibold text-(--color-text-primary)">Pipeline</h1>
-            <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
-              {loading ? "Loading…" : `${activeTotal} active ${activeTotal === 1 ? "lead" : "leads"}`}
-            </p>
+            {loading ? (
+              <Skeleton className="h-3 w-24 mt-1.5" />
+            ) : (
+              <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
+                {`${activeTotal} active ${activeTotal === 1 ? "lead" : "leads"}`}
+              </p>
+            )}
           </div>
           <button
             type="button"
             data-testid="open-add-lead"
-            onClick={() => setAdding((v) => !v)}
+            onClick={() => router.push("/properties/new")}
             className="inline-flex items-center gap-1 text-[12px] px-2.5 py-1.5 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors shrink-0"
           >
-            {adding ? <X size={12} /> : <Plus size={12} />}
-            {adding ? "Cancel" : "Add lead"}
+            <Plus size={12} />
+            Add a house
           </button>
         </div>
-
-        {adding && ctx && (
-          <AddLeadForm
-            ctx={ctx}
-            onAdded={async () => {
-              setAdding(false);
-              await load();
-            }}
-          />
-        )}
 
         {error && (
           <div className="mb-3 text-[12px] text-(--color-danger) border border-(--color-danger) rounded-[var(--radius-md)] px-3 py-2">
@@ -198,6 +191,29 @@ export function PipelinePage() {
           <div className="text-[13px] text-(--color-text-secondary) border border-(--color-border-default) rounded-[var(--radius-lg)] px-4 py-8 text-center">
             Nothing in the pipeline yet.
           </div>
+        )}
+
+        {loading && (
+          <SkeletonRegion label="Loading your pipeline" testId="pipeline-loading">
+            <SkeletonList count={4} gap="gap-2">
+              {() => (
+                <SkeletonCard>
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0 grid gap-1.5">
+                      <Skeleton className="h-3.5 w-3/5" />
+                      <Skeleton className="h-2.5 w-1/4" />
+                    </div>
+                    <Skeleton className="h-3.5 w-3.5 shrink-0 rounded-full" />
+                  </div>
+                  {/* The stage badge and the days-in-stage line below it. */}
+                  <div className="flex items-center gap-2 mt-2.5">
+                    <Skeleton className="h-6 w-20 rounded-full" />
+                    <Skeleton className="h-2.5 w-16" />
+                  </div>
+                </SkeletonCard>
+              )}
+            </SkeletonList>
+          </SkeletonRegion>
         )}
 
         {/* Closed and dead are the only thing the list hides, and this is the

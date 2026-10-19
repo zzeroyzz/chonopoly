@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Home, AlertTriangle, ExternalLink, Star } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import { useCrmContext } from "@/components/crm/useCrmContext";
 import { dollars } from "@/components/mortgage/format";
 import {
@@ -40,7 +41,17 @@ const DEAL_STYLE: Record<DealVerdict, string> = {
   does_not_work: "bg-red-500/10 text-red-400",
 };
 
-const CHECKLIST_STEPS = ["Numbers", "Comps", "Estimate", "Visit"] as const;
+/**
+ * The same four steps the property page shows, in the same order, so the card
+ * and the page agree about where a house has got to.
+ */
+const FLOW_STEPS = [
+  // A house exists the moment it is added, so this one is always done.
+  { label: "Details", done: () => true },
+  { label: "ARV", done: (r: ScreenRow) => r.arv !== null },
+  { label: "Numbers", done: (r: ScreenRow) => r.checklist.numbers },
+  { label: "Deal", done: (r: ScreenRow) => r.walkAwayCash !== null },
+] as const;
 
 export function PropertiesPage() {
   const router = useRouter();
@@ -131,7 +142,56 @@ export function PropertiesPage() {
           can you afford it, and does the deal work.
         </p>
 
-        {loading && <p className="text-[13px] text-(--color-text-secondary)">Loading…</p>}
+        {loading && (
+          <SkeletonRegion label="Loading your houses" testId="screen-loading">
+            <SkeletonList count={3} gap="gap-2">
+              {() => (
+                <div className="rounded-xl border border-(--color-border-default) bg-(--color-elevated) p-3">
+                  {/* Address over two lines, with the compare and finalist
+                      controls to its right. */}
+                  {/* Bars match the line-height of the text they stand in for,
+                      not its font size, or the card loads 50px taller than it
+                      waited at. */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1 grid gap-1.5">
+                      <Skeleton className="h-4 w-4/5" />
+                      <Skeleton className="h-4 w-1/3" />
+                    </div>
+                    <Skeleton className="h-5 w-20 shrink-0 rounded" />
+                  </div>
+
+                  {/* The verdict pills, the reason line, then the headline. */}
+                  <div className="flex gap-1.5 mt-2">
+                    <Skeleton className="h-5 w-20 rounded" />
+                    <Skeleton className="h-5 w-16 rounded" />
+                  </div>
+                  <Skeleton className="h-3 w-full mt-2" />
+                  <Skeleton className="h-4 w-3/4 mt-2" />
+
+                  {/* The eight figures, three to a row. This is most of the
+                      card's height — without it the list jumped when it
+                      loaded, which is the thing skeletons are for. */}
+                  <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 mt-2.5">
+                    {Array.from({ length: 8 }, (_, i) => (
+                      <div key={i} className="grid gap-1">
+                        <Skeleton className="h-2.5 w-3/4" />
+                        <Skeleton className="h-3.5 w-full" />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* The four progress chips. */}
+                  <div className="flex gap-1.5 mt-2.5">
+                    <Skeleton className="h-5 w-14 rounded" />
+                    <Skeleton className="h-5 w-11 rounded" />
+                    <Skeleton className="h-5 w-16 rounded" />
+                    <Skeleton className="h-5 w-11 rounded" />
+                  </div>
+                </div>
+              )}
+            </SkeletonList>
+          </SkeletonRegion>
+        )}
 
         {error && (
           <p
@@ -319,13 +379,24 @@ function ScreenCard({
               thin thing to hit — but it is reached with an overlay rather than
               by wrapping the card. The listing link used to be a descendant of
               this one, which is invalid HTML and threw a hydration error. */}
-          <Link
-            href={href}
-            data-testid={`screen-open-${row.propertyId}`}
-            className="text-[13px] font-medium leading-snug wrap-break-word text-(--color-text-primary) after:absolute after:inset-0 after:rounded-xl after:content-['']"
-          >
-            {row.address}
-          </Link>
+          <span className="flex gap-2.5 items-start">
+            {row.photoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={row.photoUrl}
+                alt=""
+                data-testid={`screen-photo-${row.propertyId}`}
+                className="w-12 h-12 rounded-md object-cover shrink-0 border border-(--color-border-subtle)"
+              />
+            )}
+            <Link
+              href={href}
+              data-testid={`screen-open-${row.propertyId}`}
+              className="text-[13px] font-medium leading-snug wrap-break-word text-(--color-text-primary) after:absolute after:inset-0 after:rounded-xl after:content-['']"
+            >
+              {row.address}
+            </Link>
+          </span>
         </div>
 
         {/* Both sit above the card-wide link overlay, as siblings of it. */}
@@ -483,20 +554,13 @@ function ScreenCard({
         data-testid={`checklist-${row.propertyId}`}
         className="flex items-center gap-1.5 mt-2.5 flex-wrap"
       >
-        {CHECKLIST_STEPS.map((step) => {
-          const key = step.toLowerCase() as "numbers" | "comps" | "estimate" | "visit";
-          const done = row.checklist[key];
-          // "Estimate ✓ photos" says more than "Estimate ✓": a photo estimate
-          // and a walkthrough carry different contingencies and different
-          // confidence, and the chip is where that difference is visible.
-          const label =
-            key === "estimate" && done && row.rehabSource
-              ? `${step} ${row.rehabSource === "visit" ? "visit" : "photos"}`
-              : step;
+        {FLOW_STEPS.map((step) => {
+          const done = step.done(row);
+          const label = step.label;
           return (
             <span
-              key={step}
-              data-testid={`checklist-${key}-${row.propertyId}`}
+              key={step.label}
+              data-testid={`checklist-${step.label.toLowerCase()}-${row.propertyId}`}
               data-done={done ? "yes" : "no"}
               className={`text-[10px] px-1.5 py-0.5 rounded border ${
                 done
@@ -509,7 +573,7 @@ function ScreenCard({
           );
         })}
         <span className="text-[10px] text-(--color-text-tertiary)">
-          {row.checklist.done}/4
+          {FLOW_STEPS.filter((s2) => s2.done(row)).length}/4
         </span>
       </div>
     </li>

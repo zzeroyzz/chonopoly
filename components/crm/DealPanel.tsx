@@ -12,6 +12,7 @@ import { saveAnalysis } from "@/lib/mortgage/scenarioClient";
 import { type BuyerProfile } from "@/lib/profile/types";
 import { taxDefaultsFrom } from "@/lib/mortgage/capitalGains";
 import { ProfitCard, type ProfitCardEdits } from "@/components/mortgage/ProfitCard";
+import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 
 /**
  * The deal, on the house's Numbers tab.
@@ -150,7 +151,26 @@ export function DealPanel({
   }
 
   if (!loaded || !built) {
-    return <p className="text-[12px] text-(--color-text-secondary) mt-4">Working it out…</p>;
+    return (
+      <SkeletonRegion label="Working out the deal" testId="deal-loading">
+        <div className="mt-4">
+          {/* Walk-away and true profit side by side, then the lines that add
+              up to them. */}
+          <div className="grid grid-cols-2 gap-2">
+            <Skeleton className="h-16 rounded-[var(--radius-lg)]" />
+            <Skeleton className="h-16 rounded-[var(--radius-lg)]" />
+          </div>
+          <SkeletonList count={5} gap="gap-2">
+            {() => (
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <Skeleton className="h-2.5 w-32" />
+                <Skeleton className="h-2.5 w-16" />
+              </div>
+            )}
+          </SkeletonList>
+        </div>
+      </SkeletonRegion>
+    );
   }
 
   async function save() {

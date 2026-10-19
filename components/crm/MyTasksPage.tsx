@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import { todayKey } from "@/lib/crm/sort";
 import { type Task } from "@/lib/crm/types";
 import { useCrmContext, useShellProfile } from "./useCrmContext";
@@ -80,9 +81,32 @@ export function MyTasksPage() {
     >
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8 max-w-2xl">
         <h1 className="text-[18px] font-semibold text-(--color-text-primary)">My tasks</h1>
-        <p className="text-[12px] text-(--color-text-secondary) mt-0.5 mb-4">
-          {loading ? "Loading…" : `${tasks.length} open`}
-        </p>
+        {loading ? (
+          <Skeleton className="h-3 w-16 mt-1.5 mb-4" />
+        ) : (
+          <p className="text-[12px] text-(--color-text-secondary) mt-0.5 mb-4">
+            {`${tasks.length} open`}
+          </p>
+        )}
+
+        {loading && (
+          <SkeletonRegion label="Loading your tasks" testId="tasks-loading">
+            {/* A group heading with its rows under it, which is how the real
+                list is grouped into Overdue, Today and Later. */}
+            <Skeleton className="h-2.5 w-20 mb-2" />
+            <SkeletonList count={3} gap="gap-1.5">
+              {() => (
+                <div className="flex items-center justify-between gap-3 bg-(--color-surface) border border-(--color-border-default) rounded-[var(--radius-md)] px-3 py-2.5">
+                  <div className="min-w-0 flex-1 grid gap-1.5">
+                    <Skeleton className="h-3 w-3/4" />
+                    <Skeleton className="h-2.5 w-1/3" />
+                  </div>
+                  <Skeleton className="h-6 w-14 rounded-full shrink-0" />
+                </div>
+              )}
+            </SkeletonList>
+          </SkeletonRegion>
+        )}
 
         {error && (
           <div className="mb-3 text-[12px] text-(--color-danger) border border-(--color-danger) rounded-[var(--radius-md)] px-3 py-2">

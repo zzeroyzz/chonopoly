@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { useCrmContext } from "@/components/crm/useCrmContext";
+import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 
 /**
  * RentCast's status and what's left of this month's allowance.
@@ -66,7 +67,15 @@ export function IntegrationsPanel() {
   }, [ctxParams]);
 
   if (loading) {
-    return <p className="text-[12px] text-(--color-text-secondary)">Loading…</p>;
+    return (
+      <SkeletonRegion label="Loading your usage" testId="integrations-loading">
+        <div className="grid gap-2">
+          <Skeleton className="h-2.5 w-28" />
+          <Skeleton className="h-9 w-full rounded-[var(--radius-md)]" />
+          <Skeleton className="h-2.5 w-40" />
+        </div>
+      </SkeletonRegion>
+    );
   }
 
   if (error || !status) {

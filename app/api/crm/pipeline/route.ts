@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveContext } from "@/lib/context";
 import { createEntry, listPipeline, stageCounts } from "@/lib/crm/pipelineService";
 import { sortPipeline } from "@/lib/crm/sort";
-import { upsertProperty } from "@/lib/property/propertyService";
+import { getProperty } from "@/lib/property/propertyService";
 
 /**
  * The pipeline list.
@@ -37,13 +37,14 @@ export async function GET(request: Request) {
 }
 
 /**
- * Add a lead by hand.
+ * Put an existing house on the pipeline.
  *
- * Two steps, deliberately: find-or-create the property, then put it on the
- * pipeline. The property is shared — a cash flow analysis may already have made
- * one at this address — so this goes through `upsertProperty` and inherits its
- * dedupe rules rather than inventing a second set. `matchedOn` comes back so the
- * caller can say a merge happened instead of silently reusing a row.
+ * Named by id, never by address. This used to take an address and run it
+ * through `upsertProperty`, which made the pipeline a second door through
+ * which a property could be created — the one thing Add is meant to be alone
+ * in doing. The hand-entry form that called it that way is gone; the Activity
+ * tab's "Add to pipeline" is what calls it now, for a house that already
+ * exists and simply is not being tracked yet.
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -51,11 +52,8 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let body: {
-    address_line1?: string;
-    city?: string | null;
-    state?: string | null;
-    zip?: string | null;
-    parcel_number?: string | null;
+    /** A house that already exists. Adding to the pipeline never creates one. */
+    property_id?: string;
     context_type?: string;
     context_id?: string;
   };
@@ -68,28 +66,22 @@ export async function POST(request: Request) {
   const ctx = await resolveContext(body.context_type, body.context_id, user.id);
   if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  if (!body.address_line1?.trim()) {
-    return NextResponse.json({ error: "address_line1 required" }, { status: 400 });
+  if (!body.property_id?.trim()) {
+    return NextResponse.json({ error: "property_id is required" }, { status: 400 });
   }
 
-  try {
-    const { property, matchedOn } = await upsertProperty(
-      {
-        address_line1: body.address_line1.trim(),
-        city: body.city ?? null,
-        state: body.state ?? "GA",
-        zip: body.zip ?? null,
-        parcel_number: body.parcel_number ?? null,
-      },
-      ctx,
-      user.id,
-      "crm"
-    );
+  // The house has to be one of the caller's. This used to take an address and
+  // run it through upsertProperty, which made the pipeline a second door
+  // through which a property could be created — the one thing Add is supposed
+  // to be alone in doing.
+  const property = await getProperty(body.property_id, ctx);
+  if (!property) return NextResponse.json({ error: "Property not found" }, { status: 404 });
 
+  try {
     const entry = await createEntry({ property_id: property.id, source: "manual" }, ctx, user.id);
-    return NextResponse.json({ entry, property, matchedOn });
+    return NextResponse.json({ entry, property });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Failed to add the lead";
+    const message = e instanceof Error ? e.message : "Failed to add it to the pipeline";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

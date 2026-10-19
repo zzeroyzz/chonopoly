@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import { STAGES, STAGE_LABEL, isTerminal } from "@/lib/crm/stages";
 import { nextTask, todayKey } from "@/lib/crm/sort";
 import { type PipelineRow, type Stage } from "@/lib/crm/types";
@@ -77,63 +78,82 @@ export function DashboardPage() {
           </div>
         )}
 
-        {loading && <p className="text-[13px] text-(--color-text-secondary)">Loading…</p>}
+        {/* The counts used to render as zeros while the fetch was still in
+            flight, which reads as "nothing is overdue" rather than "not known
+            yet". A placeholder cannot be misread as an answer. */}
+        {loading && (
+          <SkeletonRegion label="Loading your dashboard" testId="dashboard-loading">
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              <Skeleton className="h-[72px] rounded-[var(--radius-lg)]" />
+              <Skeleton className="h-[72px] rounded-[var(--radius-lg)]" />
+            </div>
 
-        <div className="grid grid-cols-2 gap-2 mb-5">
-          <div className="bg-(--color-surface) border border-(--color-border-default) rounded-[var(--radius-lg)] px-3.5 py-3">
-            <p className="text-[11px] text-(--color-text-tertiary)">Overdue</p>
-            <p className="text-[22px] font-semibold text-(--color-danger)">{overdue.length}</p>
-          </div>
-          <div className="bg-(--color-surface) border border-(--color-border-default) rounded-[var(--radius-lg)] px-3.5 py-3">
-            <p className="text-[11px] text-(--color-text-tertiary)">Due today</p>
-            <p className="text-[22px] font-semibold text-(--color-text-primary)">{dueToday.length}</p>
-          </div>
-        </div>
+            <Skeleton className="h-2.5 w-16 mb-2" />
+            <SkeletonList count={5} gap="gap-1">
+              {() => <Skeleton className="h-9 w-full rounded-[var(--radius-md)]" />}
+            </SkeletonList>
+          </SkeletonRegion>
+        )}
 
-        <h2 className="text-[11px] uppercase tracking-wider text-(--color-text-tertiary) mb-2">
-          By stage
-        </h2>
-        <ul className="grid gap-1 mb-6">
-          {STAGES.map((s: Stage) => (
-            <li
-              key={s}
-              className={`flex items-center justify-between text-[13px] px-3 py-2 rounded-[var(--radius-md)] ${
-                isTerminal(s) ? "text-(--color-text-tertiary)" : "text-(--color-text-primary)"
-              } bg-(--color-surface) border border-(--color-border-default)`}
-            >
-              <span>{STAGE_LABEL[s]}</span>
-              <span className="tabular-nums">{counts[s] ?? 0}</span>
-            </li>
-          ))}
-        </ul>
+        {!loading && (
+          <>
+            <div className="grid grid-cols-2 gap-2 mb-5">
+              <div className="bg-(--color-surface) border border-(--color-border-default) rounded-[var(--radius-lg)] px-3.5 py-3">
+                <p className="text-[11px] text-(--color-text-tertiary)">Overdue</p>
+                <p className="text-[22px] font-semibold text-(--color-danger)">{overdue.length}</p>
+              </div>
+              <div className="bg-(--color-surface) border border-(--color-border-default) rounded-[var(--radius-lg)] px-3.5 py-3">
+                <p className="text-[11px] text-(--color-text-tertiary)">Due today</p>
+                <p className="text-[22px] font-semibold text-(--color-text-primary)">{dueToday.length}</p>
+              </div>
+            </div>
 
-        <h2 className="text-[11px] uppercase tracking-wider text-(--color-warning) mb-2 flex items-center gap-1.5">
-          <AlertCircle size={12} /> No follow-up scheduled
-        </h2>
-        {noFollowUp.length === 0 ? (
-          <p className="text-[12px] text-(--color-text-secondary)">
-            Every active lead has something due. Nothing is going quiet.
-          </p>
-        ) : (
-          <ul className="grid gap-1.5">
-            {noFollowUp.map((r) => (
-              <li key={r.entry.id}>
-                <button
-                  type="button"
-                  data-testid="defect-row"
-                  onClick={() => router.push(`/properties/${r.entry.id}`)}
-                  className="w-full text-left bg-(--color-surface) border border-(--color-border-default) rounded-[var(--radius-md)] px-3 py-2.5 hover:border-(--color-border-strong) transition-colors"
+            <h2 className="text-[11px] uppercase tracking-wider text-(--color-text-tertiary) mb-2">
+              By stage
+            </h2>
+            <ul className="grid gap-1 mb-6">
+              {STAGES.map((s: Stage) => (
+                <li
+                  key={s}
+                  className={`flex items-center justify-between text-[13px] px-3 py-2 rounded-[var(--radius-md)] ${
+                    isTerminal(s) ? "text-(--color-text-tertiary)" : "text-(--color-text-primary)"
+                  } bg-(--color-surface) border border-(--color-border-default)`}
                 >
-                  <p className="text-[13px] text-(--color-text-primary) truncate">
-                    {r.addressLine1 || "Address unknown"}
-                  </p>
-                  <p className="text-[11px] text-(--color-text-tertiary)">
-                    {STAGE_LABEL[r.entry.stage]}
-                  </p>
-                </button>
-              </li>
-            ))}
-          </ul>
+                  <span>{STAGE_LABEL[s]}</span>
+                  <span className="tabular-nums">{counts[s] ?? 0}</span>
+                </li>
+              ))}
+            </ul>
+
+            <h2 className="text-[11px] uppercase tracking-wider text-(--color-warning) mb-2 flex items-center gap-1.5">
+              <AlertCircle size={12} /> No follow-up scheduled
+            </h2>
+            {noFollowUp.length === 0 ? (
+              <p className="text-[12px] text-(--color-text-secondary)">
+                Every active lead has something due. Nothing is going quiet.
+              </p>
+            ) : (
+              <ul className="grid gap-1.5">
+                {noFollowUp.map((r) => (
+                  <li key={r.entry.id}>
+                    <button
+                      type="button"
+                      data-testid="defect-row"
+                      onClick={() => router.push(`/properties/${r.entry.id}`)}
+                      className="w-full text-left bg-(--color-surface) border border-(--color-border-default) rounded-[var(--radius-md)] px-3 py-2.5 hover:border-(--color-border-strong) transition-colors"
+                    >
+                      <p className="text-[13px] text-(--color-text-primary) truncate">
+                        {r.addressLine1 || "Address unknown"}
+                      </p>
+                      <p className="text-[11px] text-(--color-text-tertiary)">
+                        {STAGE_LABEL[r.entry.stage]}
+                      </p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </div>
     </AppShell>

@@ -16,7 +16,7 @@ export async function login(
 
   if (error) return error.message;
 
-  redirect("/pipeline");
+  redirect("/properties");
 }
 
 export async function logout() {

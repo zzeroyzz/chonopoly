@@ -47,6 +47,7 @@ export interface ScreenHouse {
   sqft: number | null;
   annualTaxes: number | null;
   listingUrl: string | null;
+  photoUrl?: string | null;
   needsAddressReview: boolean;
   visitCompletedAt: string | null;
   /**
@@ -98,6 +99,8 @@ export interface ScreenRow {
   /** True when the ARV came from unreviewed comps. */
   provisionalArv: boolean;
   isFinalist: boolean;
+  /** The house's picture, for the card thumbnail. */
+  photoUrl: string | null;
   /** Everything the compare view needs, from the same build as the card. */
   loanType: string;
   /** True profit over cash in. Null when no cash went in. */
@@ -214,6 +217,7 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     checklist,
     provisionalArv,
     isFinalist: house.isFinalist ?? false,
+    photoUrl: house.photoUrl ?? null,
     loanType: inputs.loanType,
     roiPct: deal.roiPct,
     cashIn: deal.cashIn,

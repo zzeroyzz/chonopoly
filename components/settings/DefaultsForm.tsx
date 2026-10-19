@@ -5,6 +5,7 @@ import { type BuyerProfile, type ProfileDefaults } from "@/lib/profile/types";
 import { LOAN_PRODUCTS, productValueFor } from "@/lib/mortgage/loanTypes";
 import { type LoanType, type RenovationProgram, type DpaStructure } from "@/lib/mortgage/types";
 import { X } from "lucide-react";
+import { Skeleton, SkeletonField, SkeletonRegion } from "@/components/ui/Skeleton";
 import {
   Card,
   SectionLabel,
@@ -88,7 +89,19 @@ export function DefaultsForm() {
   }
 
   if (loading) {
-    return <p className="text-[12px] text-(--color-text-tertiary)">Loading…</p>;
+    return (
+      <SkeletonRegion label="Loading your defaults" testId="defaults-loading">
+        <Card>
+          <Skeleton className="h-2.5 w-20 mb-3" />
+          <div className="grid gap-3">
+            <SkeletonField labelWidth="w-28" />
+            <SkeletonField labelWidth="w-20" />
+            <SkeletonField labelWidth="w-32" />
+            <SkeletonField labelWidth="w-24" />
+          </div>
+        </Card>
+      </SkeletonRegion>
+    );
   }
 
   if (!profile) {

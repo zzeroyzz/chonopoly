@@ -4,7 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Plus, Pencil } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
+import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
+import { dollars } from "@/components/mortgage/format";
+import { type ScreenRow } from "@/lib/screen/screenRow";
+import { AFFORDABILITY_LABEL, DEAL_LABEL } from "@/lib/mortgage/verdicts";
 import { STAGE_LABEL, daysInStage } from "@/lib/crm/stages";
 import { cadenceDueDate } from "@/lib/crm/cadence";
 import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/types";
@@ -58,16 +62,42 @@ function when(iso: string): string {
  * exists. Comps and Rehab are present and empty rather than hidden, so the
  * shape of the page does not change under you when they arrive.
  */
-const TABS = ["Overview", "Numbers", "Comps", "Rehab", "Activity"] as const;
+/**
+ * The tabs are the flow, in order: what the house is, what it is worth, what
+ * the loan looks like, what the deal makes. Rehab and Activity come after
+ * because they refine a deal rather than decide one.
+ */
+const TABS = ["Details", "ARV", "Numbers", "Deal", "Rehab", "Activity"] as const;
+
+/** The four steps of the flow, each pointing at the tab that does it. */
+const STEPS = [
+  { id: "details", label: "Details", tab: "Details" },
+  { id: "arv", label: "ARV", tab: "ARV" },
+  { id: "numbers", label: "Run the numbers", tab: "Numbers" },
+  { id: "deal", label: "Deal", tab: "Deal" },
+] as const satisfies readonly { id: string; label: string; tab: (typeof TABS)[number] }[];
 type Tab = (typeof TABS)[number];
 
 export function PropertyDetailPage({ entryId }: { entryId: string }) {
-  const [tab, setTab] = useState<Tab>("Overview");
+  const [tab, setTab] = useState<Tab>("Details");
   const [analyses, setAnalyses] = useState<ScenarioSummary[]>([]);
   // The scenario rows cost every scenario themselves, so they need the same
   // profile and ARV the Profit card uses.
   const [buyerProfile, setBuyerProfile] = useState<BuyerProfile | null>(null);
   const [arv, setArv] = useState<number | null>(null);
+  /** This house's screen row — the same figures the Properties card shows. */
+  const [row, setRow] = useState<ScreenRow | null>(null);
+  /**
+   * Whether the two follow-up reads have settled.
+   *
+   * Needed because every value the step bar tests is null both before it
+   * loads and when the house genuinely has no answer, and these reads cannot
+   * even start until the detail fetch hands over a property id. Without this
+   * the bar read "nothing is done" on every load and offered "Next: ARV" for
+   * a moment on houses that were already past it.
+   */
+  const [analysesLoaded, setAnalysesLoaded] = useState(false);
+  const [screenLoaded, setScreenLoaded] = useState(false);
   /** Bumped to remount the Profit card when the primary moves. */
   const [dealKey, setDealKey] = useState(0);
   /** Carried into Run the numbers when re-running at the estimate. */
@@ -163,6 +193,10 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
       // An empty Numbers tab is a worse answer than the rest of the page not
       // rendering, so this fails quietly.
       setAnalyses([]);
+    } finally {
+      // Settled either way. The step bar needs to know the difference between
+      // "no analyses" and "not asked yet".
+      setAnalysesLoaded(true);
     }
   }, [propertyId, ctxParams]);
 
@@ -176,9 +210,12 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
     if (!propertyId || !ctxParams) return;
     let cancelled = false;
     (async () => {
-      const [profileRes, compsRes] = await Promise.all([
+      const [profileRes, compsRes, screenRes] = await Promise.all([
         fetch("/api/profile/buyer").catch(() => null),
         fetch(`/api/properties/${propertyId}/comps?${ctxParams}`).catch(() => null),
+        // The same row the Properties card is drawn from, so the header and
+        // the card cannot disagree about what this house makes.
+        fetch(`/api/properties/screen?${ctxParams}`).catch(() => null),
       ]);
       if (cancelled) return;
       if (profileRes?.ok) {
@@ -189,6 +226,11 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
         const body = (await compsRes.json()) as { arv?: { value: number | null } | null };
         setArv(body.arv?.value ?? null);
       }
+      if (screenRes?.ok) {
+        const body = (await screenRes.json()) as { rows: ScreenRow[] };
+        setRow(body.rows.find((r) => r.propertyId === propertyId) ?? null);
+      }
+      setScreenLoaded(true);
     })();
     return () => {
       cancelled = true;
@@ -205,6 +247,13 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    // + Add lands here at the ARV step, which is the next thing to do.
+    const step = params.get("step");
+    const match = STEPS.find((s2) => s2.id === step);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (match) setTab(match.tab);
+
     const read = () => setNumbersTarget(new URLSearchParams(window.location.search).get("numbers"));
     read();
     // Back should close the modal, not leave the page.
@@ -253,6 +302,32 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
     }
   }
 
+  // Each step maps to the tab that does it, so the bar and the tabs can never
+  // drift apart.
+  const stepDone: Record<string, boolean> = {
+    details: Boolean(property),
+    arv: arv !== null,
+    numbers: analyses.length > 0,
+    deal: row?.walkAwayCash !== null && row?.walkAwayCash !== undefined,
+  };
+
+  // Only once both follow-up reads are in. Before that every test above is
+  // false for want of data, not because the work is undone.
+  const stepsReady = analysesLoaded && screenLoaded;
+  const nextStep = stepsReady ? (STEPS.find((step) => !stepDone[step.id]) ?? null) : null;
+
+  const headline = row
+    ? {
+        price: row.price,
+        walkAway: row.walkAwayCash,
+        trueProfit: row.trueProfit,
+        affordability: row.affordability.needsProfile
+          ? "Set your income"
+          : AFFORDABILITY_LABEL[row.affordability.verdict],
+        deal: row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : "No ARV",
+      }
+    : null;
+
   const openTasks = (detail?.tasks ?? []).filter((t) => t.status === "open");
 
   return (
@@ -263,12 +338,18 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
       onProfileClick={() => router.push("/settings/account")}
     >
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8 max-w-3xl">
+        {/* Back to wherever you came from. Always sending people to the
+            pipeline was wrong the moment Properties became home. */}
         <button
           type="button"
-          onClick={() => router.push("/pipeline")}
+          onClick={() => {
+            if (typeof window !== "undefined" && window.history.length > 1) router.back();
+            else router.push("/properties");
+          }}
+          data-testid="back"
           className="inline-flex items-center gap-1.5 text-[12px] text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors mb-3"
         >
-          <ArrowLeft size={13} /> Pipeline
+          <ArrowLeft size={13} /> Back
         </button>
 
         {error && (
@@ -277,20 +358,120 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
           </div>
         )}
 
-        {loading && <p className="text-[13px] text-(--color-text-secondary)">Loading…</p>}
+        {loading && (
+          <SkeletonRegion label="Loading this house" testId="detail-loading">
+            {/* Photo and address, then the headline numbers, then the steps —
+                the same three bands the loaded page opens with, so nothing
+                jumps when it arrives. */}
+            <div className="flex gap-3">
+              <Skeleton className="w-16 h-16 rounded-lg shrink-0" />
+              <div className="min-w-0 flex-1 grid gap-2">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-2.5 w-1/2" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <Skeleton className="h-14 rounded-[var(--radius-lg)]" />
+              <Skeleton className="h-14 rounded-[var(--radius-lg)]" />
+            </div>
+
+            <div className="flex gap-1.5 mt-4 overflow-hidden">
+              <Skeleton className="h-7 w-16 rounded-[var(--radius-pill)] shrink-0" />
+              <Skeleton className="h-7 w-16 rounded-[var(--radius-pill)] shrink-0" />
+              <Skeleton className="h-7 w-16 rounded-[var(--radius-pill)] shrink-0" />
+              <Skeleton className="h-7 w-16 rounded-[var(--radius-pill)] shrink-0" />
+            </div>
+
+            <Skeleton className="h-40 w-full rounded-[var(--radius-lg)] mt-4" />
+          </SkeletonRegion>
+        )}
 
         {detail && (
           <>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <h1 className="text-[19px] font-semibold text-(--color-text-primary) wrap-break-word">
-                  {property?.address_line1 ?? "Address unknown"}
-                </h1>
-                <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
-                  {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
-                </p>
+            <div className="flex items-start gap-3">
+              <div className="min-w-0 flex gap-3 flex-1">
+                {property?.photo_url && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={property.photo_url}
+                    alt=""
+                    data-testid="property-photo"
+                    className="w-16 h-16 rounded-lg object-cover shrink-0 border border-(--color-border-subtle)"
+                  />
+                )}
+                <div className="min-w-0">
+                  <h1 className="text-[19px] font-semibold text-(--color-text-primary) wrap-break-word">
+                    {property?.address_line1 ?? "Address unknown"}
+                  </h1>
+                  <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
+                    {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
+                  </p>
+                  {/* The numbers and the two verdicts arrive on the screen
+                      read, one round trip after the address. Holding their
+                      space stops the header growing under your thumb. */}
+                  {!screenLoaded && (
+                    <>
+                      <Skeleton className="h-3 w-48 mt-1.5" />
+                      <Skeleton className="h-4 w-32 mt-2 rounded" />
+                    </>
+                  )}
+
+                  {headline && (
+                    <p className="text-[12px] font-(--font-mono) mt-1">
+                      <span className="text-(--color-text-secondary)">
+                        {dollars(headline.price, 0)}
+                      </span>
+                      {headline.walkAway !== null && (
+                        <>
+                          <span className="text-(--color-text-tertiary)"> · </span>
+                          <span className="text-(--color-accent)">
+                            {dollars(headline.walkAway, 0)}
+                          </span>
+                          <span className="text-(--color-text-tertiary)"> walk-away</span>
+                        </>
+                      )}
+                      {headline.trueProfit !== null && (
+                        <>
+                          <span className="text-(--color-text-tertiary)"> · </span>
+                          <span
+                            className={
+                              headline.trueProfit < 0
+                                ? "text-(--color-danger)"
+                                : "text-(--color-text-primary)"
+                            }
+                          >
+                            {dollars(headline.trueProfit, 0)}
+                          </span>
+                          <span className="text-(--color-text-tertiary)"> profit</span>
+                        </>
+                      )}
+                    </p>
+                  )}
+                  {headline && (
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      <span
+                        data-testid="header-verdict-afford"
+                        className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-(--color-base) text-(--color-text-secondary)"
+                      >
+                        {headline.affordability}
+                      </span>
+                      <span
+                        data-testid="header-verdict-deal"
+                        className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-(--color-base) text-(--color-text-secondary)"
+                      >
+                        {headline.deal}
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
 
+            </div>
+
+            {/* Their own row. Sharing one with the address made the title wrap
+                three characters wide on a phone. */}
+            <div className="flex items-center gap-2 mt-2.5">
               {property && (
                 <button
                   type="button"
@@ -396,9 +577,55 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               />
             )}
 
-            {/* The five tabs. Present even when empty, so the page does not
-                change shape as later phases fill them in. */}
-            <div className="flex gap-1 border-b border-(--color-border-default) mt-5 mb-4 overflow-x-auto">
+            {/* The flow, as four steps with a single next action. The tabs
+                below can be used in any order; this says which one matters. */}
+            <div
+              data-testid="step-bar"
+              className="flex items-center gap-1.5 mt-4 overflow-x-auto pb-1"
+            >
+              {STEPS.map((step) => {
+                // The pills stay tappable while the reads are in flight; only
+                // the ✓ waits, so no step claims to be done before it is known.
+                const done = stepsReady && stepDone[step.id];
+                return (
+                  <button
+                    key={step.id}
+                    type="button"
+                    onClick={() => setTab(step.tab)}
+                    data-testid={`step-${step.id}`}
+                    data-done={done ? "yes" : "no"}
+                    className={`shrink-0 h-7 px-2.5 rounded-[var(--radius-pill)] text-[11px] border transition-colors ${
+                      tab === step.tab
+                        ? "border-(--color-accent) text-(--color-accent)"
+                        : done
+                          ? "border-(--color-border-default) text-(--color-text-secondary)"
+                          : "border-(--color-border-default) text-(--color-text-tertiary)"
+                    }`}
+                  >
+                    {done ? "✓ " : ""}
+                    {step.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* The space is held while the step reads land, so the button does
+                not shove the tabs down when it arrives. */}
+            {!stepsReady && <Skeleton className="w-full h-10 mt-2 rounded-[var(--radius-pill)]" />}
+
+            {stepsReady && nextStep && (
+              <button
+                type="button"
+                onClick={() => setTab(nextStep.tab)}
+                data-testid="next-step"
+                className="w-full h-10 mt-2 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[13px] font-semibold"
+              >
+                Next: {nextStep.label}
+              </button>
+            )}
+
+            {/* The tabs, in the same order as the steps. */}
+            <div className="flex gap-1 border-b border-(--color-border-default) mt-4 mb-4 overflow-x-auto">
               {TABS.map((t) => (
                 <button
                   key={t}
@@ -471,8 +698,28 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   </button>
                 )}
 
-                {/* What the deal makes, worked back from the analysis above. */}
-                {property && primaryInputsForOffer && (
+              </div>
+            )}
+
+            {/* The deal is its own step: what the scenarios above actually
+                make, and what to offer. The profit card leads, because the
+                offer is argued from it. */}
+            {tab === "Deal" && property && (
+              <div data-testid="panel-deal">
+                <DealPanel
+                  key={dealKey}
+                  propertyId={property.id}
+                  ctxParams={ctxParams ?? ""}
+                  state={property.state}
+                  onPrimaryChanged={() => void loadAnalyses()}
+                  onRerunAtEstimate={(rehabBudget) => {
+                    setRerunBudget(rehabBudget);
+                    openNumbers("new");
+                    setTab("Numbers");
+                  }}
+                />
+
+                {primaryInputsForOffer && (
                   <div className="mt-4">
                     <OfferPanel
                       propertyId={property.id}
@@ -486,24 +733,10 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     />
                   </div>
                 )}
-
-                {property && (
-                  <DealPanel
-                    key={dealKey}
-                    propertyId={property.id}
-                    ctxParams={ctxParams ?? ""}
-                    state={property.state}
-                    onPrimaryChanged={() => void loadAnalyses()}
-                    onRerunAtEstimate={(rehabBudget) => {
-                      setRerunBudget(rehabBudget);
-                      openNumbers("new");
-                    }}
-                  />
-                )}
               </div>
             )}
 
-            {tab === "Comps" && property && (
+            {tab === "ARV" && property && (
               <CompsPanel propertyId={property.id} ctx={ctx} ctxParams={ctxParams} />
             )}
 
@@ -530,7 +763,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               />
             )}
 
-            {tab === "Overview" && (
+            {tab === "Details" && (
               <div data-testid="panel-overview">
             {/* Contacts */}
             <h2 className="text-[13px] font-semibold text-(--color-text-primary) mt-6 mb-2">Contacts</h2>
@@ -547,7 +780,30 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               </div>
             )}
 
-            {tab === "Activity" && (
+            {/* A house added from Properties is not on the pipeline until it
+                is put there, and tasks and activities hang off a pipeline
+                entry. Saying so beats a form that posts and fails. */}
+            {tab === "Activity" && !detail.entry && (
+              <div data-testid="panel-activity-no-entry" className="mt-4">
+                <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+                  This house isn&rsquo;t on the pipeline yet. Add it to log calls,
+                  notes and follow-ups against it.
+                </p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  data-testid="add-to-pipeline"
+                  onClick={() =>
+                    void post("/api/crm/pipeline", { property_id: property?.id })
+                  }
+                  className="mt-3 h-9 px-3 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[12px] font-semibold disabled:opacity-40"
+                >
+                  Add to pipeline
+                </button>
+              </div>
+            )}
+
+            {tab === "Activity" && detail.entry && (
               <div data-testid="panel-activity">
             {/* Tasks */}
             <div className="flex items-center justify-between mt-6 mb-2">
@@ -558,7 +814,10 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 disabled={busy}
                 onClick={() =>
                   void post("/api/crm/tasks", {
-                    pipeline_entry_id: entryId,
+                    // The real entry, not the route param — arriving from
+                    // Properties that param is a property id, and every note
+                    // and task silently failed.
+                    pipeline_entry_id: detail.entry?.id,
                     title: "Follow up",
                     due_date: cadenceDueDate(7),
                   })
@@ -625,7 +884,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 disabled={busy || noteBody.trim() === ""}
                 onClick={async () => {
                   const ok = await post("/api/crm/activities", {
-                    pipeline_entry_id: entryId,
+                    pipeline_entry_id: detail.entry?.id,
                     type: noteType,
                     body: noteBody.trim(),
                   });

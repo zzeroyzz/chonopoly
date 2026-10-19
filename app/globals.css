@@ -155,6 +155,15 @@ html, body {
   border-radius: var(--radius-sm);
 }
 
+/* A shimmer on one block was easy to overlook; a screen of them is not.
+   Reduced motion keeps the placeholder and drops the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+    background: var(--color-elevated);
+  }
+}
+
 /* ── Nudge prompt animation ───────────────────────────────────────────────── */
 
 @keyframes slide-down {
