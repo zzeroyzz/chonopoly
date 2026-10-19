@@ -3,6 +3,7 @@ import { type RequestContext } from "../context";
 import { type Database, type Json } from "../supabase/database.types";
 import { getProperty } from "../property/propertyService";
 import { emptyEstimate, REHAB_SYSTEMS, type RehabEstimate, type RehabLine } from "./types";
+import { logActivity } from "../crm/detailService";
 
 /**
  * The rehab estimate, stored as an analysis of kind `rehab`.
@@ -111,6 +112,7 @@ export async function saveRehabEstimate(
   if (!property) throw new Error("Property not found");
 
   const existing = await getRehabEstimate(propertyId, ctx);
+  const notesBefore = existing?.estimate.visitNotes.trim() ?? "";
 
   const payload = {
     owner_type: ctx.type,
@@ -130,6 +132,36 @@ export async function saveRehabEstimate(
 
   const { data, error } = await query.select("id, inputs, version, updated_at").single();
   if (error) throw new Error(error.message);
+
+  // The walkthrough belongs in the house's history, not only on the estimate.
+  //
+  // Mirrored on save rather than on change — one activity per save, and only
+  // when the notes actually moved. Logging every keystroke would bury the call
+  // log under a hundred rows of someone typing "roof is".
+  const notesNow = estimate.visitNotes.trim();
+  if (estimate.source === "visit" && notesNow !== "" && notesNow !== notesBefore) {
+    const { data: entry } = await db()
+      .from("pipeline_entries")
+      .select("id")
+      .eq("property_id", propertyId)
+      .eq("owner_type", ctx.type)
+      .eq("owner_id", ctx.id)
+      .maybeSingle();
+
+    if (entry) {
+      try {
+        await logActivity(
+          { pipeline_entry_id: entry.id, type: "note", direction: "na", body: notesNow },
+          ctx,
+          userId
+        );
+      } catch (e) {
+        // The estimate is saved either way. A missing activity costs a line in
+        // the history, not the walkthrough.
+        console.error("Failed to mirror the visit notes:", e instanceof Error ? e.message : e);
+      }
+    }
+  }
 
   // Recording the estimate as coming from a visit IS the record that the visit
   // happened — there is no separate "I went" button to forget to press, and
