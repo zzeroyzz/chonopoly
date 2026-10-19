@@ -103,6 +103,21 @@ export interface MortgageInputs {
   /** Hard money */
   points: number;
   arv: number | null;
+  /**
+   * How the loan is sized and what the carry costs.
+   *
+   * These live on the inputs rather than on the deal analysis because the loan
+   * is picked once, in Run the numbers, and everything downstream reads it. A
+   * house has one loan; it should not be possible to model it one way on the
+   * Numbers tab and another way in the list.
+   */
+  hardMoneyPurchaseLtvPct: number;
+  hardMoneyRehabFundedPct: number;
+  hardMoneyMaxLoanToArvPct: number;
+  /** Dutch charges the whole loan from day one; Non-Dutch only what is drawn. */
+  hardMoneyInterestStyle: "dutch" | "non_dutch";
+  /** Rehab advances. Empty means "spread evenly", which is what gets prefilled. */
+  hardMoneyDraws: { month: number; amount: number }[];
 
   /** DSCR */
   grossMonthlyRent: number;

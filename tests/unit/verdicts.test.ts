@@ -7,7 +7,7 @@ import {
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { calculateDti } from "@/lib/mortgage/dti";
 import { calculate203kCap } from "@/lib/mortgage/renovationCap";
-import { calculateFlip, genericFinancing } from "@/lib/mortgage/flip";
+import { calculateDeal, line, type DealParams } from "@/lib/mortgage/flip";
 import { defaultInputs, VERDICT_THRESHOLDS } from "@/lib/mortgage/defaults";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 
@@ -206,20 +206,46 @@ describe("affordability — tight", () => {
 });
 
 describe("deal", () => {
+  /**
+   * A cash purchase with the usual seller costs, so the verdict is exercised
+   * through the figure it actually judges: true profit, not walk-away.
+   *
+   * Walk-away flatters a deal where a lot of cash went in, which is precisely
+   * why the verdict does not read it.
+   */
+  function dealResult(opts: {
+    arv: number;
+    price: number;
+    rehab: number;
+    sellerPct?: number;
+    carry?: number;
+  }) {
+    const { arv, price, rehab, sellerPct = 8, carry = 3_750 } = opts;
+    const params: DealParams = {
+      arv: arv > 0 ? line(arv, "valuation") : null,
+      loanPayoff: line(0, "financing_analysis"),
+      sellerClosingCosts: line(arv * (sellerPct / 100), "defaults"),
+      dpaRepayment: line(0, "financing_analysis"),
+      capitalGains: line(0, "manual"),
+      otherFees: [],
+      // All cash: the price and the rehab are both out of pocket.
+      downPayment: line(price, "financing_analysis"),
+      buyerClosingCosts: line(0, "financing_analysis"),
+      points: line(0, "financing_analysis"),
+      rehabPaidInCash: line(rehab, "rehab_budget"),
+      loanShortfall: line(0, "computed"),
+      holdMonths: 5,
+      carry: line(carry, "financing_analysis"),
+      monthlyExtras: line(0, "manual"),
+      oneMoreMonthCarry: 0,
+      purchasePrice: price,
+      rehabTotal: rehab,
+    };
+    return calculateDeal(params);
+  }
+
   function deal(arv: number, price: number, rehab: number, provisional = false) {
-    return assessDeal({
-      flip: calculateFlip({
-        arv,
-        purchasePrice: price,
-        rehabTotal: rehab,
-        buyingPct: 1,
-        sellingPct: 8,
-        holdingMonthly: 750,
-        holdingMonths: 5,
-        financing: genericFinancing(price * 0.8, 12, 2, 6),
-      }),
-      provisionalArv: provisional,
-    });
+    return assessDeal({ deal: dealResult({ arv, price, rehab }), provisionalArv: provisional });
   }
 
   it("works on a healthy margin and a real payday", () => {
@@ -227,7 +253,7 @@ describe("deal", () => {
 
     expect(d.verdict).toBe("works");
     expect(d.hasArv).toBe(true);
-    expect(d.summary).toMatch(/profit at \d+% margin/);
+    expect(d.summary).toMatch(/true profit at \d+% margin/);
   });
 
   it("does not work when the deal loses money, and says so plainly", () => {
@@ -244,59 +270,55 @@ describe("deal", () => {
     expect(d.summary).toBe("No ARV yet");
   });
 
-  it("requires both the margin and the dollar floor", () => {
-    // 15% of a small ARV is a percentage that looks fine attached to a payday
-    // that is not worth a six-month rehab.
-    const smallButPercentageHealthy = assessDeal({
-      flip: {
-        ...calculateFlip({
-          arv: 120_000,
-          purchasePrice: 60_000,
-          rehabTotal: 20_000,
-          buyingPct: 0,
-          sellingPct: 0,
-          holdingMonthly: 0,
-          holdingMonths: 0,
-          financing: genericFinancing(0, 0, 0, 0),
-        }),
-      },
-      provisionalArv: false,
+  it("is thin when the margin clears but the profit is under target", () => {
+    // 20% margin on a $100,000 ARV is $20,000 — a percentage that looks fine
+    // attached to a payday not worth a six-month rehab. Both tests have to
+    // clear, and this is the one that catches it.
+    const result = dealResult({
+      arv: 100_000,
+      price: 60_000,
+      rehab: 20_000,
+      sellerPct: 0,
+      carry: 0,
     });
+    const d = assessDeal({ deal: result, provisionalArv: false });
 
-    // Margin is 33% but profit is only $40,000 — over the works floor, so this
-    // one works. The guard is tested directly below.
-    expect(smallButPercentageHealthy.verdict).toBe("works");
+    expect(result.marginPct).toBeGreaterThanOrEqual(VERDICT_THRESHOLDS.dealMarginWorksPct);
+    expect(result.trueProfit).toBeLessThan(VERDICT_THRESHOLDS.dealMinProfitWorks);
+    expect(d.verdict).toBe("thin");
+    expect(d.summary).toMatch(/true profit is under the/);
   });
 
-  it("is thin when the margin clears but the profit is under target", () => {
-    const flip = calculateFlip({
-      arv: 100_000,
-      purchasePrice: 60_000,
-      rehabTotal: 20_000,
-      buyingPct: 0,
-      sellingPct: 0,
-      holdingMonthly: 0,
-      holdingMonths: 0,
-      financing: genericFinancing(0, 0, 0, 0),
-    });
-    // 20% margin, $20,000 profit — between the thin and works dollar floors.
-    const d = assessDeal({ flip, provisionalArv: false });
+  it("is thin when the dollars clear but the margin is under target", () => {
+    // The mirror case: $32,250 is a real payday, but 10.8% of a $300,000 ARV
+    // is too little room for a rehab to go wrong in.
+    const result = dealResult({ arv: 300_000, price: 200_000, rehab: 40_000 });
+    const d = assessDeal({ deal: result, provisionalArv: false });
 
-    expect(flip.marginPct).toBeGreaterThanOrEqual(VERDICT_THRESHOLDS.dealMarginWorksPct);
+    expect(result.trueProfit).toBeGreaterThanOrEqual(VERDICT_THRESHOLDS.dealMinProfitThin);
+    expect(result.marginPct).toBeLessThan(VERDICT_THRESHOLDS.dealMarginWorksPct);
     expect(d.verdict).toBe("thin");
-    expect(d.summary).toMatch(/profit is under the/);
+    expect(d.summary).toMatch(/margin is under the/);
+  });
+
+  it("judges true profit, not walk-away", () => {
+    // Walk-away is large and positive while the deal itself loses money. A
+    // verdict reading the headline figure would call this one a winner.
+    const result = dealResult({ arv: 200_000, price: 190_000, rehab: 40_000 });
+
+    expect(result.walkAwayCash).toBeGreaterThan(0);
+    expect(result.trueProfit).toBeLessThan(0);
+    expect(assessDeal({ deal: result, provisionalArv: false }).verdict).toBe("does_not_work");
   });
 
   it("reports the 70% rule as a note, never as the verdict", () => {
-    // The exact case that makes the 70% rule a figure here rather than a gate:
-    // $5,000 over max offer, 15.1% margin, $75,720 profit. A gate would have
-    // rejected a deal that plainly works.
+    // $5,000 over max offer on a deal that plainly works. A gate would have
+    // rejected it; a note says so and lets the margin decide.
     const d = deal(500_000, 345_000, 10_000);
 
     expect(d.verdict).toBe("works");
     expect(d.reasons.some((r) => /70% rule/.test(r.text))).toBe(true);
-    // And the margin, not the rule, is what the summary leads with.
-    expect(d.summary).toMatch(/profit at \d+% margin/);
+    expect(d.summary).toMatch(/true profit at \d+% margin/);
   });
 
   it("carries the provisional flag through", () => {

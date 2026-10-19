@@ -122,6 +122,29 @@ export function PropertiesPage() {
           </div>
         )}
 
+        {/* One banner, not a chip on every card. Fifteen houses all telling
+            you to set your income is fifteen copies of one problem, and it
+            buries the verdicts that differ. Hard money houses do not need
+            income at all, so this only appears when something actually
+            depends on it. */}
+        {rows.length > 0 && rows.some((r) => r.affordability.needsProfile) && (
+          <Link
+            href="/settings/profile"
+            data-testid="needs-income-banner"
+            className="flex items-start gap-2 rounded-lg border border-(--color-warning) bg-(--color-warning)/10 px-3 py-2.5 mb-2.5"
+          >
+            <AlertTriangle size={14} className="shrink-0 mt-0.5 text-(--color-warning)" />
+            <span className="min-w-0">
+              <span className="block text-[12px] text-(--color-text-primary)">
+                No income on file, so the ratios cannot be judged.
+              </span>
+              <span className="block text-[11px] text-(--color-text-secondary)">
+                Add it in Settings → Profile. Hard money houses do not need it.
+              </span>
+            </span>
+          </Link>
+        )}
+
         {rows.length > 0 && (
           <ul data-testid="screen-table" className="flex flex-col gap-2.5">
             {rows.map((row) => (
@@ -199,9 +222,7 @@ function ScreenCard({ row }: { row: ScreenRow }) {
             AFFORDABILITY_STYLE[row.affordability.verdict]
           }`}
         >
-          {row.affordability.needsProfile
-            ? "Set your income"
-            : AFFORDABILITY_LABEL[row.affordability.verdict]}
+          {AFFORDABILITY_LABEL[row.affordability.verdict]}
         </span>
 
         <span
@@ -234,16 +255,49 @@ function ScreenCard({ row }: { row: ScreenRow }) {
         {row.deal.hasArv ? ` · ${row.deal.summary}` : ""}
       </p>
 
+      {/* Walk-away is what lands in the account; true profit is what the deal
+          made. Both, because either alone misleads. */}
+      <p
+        data-testid={`deal-headline-${row.propertyId}`}
+        className="text-[12px] mt-1.5 font-(--font-mono)"
+      >
+        {row.walkAwayCash === null || row.trueProfit === null ? (
+          <span className="text-(--color-text-tertiary)">
+            Walk-away — · True profit — <span className="font-sans">(no ARV yet)</span>
+          </span>
+        ) : (
+          <>
+            <span className="text-(--color-accent)">Walk-away {dollars(row.walkAwayCash)}</span>
+            <span className="text-(--color-text-tertiary)"> · </span>
+            <span
+              className={
+                row.trueProfit < 0 ? "text-(--color-danger)" : "text-(--color-text-primary)"
+              }
+            >
+              True profit {dollars(row.trueProfit)}
+            </span>
+          </>
+        )}
+      </p>
+
       <dl className="grid grid-cols-3 gap-x-3 gap-y-1.5 mt-2.5 text-[11px]">
         <Figure label="Price" value={dollars(row.price)} />
         <Figure label="PITI" value={`${dollars(row.piti)}/mo`} />
         <Figure
           label="Back DTI"
-          value={row.backDti === null ? "n/a" : `${row.backDti.toFixed(0)}%`}
+          value={row.backDti === null ? "—" : `${row.backDti.toFixed(0)}%`}
         />
         <Figure label="Cash to close" value={dollars(row.cashToClose)} />
         <Figure label="ARV" value={row.arv === null ? "—" : dollars(row.arv)} />
         <Figure label="Max offer" value={row.arv === null ? "—" : dollars(row.maxOffer)} />
+        <Figure
+          label="Walk-away"
+          value={row.walkAwayCash === null ? "—" : dollars(row.walkAwayCash)}
+        />
+        <Figure
+          label="True profit"
+          value={row.trueProfit === null ? "—" : dollars(row.trueProfit)}
+        />
       </dl>
 
       {/* Progress: Numbers · Comps · Estimate · Visit, all derived. */}

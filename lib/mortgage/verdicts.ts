@@ -1,6 +1,6 @@
 import { type MortgageInputs, type MortgageResult, type DtiResult } from "./types";
 import { type RenovationCapResult } from "./renovationCap";
-import { type FlipResult } from "./flip";
+import { type DealResult } from "./flip";
 import { VERDICT_THRESHOLDS } from "./defaults";
 
 /**
@@ -214,7 +214,7 @@ export interface DealAssessment {
 }
 
 export interface DealInput {
-  flip: FlipResult;
+  deal: DealResult;
   /** True until the comps have been reviewed on the Comps tab. */
   provisionalArv: boolean;
 }
@@ -231,10 +231,10 @@ export interface DealInput {
  * explain in the space a phone has. Max offer is reported as a figure instead.
  */
 export function assessDeal(input: DealInput): DealAssessment {
-  const { flip, provisionalArv } = input;
+  const { deal, provisionalArv } = input;
   const t = VERDICT_THRESHOLDS;
 
-  if (flip.arv <= 0 || flip.marginPct === null) {
+  if (deal.arv === null || deal.arv <= 0 || deal.trueProfit === null || deal.marginPct === null) {
     return {
       verdict: "does_not_work",
       reasons: [{ kind: "blocker", text: "No ARV yet — add comps to judge the deal" }],
@@ -244,8 +244,12 @@ export function assessDeal(input: DealInput): DealAssessment {
     };
   }
 
-  const margin = flip.marginPct;
-  const profit = flip.profit;
+  // True profit, not walk-away. Walk-away is the headline because it is the
+  // money you leave with, but a deal where you brought $40,000 and carried it
+  // a year can hand back a healthy cheque and still have lost you money. The
+  // verdict judges what the deal made.
+  const margin = deal.marginPct;
+  const profit = deal.trueProfit;
   const reasons: VerdictReason[] = [];
 
   let verdict: DealVerdict;
@@ -254,7 +258,7 @@ export function assessDeal(input: DealInput): DealAssessment {
     verdict = "works";
     reasons.push({
       kind: "caution",
-      text: `${money(profit)} profit at ${margin.toFixed(0)}% margin`,
+      text: `${money(profit)} true profit at ${margin.toFixed(0)}% margin`,
     });
   } else if (margin >= t.dealMarginThinPct && profit >= t.dealMinProfitThin) {
     verdict = "thin";
@@ -265,7 +269,7 @@ export function assessDeal(input: DealInput): DealAssessment {
       text:
         margin < t.dealMarginWorksPct
           ? `${margin.toFixed(0)}% margin is under the ${t.dealMarginWorksPct}% target`
-          : `${money(profit)} profit is under the ${money(t.dealMinProfitWorks)} target`,
+          : `${money(profit)} true profit is under the ${money(t.dealMinProfitWorks)} target`,
     });
   } else {
     verdict = "does_not_work";
@@ -276,14 +280,14 @@ export function assessDeal(input: DealInput): DealAssessment {
           ? `Loses ${money(Math.abs(profit))} at this price`
           : margin < t.dealMarginThinPct
             ? `${margin.toFixed(0)}% margin is under the ${t.dealMarginThinPct}% floor`
-            : `${money(profit)} profit is under the ${money(t.dealMinProfitThin)} floor`,
+            : `${money(profit)} true profit is under the ${money(t.dealMinProfitThin)} floor`,
     });
   }
 
-  if (flip.overMaxOfferBy > 0) {
+  if (deal.overMaxOfferBy !== null && deal.overMaxOfferBy > 0 && deal.maxOffer !== null) {
     reasons.push({
       kind: "caution",
-      text: `${money(flip.overMaxOfferBy)} over the 70% rule's ${money(flip.maxOffer)}`,
+      text: `${money(deal.overMaxOfferBy)} over the 70% rule's ${money(deal.maxOffer)}`,
     });
   }
 

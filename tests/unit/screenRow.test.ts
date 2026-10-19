@@ -122,12 +122,14 @@ describe("the row's figures", () => {
 });
 
 describe("the ARV and the deal", () => {
-  it("has no ARV and no profit with no comps", () => {
+  it("has no ARV and no deal figures with no comps", () => {
     const row = buildScreenRow(house(), { profile: profile(), now: NOW });
 
-    // Null, not zero — zero would read as a worthless house.
+    // Null, not zero — zero would read as a worthless house rather than one
+    // nobody has priced.
     expect(row.arv).toBeNull();
-    expect(row.profit).toBeNull();
+    expect(row.walkAwayCash).toBeNull();
+    expect(row.trueProfit).toBeNull();
     expect(row.marginPct).toBeNull();
     expect(row.deal.hasArv).toBe(false);
   });
@@ -239,12 +241,12 @@ describe("sortScreenRows", () => {
   function rowWith(
     deal: "works" | "thin" | "does_not_work",
     affordability: "qualifies" | "tight" | "does_not_qualify",
-    profit: number | null
+    trueProfit: number | null
   ): ScreenRow {
     return {
       deal: { verdict: deal },
       affordability: { verdict: affordability },
-      profit,
+      trueProfit,
     } as unknown as ScreenRow;
   }
 
@@ -273,22 +275,22 @@ describe("sortScreenRows", () => {
       rowWith("works", "qualifies", 80_000),
     ]);
 
-    expect(sorted[0].profit).toBe(80_000);
+    expect(sorted[0].trueProfit).toBe(80_000);
   });
 
-  it("puts rows with no profit figure last", () => {
+  it("puts rows with no true profit figure last", () => {
     const sorted = sortScreenRows([
       rowWith("works", "qualifies", null),
       rowWith("works", "qualifies", 10_000),
     ]);
 
-    expect(sorted[0].profit).toBe(10_000);
+    expect(sorted[0].trueProfit).toBe(10_000);
   });
 
   it("does not mutate the input", () => {
     const rows = [rowWith("thin", "qualifies", 1), rowWith("works", "qualifies", 2)];
-    const before = rows.map((r) => r.profit);
+    const before = rows.map((r) => r.trueProfit);
     sortScreenRows(rows);
-    expect(rows.map((r) => r.profit)).toEqual(before);
+    expect(rows.map((r) => r.trueProfit)).toEqual(before);
   });
 });

@@ -1,261 +1,295 @@
 import {
-  calculateFlip,
-  financingFromAnalysis,
-  genericFinancing,
-  type FlipFinancing,
+  calculateDeal,
+  line,
+  payoffAfterMonths,
+  type DealParams,
 } from "@/lib/mortgage/flip";
-import { calculateMortgage } from "@/lib/mortgage/calculate";
-import { defaultInputs, VERDICT_THRESHOLDS } from "@/lib/mortgage/defaults";
-import { type MortgageInputs } from "@/lib/mortgage/types";
+import {
+  sizeHardMoneyLoan,
+  hardMoneyInterest,
+  defaultDraws,
+  HARD_MONEY_DEFAULTS,
+  type HardMoneyTerms,
+} from "@/lib/mortgage/hardMoney";
+import { resolveRehab, splitRehabFunding } from "@/lib/rehab/resolveRehab";
+import { VERDICT_THRESHOLDS } from "@/lib/mortgage/defaults";
 
 /**
- * The FlipperForce worked example, and the two financing sources.
+ * The deal calculation, against the owner's three worked examples.
  *
- * https://flipperforce.com/how-to-flip-houses/chapter-4-how-to-analyze-house-flip-deals/calculating-profit
+ * Rewritten from the FlipperForce fixture, which tested `calculateFlip` and its
+ * single `profit = ARV − all-in cost`. That model is gone: it conflated the
+ * money that lands at closing with what the deal actually made, and a deal
+ * could look profitable while handing back less cash than went in.
+ *
+ * These figures are the ones checked by hand before the code was written.
  */
 
-describe("calculateFlip — the FlipperForce fixture", () => {
-  // ───────────────────────────────────────────────────────────────────────────
-  // FlipperForce's worked example: purchase $95,000 · ARV $210,000 · repairs
-  // $65,000 · buying 1% of purchase · holding $750 × 5 months · financing 12%
-  // on $140,000 for 6 months · selling 8% of the resale price.
-  //
-  // Their published headline is $20,900, but that figure does not follow from
-  // their own stated percentage. They say "8% in Selling Costs" and show
-  // $16,000 — which is 7.619% of $210,000, i.e. 8% of $200,000. Correct
-  // arithmetic on 8% of the actual resale value gives $16,800 and a profit of
-  // $20,100.
-  //
-  // This fixture uses the stated 8%, so every input here is the one the
-  // example names and every output follows from it. Do not "fix" these numbers
-  // to reach $20,900 — doing so would require the selling rate to be something
-  // other than the 8% being passed in.
-  // ───────────────────────────────────────────────────────────────────────────
-  const financing = genericFinancing(140_000, 12, 0, 6);
-
-  const base = {
-    arv: 210_000,
-    purchasePrice: 95_000,
-    rehabTotal: 65_000,
-    buyingPct: 1,
-    sellingPct: 8,
-    holdingMonthly: 750,
-    holdingMonths: 5,
-    financing,
+/** Everything zeroed, so each test states only the lines it cares about. */
+function deal(over: Partial<DealParams> = {}): DealParams {
+  return {
+    arv: line(0, "valuation"),
+    loanPayoff: line(0, "financing_analysis"),
+    sellerClosingCosts: line(0, "defaults"),
+    dpaRepayment: line(0, "financing_analysis"),
+    capitalGains: line(0, "manual"),
+    otherFees: [],
+    downPayment: line(0, "financing_analysis"),
+    buyerClosingCosts: line(0, "financing_analysis"),
+    points: line(0, "financing_analysis"),
+    rehabPaidInCash: line(0, "rehab_budget"),
+    loanShortfall: line(0, "computed"),
+    holdMonths: 12,
+    carry: line(0, "financing_analysis"),
+    monthlyExtras: line(0, "manual"),
+    oneMoreMonthCarry: 0,
+    purchasePrice: 0,
+    rehabTotal: 0,
+    ...over,
   };
+}
 
-  it("costs out every line of the example", () => {
-    const result = calculateFlip(base);
-
-    expect(result.buyingCosts).toBeCloseTo(950, 6);
-    expect(result.holdingCosts).toBeCloseTo(3_750, 6);
-    expect(result.financingCosts).toBeCloseTo(8_400, 6);
-    expect(result.sellingCosts).toBeCloseTo(16_800, 6);
-    expect(result.allInCost).toBeCloseTo(189_900, 6);
+describe("calculateDeal — the 203(k) worked example", () => {
+  // ARV $250,000 · payoff overridden to $177,722 · seller closing $15,000 ·
+  // DPA $10,000 · capital gains $12,000 → walk-away $35,278.
+  // Cash in $2,085 · holding $20,532 → true profit $12,661.
+  const base = deal({
+    arv: line(250_000, "valuation"),
+    loanPayoff: line(177_722, "financing_analysis", true),
+    sellerClosingCosts: line(15_000, "defaults", true),
+    dpaRepayment: line(10_000, "financing_analysis"),
+    capitalGains: line(12_000, "manual", true),
+    downPayment: line(2_085, "financing_analysis"),
+    carry: line(20_532, "financing_analysis"),
   });
 
-  it("produces a $20,100 profit", () => {
-    expect(calculateFlip(base).profit).toBeCloseTo(20_100, 6);
+  it("walks away with $35,278", () => {
+    expect(calculateDeal(base).walkAwayCash).toBeCloseTo(35_278, 6);
   });
 
-  it("derives margin, ROI and cash invested", () => {
-    const result = calculateFlip(base);
-
-    expect(result.marginPct).toBeCloseTo((20_100 / 210_000) * 100, 6);
-
-    // Cash invested excludes selling costs, which come out of the proceeds:
-    // 95,000 + 65,000 + 950 + 3,750 + 8,400 − 140,000
-    expect(result.cashInvested).toBeCloseTo(33_100, 6);
-    expect(result.roiPct).toBeCloseTo((20_100 / 33_100) * 100, 6);
+  it("makes $12,661 after the cash in and the carry", () => {
+    const r = calculateDeal(base);
+    expect(r.cashIn).toBeCloseTo(2_085, 6);
+    expect(r.holdingCost).toBeCloseTo(20_532, 6);
+    expect(r.trueProfit).toBeCloseTo(12_661, 6);
   });
 
-  it("reports the 70% rule as a figure", () => {
-    const result = calculateFlip(base);
-
-    // 210,000 × 70% − 65,000
-    expect(result.maxOffer).toBeCloseTo(82_000, 6);
-    // The $95,000 price is over it, and the deal still clears on margin —
-    // which is exactly why the 70% rule is a figure here and not a gate.
-    expect(result.overMaxOfferBy).toBeCloseTo(13_000, 6);
-    expect(result.profit).toBeGreaterThan(0);
+  it("separates what lands at closing from what the deal made", () => {
+    // The whole reason this replaced a single profit figure.
+    const r = calculateDeal(base);
+    expect(r.walkAwayCash).toBeGreaterThan(r.trueProfit!);
   });
 });
 
-describe("genericFinancing", () => {
-  it("is interest-only across the hold, plus points", () => {
-    const financing = genericFinancing(200_000, 12, 2, 6);
+describe("hard money — the worked example", () => {
+  // Purchase $200,000 · rehab $50,000 · ARV $325,000 · 15% · 2 points ·
+  // 85% LTV · 100% rehab funded · Non-Dutch · draws of $25,000 in months 3
+  // and 5 · 6 months · seller closing 6%.
+  const terms: HardMoneyTerms = { ...HARD_MONEY_DEFAULTS };
+  const loan = sizeHardMoneyLoan(200_000, 50_000, 325_000, terms);
+  const draws = [
+    { month: 3, amount: 25_000 },
+    { month: 5, amount: 25_000 },
+  ];
+  const schedule = hardMoneyInterest(loan, terms, 6, draws);
 
-    expect(financing.source).toBe("generic_estimate");
-    expect(financing.interest).toBeCloseTo(200_000 * 0.12 * (6 / 12), 6);
-    expect(financing.points).toBeCloseTo(4_000, 6);
-    expect(financing.total).toBeCloseTo(16_000, 6);
-    // No mortgage insurance on hard money.
-    expect(financing.upfrontMortgageInsurance).toBe(0);
-    expect(financing.monthlyMortgageInsurance).toBe(0);
-    expect(financing.analysisLabel).toBeNull();
+  it("sizes the loan at $220,000, under the ARV ceiling", () => {
+    expect(loan.total).toBeCloseTo(220_000, 6);
+    expect(loan.arvCeiling).toBeCloseTo(243_750, 6);
+    expect(loan.capped).toBe(false);
+    expect(loan.shortfall).toBeCloseTo(0, 6);
   });
 
-  it("charges nothing for a zero-month hold", () => {
-    expect(genericFinancing(200_000, 12, 0, 0).total).toBe(0);
+  it("puts $30,000 down and charges points on the funded loan", () => {
+    expect(loan.downPayment).toBeCloseTo(30_000, 6);
+    expect(loan.points).toBeCloseTo(4_400, 6);
+  });
+
+  it("charges Non-Dutch interest on the drawn balance only", () => {
+    // A draw in month N is outstanding for month N.
+    expect(schedule.rows.map((r) => Math.round(r.balance))).toEqual([
+      170_000, 170_000, 195_000, 195_000, 220_000, 220_000,
+    ]);
+    expect(schedule.total).toBeCloseTo(14_625, 6);
+  });
+
+  it("costs more Dutch, because undrawn money is charged too", () => {
+    const dutch = hardMoneyInterest(loan, { ...terms, interestStyle: "dutch" }, 6, draws);
+    expect(dutch.total).toBeCloseTo(16_500, 6);
+    expect(dutch.total).toBeGreaterThan(schedule.total);
+  });
+
+  it("walks away with $85,500 and makes $36,475", () => {
+    const funding = splitRehabFunding(50_000, "hardMoney", "none", loan.rehabFunded);
+    const r = calculateDeal(
+      deal({
+        arv: line(325_000, "valuation"),
+        loanPayoff: line(loan.total, "hard_money_terms"),
+        sellerClosingCosts: line(325_000 * 0.06, "defaults"),
+        downPayment: line(loan.downPayment, "hard_money_terms"),
+        points: line(loan.points, "hard_money_terms"),
+        rehabPaidInCash: line(funding.inCash, "rehab_budget"),
+        loanShortfall: line(loan.shortfall, "computed"),
+        holdMonths: 6,
+        carry: line(schedule.total, "hard_money_terms"),
+        oneMoreMonthCarry: schedule.oneMoreMonth,
+        purchasePrice: 200_000,
+        rehabTotal: 50_000,
+      })
+    );
+
+    expect(r.walkAwayCash).toBeCloseTo(85_500, 6);
+    expect(r.cashIn).toBeCloseTo(34_400, 6);
+    expect(r.holdingCost).toBeCloseTo(14_625, 6);
+    expect(r.trueProfit).toBeCloseTo(36_475, 6);
+  });
+
+  it("turns an ARV ceiling into cash the buyer has to bring", () => {
+    // A loan the ARV will not support is not a smaller loan — it is the same
+    // deal with more of your own money in it.
+    const capped = sizeHardMoneyLoan(300_000, 50_000, 300_000, terms);
+    expect(capped.capped).toBe(true);
+    expect(capped.arvCeiling).toBeCloseTo(225_000, 6);
+    expect(capped.total).toBeCloseTo(225_000, 6);
+    expect(capped.shortfall).toBeCloseTo(80_000, 6);
+    // The ceiling trims the draws, never the advance wired at closing.
+    expect(capped.purchaseAdvance).toBeCloseTo(225_000, 6);
+    expect(capped.rehabFunded).toBeCloseTo(0, 6);
+  });
+
+  it("spreads draws over the first half of the hold by default", () => {
+    const spread = defaultDraws(50_000, 6);
+    expect(spread).toHaveLength(3);
+    expect(spread.map((d) => d.month)).toEqual([1, 2, 3]);
+    expect(spread.reduce((sum, d) => sum + d.amount, 0)).toBeCloseTo(50_000, 6);
+  });
+
+  it("has nothing to draw when the lender funds no rehab", () => {
+    expect(defaultDraws(0, 6)).toEqual([]);
   });
 });
 
-describe("financingFromAnalysis", () => {
-  function fhaInputs(overrides: Partial<MortgageInputs> = {}): MortgageInputs {
-    return {
-      ...defaultInputs(new Date(2026, 0, 1)),
-      homeValue: 250_000,
-      downPayment: 250_000 * 0.035,
-      loanType: "fha",
-      interestRate: 6.5,
-      termYears: 30,
-      ...overrides,
-    };
-  }
+describe("where the rehab money comes from", () => {
+  it("finances the whole rehab on a renovation program", () => {
+    expect(splitRehabFunding(30_000, "fha", "fha203k", null)).toEqual({
+      inLoan: 30_000,
+      inCash: 0,
+    });
+  });
 
-  it("takes interest and mortgage insurance from the real schedule", () => {
-    const inputs = fhaInputs();
-    const result = calculateMortgage(inputs);
-    const financing = financingFromAnalysis(inputs, result, 6, "at asking");
+  it("leaves the whole rehab in cash without one", () => {
+    // The case people most often forget to budget for.
+    expect(splitRehabFunding(30_000, "fha", "none", null)).toEqual({
+      inLoan: 0,
+      inCash: 30_000,
+    });
+  });
 
-    expect(financing.source).toBe("financing_analysis");
-    expect(financing.analysisLabel).toBe("at asking");
+  it("splits it on hard money by what the lender actually funded", () => {
+    expect(splitRehabFunding(50_000, "hardMoney", "none", 40_000)).toEqual({
+      inLoan: 40_000,
+      inCash: 10_000,
+    });
+  });
+});
 
-    // Summed from the first six rows, not approximated from the opening balance.
-    const expectedInterest = result.schedule
-      .slice(0, 6)
-      .reduce((sum, row) => sum + row.interest, 0);
-    expect(financing.interest).toBeCloseTo(expectedInterest, 6);
+describe("resolveRehab", () => {
+  it("falls back to the budget and says so", () => {
+    const r = resolveRehab(null, 45_000);
+    expect(r.total).toBe(45_000);
+    expect(r.budgetOnly).toBe(true);
+    expect(r.label).toBe("Budget only");
+  });
 
-    // FHA: UFMIP is a real cost, and the generic estimate misses it entirely.
-    expect(financing.upfrontMortgageInsurance).toBeGreaterThan(0);
-    expect(financing.upfrontMortgageInsurance).toBeCloseTo(result.ufmip ?? 0, 6);
-    expect(financing.monthlyMortgageInsurance).toBeGreaterThan(0);
-
-    expect(financing.total).toBeCloseTo(
-      financing.interest +
-        financing.upfrontMortgageInsurance +
-        financing.monthlyMortgageInsurance +
-        financing.points,
-      6
+  it("prefers an estimate and names its source", () => {
+    expect(resolveRehab({ total: 52_000, source: "visit" }, 45_000)).toMatchObject({
+      total: 52_000,
+      source: "estimate_visit",
+      budgetOnly: false,
+    });
+    expect(resolveRehab({ total: 52_000, source: "photos" }, 45_000).source).toBe(
+      "estimate_photos"
     );
   });
-
-  it("costs materially more than the generic estimate on an FHA loan", () => {
-    // The reason the source has to be shown on the breakdown: the two differ by
-    // thousands, so a number whose origin is invisible is a number nobody can
-    // check.
-    const inputs = fhaInputs();
-    const result = calculateMortgage(inputs);
-
-    const fromAnalysis = financingFromAnalysis(inputs, result, 6, "at asking");
-    const generic = genericFinancing(result.loanAmount, inputs.interestRate, 0, 6);
-
-    expect(fromAnalysis.total).toBeGreaterThan(generic.total);
-    expect(fromAnalysis.total - generic.total).toBeGreaterThan(1_000);
-  });
-
-  it("charges nothing for a zero-month hold", () => {
-    const inputs = fhaInputs();
-    const result = calculateMortgage(inputs);
-    const financing = financingFromAnalysis(inputs, result, 0, "at asking");
-
-    expect(financing.interest).toBe(0);
-    expect(financing.monthlyMortgageInsurance).toBe(0);
-    // UFMIP is charged at closing regardless of how long the hold runs.
-    expect(financing.upfrontMortgageInsurance).toBeGreaterThan(0);
-  });
-
-  it("feeds calculateFlip and keeps its source visible on the result", () => {
-    const inputs = fhaInputs();
-    const result = calculateMortgage(inputs);
-    const financing = financingFromAnalysis(inputs, result, 6, "at asking");
-
-    const flip = calculateFlip({
-      arv: 400_000,
-      purchasePrice: 250_000,
-      rehabTotal: 40_000,
-      buyingPct: 1,
-      sellingPct: 8,
-      holdingMonthly: 750,
-      holdingMonths: 6,
-      financing,
-    });
-
-    expect(flip.financing.source).toBe("financing_analysis");
-    expect(flip.financing.analysisLabel).toBe("at asking");
-    expect(flip.financingCosts).toBeCloseTo(financing.total, 6);
-  });
 });
 
-describe("calculateFlip — edges", () => {
-  const noFinancing: FlipFinancing = genericFinancing(0, 0, 0, 0);
-
-  it("returns a null margin with no ARV rather than dividing by zero", () => {
-    const result = calculateFlip({
-      arv: 0,
-      purchasePrice: 95_000,
-      rehabTotal: 65_000,
-      buyingPct: 1,
-      sellingPct: 8,
-      holdingMonthly: 750,
-      holdingMonths: 5,
-      financing: noFinancing,
-    });
-
-    expect(result.marginPct).toBeNull();
-    expect(result.maxOffer).toBe(0);
-    expect(result.profit).toBeLessThan(0);
+describe("calculateDeal — edges", () => {
+  it("returns null rather than $0 with no ARV", () => {
+    // $0 reads as a deal that makes nothing; null reads as one nobody has
+    // priced yet, and those are different answers.
+    const r = calculateDeal(deal({ arv: null, downPayment: line(10_000, "financing_analysis") }));
+    expect(r.walkAwayCash).toBeNull();
+    expect(r.trueProfit).toBeNull();
+    expect(r.marginPct).toBeNull();
+    expect(r.maxOffer).toBeNull();
+    expect(r.missingArv).toBe(true);
   });
 
-  it("reports a negative profit rather than clamping it to zero", () => {
-    // A deal that loses money has to be able to say so.
-    const result = calculateFlip({
-      arv: 150_000,
-      purchasePrice: 140_000,
-      rehabTotal: 40_000,
-      buyingPct: 1,
-      sellingPct: 8,
-      holdingMonthly: 750,
-      holdingMonths: 6,
-      financing: genericFinancing(100_000, 12, 2, 6),
-    });
-
-    expect(result.profit).toBeLessThan(0);
-    expect(result.marginPct).toBeLessThan(0);
+  it("reports a loss rather than clamping it", () => {
+    const r = calculateDeal(
+      deal({
+        arv: line(200_000, "valuation"),
+        loanPayoff: line(190_000, "financing_analysis"),
+        downPayment: line(40_000, "financing_analysis"),
+      })
+    );
+    expect(r.walkAwayCash).toBeCloseTo(10_000, 6);
+    expect(r.trueProfit).toBeCloseTo(-30_000, 6);
   });
 
-  it("never offers a negative max offer", () => {
-    const result = calculateFlip({
-      arv: 100_000,
-      purchasePrice: 90_000,
-      rehabTotal: 95_000,
-      buyingPct: 1,
-      sellingPct: 8,
-      holdingMonthly: 0,
-      holdingMonths: 0,
-      financing: noFinancing,
-    });
+  it("sums named fees and counts them against the walk-away", () => {
+    const r = calculateDeal(
+      deal({
+        arv: line(100_000, "valuation"),
+        otherFees: [
+          { name: "Survey", amount: 900 },
+          { name: "Lien release", amount: 350 },
+        ],
+      })
+    );
+    expect(r.otherFeesTotal).toBeCloseTo(1_250, 6);
+    expect(r.walkAwayCash).toBeCloseTo(98_750, 6);
+  });
 
-    // 100,000 × 70% − 95,000 is negative; a negative offer is not a thing.
-    expect(result.maxOffer).toBe(0);
+  it("charges the monthly extras across the hold", () => {
+    const r = calculateDeal(
+      deal({
+        arv: line(100_000, "valuation"),
+        holdMonths: 6,
+        carry: line(6_000, "financing_analysis"),
+        monthlyExtras: line(250, "manual", true),
+        oneMoreMonthCarry: 1_000,
+      })
+    );
+    expect(r.holdingCost).toBeCloseTo(7_500, 6);
+    // One more month is the carry plus the extras, which is the figure that
+    // changes minds about a slipping rehab.
+    expect(r.oneMoreMonth).toBeCloseTo(1_250, 6);
   });
 
   it("reads the 70% factor from the shared thresholds", () => {
-    const result = calculateFlip({
-      arv: 200_000,
-      purchasePrice: 100_000,
-      rehabTotal: 0,
-      buyingPct: 0,
-      sellingPct: 0,
-      holdingMonthly: 0,
-      holdingMonths: 0,
-      financing: noFinancing,
-    });
-
-    expect(result.maxOffer).toBeCloseTo(
-      200_000 * (VERDICT_THRESHOLDS.maxOfferArvPct / 100),
-      6
+    const r = calculateDeal(
+      deal({ arv: line(300_000, "valuation"), rehabTotal: 50_000, purchasePrice: 220_000 })
     );
+    const expected = 300_000 * (VERDICT_THRESHOLDS.maxOfferArvPct / 100) - 50_000;
+    expect(r.maxOffer).toBeCloseTo(expected, 6);
+    expect(r.overMaxOfferBy).toBeCloseTo(Math.max(0, 220_000 - expected), 6);
+  });
+
+  it("never offers a negative max offer", () => {
+    const r = calculateDeal(deal({ arv: line(50_000, "valuation"), rehabTotal: 90_000 }));
+    expect(r.maxOffer).toBe(0);
+  });
+});
+
+describe("payoffAfterMonths", () => {
+  it("subtracts the principal actually paid over the hold", () => {
+    const schedule = Array.from({ length: 12 }, () => ({ principal: 500 }));
+    expect(payoffAfterMonths(schedule, 200_000, 6)).toBeCloseTo(197_000, 6);
+  });
+
+  it("never returns a negative balance", () => {
+    const schedule = Array.from({ length: 12 }, () => ({ principal: 5_000 }));
+    expect(payoffAfterMonths(schedule, 10_000, 12)).toBe(0);
   });
 });

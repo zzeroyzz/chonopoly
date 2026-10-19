@@ -3,12 +3,8 @@ import { resolveInputs, type HouseInputs } from "../mortgage/resolveInputs";
 import { calculateMortgage } from "../mortgage/calculate";
 import { calculateDti } from "../mortgage/dti";
 import { calculate203kCap } from "../mortgage/renovationCap";
-import {
-  calculateFlip,
-  financingFromAnalysis,
-  genericFinancing,
-  type FlipFinancing,
-} from "../mortgage/flip";
+import { buildDeal } from "../deal/buildDeal";
+import { resolveRehab, type RehabEstimateInput } from "../rehab/resolveRehab";
 import {
   assessAffordability,
   assessDeal,
@@ -58,6 +54,12 @@ export interface ScreenHouse {
   analysisLabel: string | null;
   /** A rehab analysis exists for this house. */
   hasRehabEstimate: boolean;
+  /**
+   * The estimate itself, once Phase 3 produces one. Null until then, which is
+   * what makes the resolver fall back to the reno budget and label it
+   * "Budget only".
+   */
+  rehabEstimate?: RehabEstimateInput | null;
   comps: Comp[];
   /** True until the comps have been reviewed on the Comps tab. */
   compsReviewed: boolean;
@@ -76,7 +78,10 @@ export interface ScreenRow {
   arv: number | null;
   /** The 70% rule, shown as a figure and never used as a gate. */
   maxOffer: number;
-  profit: number | null;
+  /** What lands in your account at closing. The headline figure. */
+  walkAwayCash: number | null;
+  /** What the deal made, after cash in and the carry. What the verdict judges. */
+  trueProfit: number | null;
   marginPct: number | null;
 
   affordability: AffordabilityAssessment;
@@ -91,25 +96,6 @@ export interface ScreenRow {
 export interface ScreenContext {
   profile: BuyerProfile | null;
   now?: Date;
-}
-
-/**
- * Financing for the flip, from the house's real analysis when it has one.
- *
- * The generic fallback is for a house nobody has run numbers on yet — it still
- * belongs on the screen, because deciding not to run numbers is also a
- * decision the table should inform.
- */
-function financingFor(
-  house: ScreenHouse,
-  inputs: ReturnType<typeof resolveInputs>,
-  result: ReturnType<typeof calculateMortgage>,
-  holdingMonths: number
-): FlipFinancing {
-  if (house.analysisInputs) {
-    return financingFromAnalysis(inputs, result, holdingMonths, house.analysisLabel);
-  }
-  return genericFinancing(result.loanAmount, inputs.interestRate, inputs.points, holdingMonths);
 }
 
 export function buildScreenRow(house: ScreenHouse, context: ScreenContext): ScreenRow {
@@ -149,26 +135,27 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     countyLoanLimit: profile?.defaults.countyLoanLimit ?? null,
   });
 
-  const holdingMonths = profile?.defaults.holdingMonths ?? 5;
-  const rehabTotal = inputs.renovationBudget;
+  // One resolver for the rehab number, so the list cannot disagree with the
+  // Rehab tab about what this house needs.
+  const rehab = resolveRehab(house.rehabEstimate ?? null, inputs.renovationBudget);
 
-  const flip = calculateFlip({
-    arv: arv ?? 0,
-    purchasePrice: inputs.homeValue,
-    rehabTotal,
-    buyingPct: profile?.defaults.buyingPct ?? 1,
-    sellingPct: profile?.defaults.sellingPct ?? 8,
-    holdingMonthly: profile?.defaults.holdingMonthly ?? 0,
-    holdingMonths,
-    financing: financingFor(house, inputs, result, holdingMonths),
+  // The same builder the profit card and the compare view use. A house that
+  // reads $85,500 walk-away on its own page reads $85,500 here.
+  const built = buildDeal({
+    inputs,
+    result,
+    arv,
+    rehab,
+    sellerClosingPct: profile?.defaults.sellingPct ?? 8,
   });
+  const deal = built.result;
 
   // Provisional until someone has reviewed the comps. Every comp RentCast
   // returned is included by default, which is a real ARV but an unreviewed
   // one, and any verdict resting on it has to say so.
   const provisionalArv = arv !== null && !house.compsReviewed;
 
-  const deal = assessDeal({ flip, provisionalArv });
+  const dealVerdict = assessDeal({ deal, provisionalArv });
 
   const checklist: ScreenChecklist = {
     numbers: house.analysisInputs !== null,
@@ -194,12 +181,13 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     backDti: dti.applicable ? dti.backEnd : null,
     cashToClose: result.cashToClose + (renovationCap?.outOfPocketGap ?? 0),
     arv,
-    maxOffer: flip.maxOffer,
-    profit: arv === null ? null : flip.profit,
-    marginPct: arv === null ? null : flip.marginPct,
+    maxOffer: deal.maxOffer ?? 0,
+    walkAwayCash: deal.walkAwayCash,
+    trueProfit: deal.trueProfit,
+    marginPct: deal.marginPct,
 
     affordability,
-    deal,
+    deal: dealVerdict,
     checklist,
     provisionalArv,
     listingUrl: house.listingUrl,
@@ -226,6 +214,6 @@ export function sortScreenRows(rows: ScreenRow[]): ScreenRow[] {
     if (byAffordability !== 0) return byAffordability;
 
     // Then the bigger payday, with no-ARV rows last.
-    return (b.profit ?? -Infinity) - (a.profit ?? -Infinity);
+    return (b.trueProfit ?? -Infinity) - (a.trueProfit ?? -Infinity);
   });
 }

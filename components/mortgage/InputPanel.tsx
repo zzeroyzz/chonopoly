@@ -390,9 +390,67 @@ export function InputPanel({ inputs, onChange, profileState, onSetIncome }: Prop
               hint="after repair value"
               min={0}
             />
+
+            {/* How the loan is sized. Purchase advance plus funded rehab, held
+                under a ceiling set by the ARV. */}
+            <div className="grid grid-cols-2 gap-3">
+              <NumberField
+                label="Purchase LTV"
+                testId="hm-purchase-ltv"
+                value={inputs.hardMoneyPurchaseLtvPct}
+                onChange={(n) => onChange({ hardMoneyPurchaseLtvPct: n })}
+                suffix="%"
+                min={0}
+              />
+              <NumberField
+                label="Rehab funded"
+                testId="hm-rehab-funded"
+                value={inputs.hardMoneyRehabFundedPct}
+                onChange={(n) => onChange({ hardMoneyRehabFundedPct: n })}
+                suffix="%"
+                min={0}
+              />
+            </div>
+            <NumberField
+              label="Max loan to ARV"
+              testId="hm-max-arv"
+              value={inputs.hardMoneyMaxLoanToArvPct}
+              onChange={(n) => onChange({ hardMoneyMaxLoanToArvPct: n })}
+              suffix="%"
+              hint="the ceiling"
+              min={0}
+            />
+
+            <div>
+              <FieldLabel hint="who pays for undrawn money">Interest</FieldLabel>
+              <div className="flex gap-2">
+                {(["non_dutch", "dutch"] as const).map((style) => (
+                  <button
+                    key={style}
+                    type="button"
+                    onClick={() => onChange({ hardMoneyInterestStyle: style })}
+                    data-testid={`hm-style-${style}`}
+                    className={`flex-1 h-9 rounded-[var(--radius-pill)] text-[12px] transition-colors ${
+                      inputs.hardMoneyInterestStyle === style
+                        ? "bg-(--color-accent) text-(--color-base) font-semibold"
+                        : "border border-(--color-border-default) text-(--color-text-secondary)"
+                    }`}
+                  >
+                    {style === "dutch" ? "Dutch" : "Non-Dutch"}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-(--color-text-tertiary) mt-1.5 leading-relaxed">
+                {inputs.hardMoneyInterestStyle === "dutch"
+                  ? "Interest on the whole loan from day one, drawn or not."
+                  : "Interest only on what has actually been advanced."}
+              </p>
+            </div>
           </div>
+
           <p className="text-[11px] text-(--color-text-tertiary) mt-3">
-            Interest-only. Full principal comes due as a balloon at term end.
+            Interest-only, sized off the deal rather than your income — so there
+            is no DTI. The draws and the monthly interest are on the profit card.
           </p>
         </Card>
       )}

@@ -27,8 +27,17 @@ function db() {
 const TABLE = "analyses";
 const VERSIONS = "analysis_versions";
 
-/** This service owns the financing kind. Rehab, flip and rental come later. */
-const KIND = "financing";
+/**
+ * The kinds of analysis that hang off a house.
+ *
+ * This service owned only "financing" until the deal analyzer arrived. Rather
+ * than a second service duplicating the same CRUD against the same table, the
+ * kind is a parameter that defaults to financing — so every existing caller is
+ * unchanged and the flip analysis gets versions, soft delete and the snapshot
+ * trigger for free.
+ */
+export type AnalysisKind = "financing" | "rehab" | "flip" | "rental";
+const KIND: AnalysisKind = "financing";
 
 /**
  * The shape `inputs` is stored in. Bump when a rename lands, and handle the old
@@ -250,14 +259,14 @@ const VERSION_COLUMNS = VERSION_FIELDS.join(", ");
  */
 export async function listScenarios(
   ctx: RequestContext,
-  opts: { propertyId?: string } = {}
+  opts: { propertyId?: string; kind?: AnalysisKind } = {}
 ): Promise<ScenarioSummary[]> {
   let query = db()
     .from(TABLE)
     .select(SUMMARY_COLUMNS)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
-    .eq("kind", KIND)
+    .eq("kind", opts.kind ?? KIND)
     .is("archived_at", null);
 
   // The property page asks for one house's analyses; the calculator asks for
@@ -302,6 +311,8 @@ export interface SaveScenarioInput {
    * save made a second house. Properties are created in exactly one place, Add.
    */
   propertyId?: string | null;
+  /** Defaults to financing. The deal analyzer saves "flip". */
+  kind?: AnalysisKind;
 }
 
 export interface SaveScenarioResult {
@@ -326,6 +337,8 @@ export async function saveScenario(
   const label = input.label.trim();
   if (!label) throw new Error("A name is required");
 
+  const kind = input.kind ?? KIND;
+
   // The house, if one was given — always by id. Saving never creates a
   // property: Add is the only place that does, so there is no address to
   // normalise here and no way for a second spelling to make a second house.
@@ -339,7 +352,7 @@ export async function saveScenario(
     .select("id")
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
-    .eq("kind", KIND)
+    .eq("kind", kind)
     .is("archived_at", null)
     .ilike("label", label);
 
@@ -363,7 +376,7 @@ export async function saveScenario(
       .select("id")
       .eq("owner_type", ctx.type)
       .eq("owner_id", ctx.id)
-      .eq("kind", KIND)
+      .eq("kind", kind)
       .eq("property_id", propertyId)
       .eq("is_primary", true)
       .is("archived_at", null)
@@ -375,7 +388,7 @@ export async function saveScenario(
   const payload = {
     owner_type: ctx.type,
     owner_id: ctx.id,
-    kind: KIND,
+    kind,
     property_id: propertyId,
     label,
     // Only on an insert. An update must not change which analysis is primary —
