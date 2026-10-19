@@ -25,7 +25,14 @@ export function ProfileForm() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  /**
+   * What the server last confirmed, serialised.
+   *
+   * "Saved." is derived from this rather than being its own flag, so it can
+   * only appear while what is on screen is exactly what the server stored. A
+   * boolean would keep claiming success over edits made after the save.
+   */
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,7 +57,7 @@ export function ProfileForm() {
     if (!profile || saving) return;
     setSaving(true);
     setError(null);
-    setSaved(false);
+    setSavedSnapshot(null);
     try {
       const res = await fetch("/api/profile/buyer", {
         method: "PUT",
@@ -66,15 +73,31 @@ export function ProfileForm() {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? "Could not save");
       }
+      // Read back what the server actually stored rather than trusting the
+      // form's own state. If the server normalised or dropped something, this
+      // is where it becomes visible instead of looking saved and being wrong.
       const body = (await res.json()) as { profile: BuyerProfile };
       setProfile(body.profile);
-      setSaved(true);
+      setSavedSnapshot(JSON.stringify(body.profile));
+
+      // Other open screens read the profile on focus; this tells them there is
+      // something new to read, so the Properties list does not need a manual
+      // refresh after income changes.
+      try {
+        window.localStorage.setItem("buyerProfileUpdatedAt", String(Date.now()));
+      } catch {
+        // Private mode: the list still refreshes when it regains focus.
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save");
     } finally {
       setSaving(false);
     }
   }
+
+  // True only while the form matches what came back from the server.
+  const saved =
+    savedSnapshot !== null && profile !== null && JSON.stringify(profile) === savedSnapshot;
 
   if (loading) {
     return <p className="text-[12px] text-(--color-text-tertiary)">Loading…</p>;
@@ -261,7 +284,11 @@ export function ProfileForm() {
       </Card>
 
       {error && <p className="text-[12px] text-(--color-danger)">{error}</p>}
-      {saved && <p className="text-[12px] text-(--color-accent)">Saved.</p>}
+      {saved && (
+        <p data-testid="profile-saved" className="text-[12px] text-(--color-accent)">
+          Saved.
+        </p>
+      )}
 
       <button
         type="button"

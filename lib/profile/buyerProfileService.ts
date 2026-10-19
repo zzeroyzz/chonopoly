@@ -102,6 +102,24 @@ const PROFILE_COLUMNS = `
  * Null is a real answer, not an error: it is what puts the calculator into its
  * "set your income" state rather than screening against a number nobody entered.
  */
+/**
+ * The signed-in user's own profile, whatever context the screen is in.
+ *
+ * The profile is personal-only, decided in Phase 0: teams can include agents
+ * and assistants, so income is not team-readable. But "personal-only" was
+ * enforced by throwing at every team context, and `loadScreenRows` swallowed
+ * that throw into `null` — so switching to a team made every house on the
+ * Properties list say "Set your income" while a perfectly good profile sat in
+ * the database.
+ *
+ * The rule that actually expresses the intent: a screen that needs income
+ * reads the SIGNED-IN USER'S profile. The property's context decides which
+ * houses you see; it was never supposed to decide whose income you are.
+ */
+export async function getPersonalProfile(userId: string): Promise<BuyerProfile | null> {
+  return getProfile({ type: "personal", id: userId });
+}
+
 export async function getProfile(ctx: RequestContext): Promise<BuyerProfile | null> {
   assertPersonal(ctx);
 

@@ -49,6 +49,33 @@ export function PropertiesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * Re-read when the profile has changed since this list was built.
+   *
+   * Every verdict on this page is computed server-side from the profile, so a
+   * list rendered before the income was saved keeps saying "Set your income"
+   * until something forces a refetch. Settings stamps localStorage on a
+   * confirmed save; coming back to this tab picks it up.
+   */
+  const [profileStamp, setProfileStamp] = useState<string | null>(null);
+
+  useEffect(() => {
+    const read = () => {
+      try {
+        setProfileStamp(window.localStorage.getItem("buyerProfileUpdatedAt"));
+      } catch {
+        // Private mode: the focus listener below still refetches.
+      }
+    };
+    read();
+    window.addEventListener("focus", read);
+    document.addEventListener("visibilitychange", read);
+    return () => {
+      window.removeEventListener("focus", read);
+      document.removeEventListener("visibilitychange", read);
+    };
+  }, []);
+
   useEffect(() => {
     if (!ctxParams) return;
     let cancelled = false;
@@ -82,7 +109,7 @@ export function PropertiesPage() {
     return () => {
       cancelled = true;
     };
-  }, [ctxParams]);
+  }, [ctxParams, profileStamp]);
 
   return (
     <AppShell
