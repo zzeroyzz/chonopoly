@@ -50,6 +50,18 @@ export interface ProfileDefaults {
   holdingMonths: number;
   contingencyPhotosPct: number;
   contingencyVisitPct: number;
+
+  /**
+   * Tax defaults for the capital-gains estimate.
+   *
+   * Optional on the type because the columns arrive with a migration that has
+   * not been run. Until it is, the deal falls back to DEFAULT_TAX_DEFAULTS and
+   * everything still computes.
+   */
+  filingStatus?: string;
+  federalOrdinaryPct?: number;
+  federalLongTermPct?: number;
+  stateTaxRatesPct?: Record<string, number>;
 }
 
 export interface BuyerProfile {

@@ -4,7 +4,20 @@ import { useEffect, useState } from "react";
 import { type BuyerProfile, type ProfileDefaults } from "@/lib/profile/types";
 import { LOAN_PRODUCTS, productValueFor } from "@/lib/mortgage/loanTypes";
 import { type LoanType, type RenovationProgram, type DpaStructure } from "@/lib/mortgage/types";
-import { Card, SectionLabel, NumberField, SelectField, ToggleRow } from "@/components/mortgage/fields";
+import { X } from "lucide-react";
+import {
+  Card,
+  SectionLabel,
+  NumberField,
+  SelectField,
+  ToggleRow,
+  FieldLabel,
+} from "@/components/mortgage/fields";
+import {
+  FILING_STATUS_LABEL,
+  DEFAULT_TAX_DEFAULTS,
+  type FilingStatus,
+} from "@/lib/mortgage/capitalGains";
 
 /**
  * Settings → defaults. Where every screening starts before a house changes it.
@@ -20,6 +33,8 @@ export function DefaultsForm() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** The two-letter code being added to the state-rate list. */
+  const [newState, setNewState] = useState("");
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -90,6 +105,8 @@ export function DefaultsForm() {
   }
 
   const d = profile.defaults;
+  // Georgia is seeded by the migration's default; everything here is editable.
+  const stateRates = d.stateTaxRatesPct ?? DEFAULT_TAX_DEFAULTS.stateRatesPct;
 
   return (
     <div className="grid gap-4">
@@ -247,6 +264,104 @@ export function DefaultsForm() {
             suffix="%"
             min={0}
           />
+        </div>
+      </Card>
+
+      {/* Tax, for the capital-gains estimate on the Profit card. Rates belong
+          to the person, not the house, which is why they live here. */}
+      <Card>
+        <SectionLabel>Taxes</SectionLabel>
+        <div className="grid gap-3.5">
+          <SelectField
+            label="Filing status"
+            value={d.filingStatus ?? "single"}
+            onChange={(filingStatus) => patch({ filingStatus })}
+            options={(Object.keys(FILING_STATUS_LABEL) as FilingStatus[]).map((value) => ({
+              value,
+              label: FILING_STATUS_LABEL[value],
+            }))}
+          />
+          <div className="grid grid-cols-2 gap-3">
+            <NumberField
+              label="Federal — ordinary"
+              testId="tax-federal-ordinary"
+              value={d.federalOrdinaryPct ?? DEFAULT_TAX_DEFAULTS.federalOrdinaryPct}
+              onChange={(federalOrdinaryPct) => patch({ federalOrdinaryPct })}
+              suffix="%"
+              hint="your bracket"
+              min={0}
+            />
+            <NumberField
+              label="Federal — long-term"
+              testId="tax-federal-long-term"
+              value={d.federalLongTermPct ?? DEFAULT_TAX_DEFAULTS.federalLongTermPct}
+              onChange={(federalLongTermPct) => patch({ federalLongTermPct })}
+              suffix="%"
+              hint="held over a year"
+              min={0}
+            />
+          </div>
+          <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
+            A flip held twelve months or less is taxed at your ordinary rate,
+            not the long-term one. The hold on each deal picks which applies.
+          </p>
+
+          <div>
+            <FieldLabel hint="by state">State rate</FieldLabel>
+            <div className="grid gap-2">
+              {Object.entries(stateRates).map(([code, rate]) => (
+                <div key={code} className="flex items-end gap-2">
+                  {/* The state code IS the label, so the field names itself. */}
+                  <div className="flex-1 min-w-0">
+                    <NumberField
+                      label={code}
+                      testId={`tax-state-${code}`}
+                      value={rate}
+                      onChange={(next) =>
+                        patch({ stateTaxRatesPct: { ...stateRates, [code]: next } })
+                      }
+                      suffix="%"
+                      min={0}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${code}`}
+                    onClick={() => {
+                      const next = { ...stateRates };
+                      delete next[code];
+                      patch({ stateTaxRatesPct: next });
+                    }}
+                    className="text-(--color-text-tertiary) hover:text-(--color-danger) p-1 shrink-0"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 mt-2">
+              <input
+                value={newState}
+                onChange={(e) => setNewState(e.target.value.toUpperCase().slice(0, 2))}
+                placeholder="FL"
+                aria-label="Add a state"
+                data-testid="tax-add-state-code"
+                className="w-16 h-9 rounded-[var(--radius-md)] bg-(--color-elevated) border border-(--color-border-default) px-3 text-[13px] text-(--color-text-primary) uppercase"
+              />
+              <button
+                type="button"
+                disabled={newState.length !== 2 || newState in stateRates}
+                onClick={() => {
+                  patch({ stateTaxRatesPct: { ...stateRates, [newState]: 0 } });
+                  setNewState("");
+                }}
+                data-testid="tax-add-state"
+                className="text-[12px] text-(--color-accent) disabled:opacity-40"
+              >
+                Add a state
+              </button>
+            </div>
+          </div>
         </div>
       </Card>
 

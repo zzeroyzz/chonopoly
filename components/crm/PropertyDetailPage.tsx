@@ -387,7 +387,13 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 )}
 
                 {/* What the deal makes, worked back from the analysis above. */}
-                {property && <DealPanel propertyId={property.id} ctxParams={ctxParams ?? ""} />}
+                {property && (
+                  <DealPanel
+                    propertyId={property.id}
+                    ctxParams={ctxParams ?? ""}
+                    state={property.state}
+                  />
+                )}
               </div>
             )}
 
