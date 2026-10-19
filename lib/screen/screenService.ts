@@ -59,6 +59,7 @@ export async function loadScreenRows(
 
   const rows = (properties ?? []) as unknown as {
     id: string;
+    is_finalist?: boolean;
     address_line1: string;
     city: string | null;
     state: string | null;
@@ -177,6 +178,7 @@ export async function loadScreenRows(
       listingUrl: row.listing_url,
       needsAddressReview: row.needs_address_review,
       visitCompletedAt: row.visit_completed_at,
+      isFinalist: row.is_finalist ?? false,
       analysisInputs,
       analysisLabel: primary?.label ?? null,
       hasRehabEstimate: rehabProperties.has(row.id),

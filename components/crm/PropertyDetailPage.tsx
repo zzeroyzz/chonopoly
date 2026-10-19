@@ -14,6 +14,9 @@ import { CompsPanel } from "./CompsPanel";
 import { NumbersModal } from "@/components/mortgage/NumbersModal";
 import { ScenarioRows } from "./ScenarioRows";
 import { RehabPanel } from "./RehabPanel";
+import { OfferPanel } from "./OfferPanel";
+import { resolveRehab } from "@/lib/rehab/resolveRehab";
+import { Star } from "lucide-react";
 import { type BuyerProfile } from "@/lib/profile/types";
 import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
@@ -69,6 +72,11 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   const [dealKey, setDealKey] = useState(0);
   /** Carried into Run the numbers when re-running at the estimate. */
   const [rerunBudget, setRerunBudget] = useState<number | null>(null);
+
+  // Mirrors the property's flag. Held locally so the star responds at once
+  // rather than after a full detail reload.
+  const [isFinalist, setIsFinalist] = useState(false);
+  const [finalistBusy, setFinalistBusy] = useState(false);
   const router = useRouter();
   const profile = useShellProfile();
   const { ctx, ctxParams } = useCrmContext();
@@ -135,6 +143,10 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
   // The reno budget the loan was sized on — what the estimate is checked
   // against, and what the loan can actually cover.
+  // The primary's own inputs, for the offer panel's what-if.
+  const primaryInputsForOffer =
+    analyses.find((a) => a.isPrimary)?.inputs ?? analyses[0]?.inputs ?? null;
+
   const primaryBudget =
     analyses.find((a) => a.isPrimary)?.inputs.renovationBudget ??
     analyses[0]?.inputs.renovationBudget ??
@@ -214,6 +226,33 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
     setNumbersTarget(null);
   }
 
+  // The column may not exist yet, in which case it reads false.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsFinalist(Boolean((property as { is_finalist?: boolean } | undefined)?.is_finalist));
+  }, [property]);
+
+  async function toggleFinalist() {
+    if (!propertyId || finalistBusy) return;
+    setFinalistBusy(true);
+    try {
+      const res = await fetch(`/api/properties/${propertyId}?${ctxParams}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_finalist: !isFinalist, context_type: "personal" }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Could not change that");
+      }
+      setIsFinalist((v) => !v);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not change that");
+    } finally {
+      setFinalistBusy(false);
+    }
+  }
+
   const openTasks = (detail?.tasks ?? []).filter((t) => t.status === "open");
 
   return (
@@ -251,6 +290,25 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
                 </p>
               </div>
+
+              {property && (
+                <button
+                  type="button"
+                  onClick={() => void toggleFinalist()}
+                  disabled={finalistBusy}
+                  data-testid="finalist-toggle"
+                  aria-pressed={isFinalist}
+                  aria-label={isFinalist ? "Remove from finalists" : "Mark as a finalist"}
+                  className={`shrink-0 flex items-center gap-1 h-8 px-2.5 rounded-[var(--radius-pill)] border text-[12px] font-medium disabled:opacity-40 ${
+                    isFinalist
+                      ? "border-(--color-accent) text-(--color-accent)"
+                      : "border-(--color-border-default) text-(--color-text-secondary)"
+                  }`}
+                >
+                  <Star size={12} fill={isFinalist ? "currentColor" : "none"} />
+                  {isFinalist ? "Finalist" : "Mark finalist"}
+                </button>
+              )}
 
               {property && (
                 <button
@@ -414,6 +472,21 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 )}
 
                 {/* What the deal makes, worked back from the analysis above. */}
+                {property && primaryInputsForOffer && (
+                  <div className="mt-4">
+                    <OfferPanel
+                      propertyId={property.id}
+                      ctxParams={ctxParams ?? ""}
+                      askingPrice={primaryInputsForOffer.homeValue}
+                      primaryInputs={primaryInputsForOffer}
+                      profile={buyerProfile}
+                      arv={arv}
+                      rehab={resolveRehab(null, primaryBudget)}
+                      state={property.state}
+                    />
+                  </div>
+                )}
+
                 {property && (
                   <DealPanel
                     key={dealKey}

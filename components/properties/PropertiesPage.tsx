@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Home, AlertTriangle, ExternalLink } from "lucide-react";
+import { Home, AlertTriangle, ExternalLink, Star } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { useCrmContext } from "@/components/crm/useCrmContext";
 import { dollars } from "@/components/mortgage/format";
@@ -46,6 +46,9 @@ export function PropertiesPage() {
   const router = useRouter();
   const { ctxParams } = useCrmContext();
   const [rows, setRows] = useState<ScreenRow[]>([]);
+  const [filter, setFilter] = useState<"all" | "finalists">("all");
+  /** Houses ticked for comparison, in the order they were picked. */
+  const [picked, setPicked] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,6 +114,9 @@ export function PropertiesPage() {
     };
   }, [ctxParams, profileStamp]);
 
+  const finalistCount = rows.filter((r) => r.isFinalist).length;
+  const visible = filter === "finalists" ? rows.filter((r) => r.isFinalist) : rows;
+
   return (
     <AppShell
       appName="Park Hawkins Capital"
@@ -173,9 +179,78 @@ export function PropertiesPage() {
         )}
 
         {rows.length > 0 && (
+          <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+            {(["all", "finalists"] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setFilter(f)}
+                data-testid={`filter-${f}`}
+                aria-pressed={filter === f}
+                className={`h-8 px-3 rounded-[var(--radius-pill)] text-[12px] transition-colors ${
+                  filter === f
+                    ? "bg-(--color-accent) text-(--color-base) font-semibold"
+                    : "border border-(--color-border-default) text-(--color-text-secondary)"
+                }`}
+              >
+                {f === "all" ? "All" : "Finalists"}
+                {f === "finalists" && finalistCount > 0 ? ` (${finalistCount})` : ""}
+              </button>
+            ))}
+
+            <div className="flex-1" />
+
+            {/* Two routes to the same place: tick houses, or compare the ones
+                already marked as finalists. */}
+            {picked.length >= 2 ? (
+              <Link
+                href={`/compare?ids=${picked.slice(0, 4).join(",")}`}
+                data-testid="compare-picked"
+                className="h-8 px-3 inline-flex items-center rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[12px] font-semibold"
+              >
+                Compare {Math.min(picked.length, 4)}
+              </Link>
+            ) : finalistCount >= 2 ? (
+              <Link
+                href={`/compare?ids=${rows
+                  .filter((r) => r.isFinalist)
+                  .slice(0, 4)
+                  .map((r) => r.propertyId)
+                  .join(",")}`}
+                data-testid="compare-finalists"
+                className="h-8 px-3 inline-flex items-center rounded-[var(--radius-pill)] border border-(--color-accent) text-(--color-accent) text-[12px]"
+              >
+                Compare finalists
+              </Link>
+            ) : null}
+          </div>
+        )}
+
+        {rows.length > 0 && (
           <ul data-testid="screen-table" className="flex flex-col gap-2.5">
-            {rows.map((row) => (
-              <ScreenCard key={row.propertyId} row={row} />
+            {visible.map((row) => (
+              <ScreenCard
+                key={row.propertyId}
+                row={row}
+                picked={picked.includes(row.propertyId)}
+                onPick={(on) =>
+                  setPicked((prev) =>
+                    on
+                      ? prev.includes(row.propertyId)
+                        ? prev
+                        : [...prev, row.propertyId]
+                      : prev.filter((id) => id !== row.propertyId)
+                  )
+                }
+                onFinalistChanged={(isFinalist) =>
+                  setRows((prev) =>
+                    prev.map((r) =>
+                      r.propertyId === row.propertyId ? { ...r, isFinalist } : r
+                    )
+                  )
+                }
+                ctxParams={ctxParams ?? ""}
+              />
             ))}
           </ul>
         )}
@@ -188,7 +263,44 @@ export function PropertiesPage() {
  * One house. Hoisted to module scope — a component declared during render is a
  * new type every pass and remounts the whole list.
  */
-function ScreenCard({ row }: { row: ScreenRow }) {
+function ScreenCard({
+  row,
+  picked,
+  onPick,
+  onFinalistChanged,
+  ctxParams,
+}: {
+  row: ScreenRow;
+  picked: boolean;
+  onPick: (on: boolean) => void;
+  onFinalistChanged: (isFinalist: boolean) => void;
+  ctxParams: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [flagError, setFlagError] = useState<string | null>(null);
+
+  async function toggleFinalist() {
+    if (busy) return;
+    setBusy(true);
+    setFlagError(null);
+    try {
+      const res = await fetch(`/api/properties/${row.propertyId}?${ctxParams}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_finalist: !row.isFinalist, context_type: "personal" }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? "Could not change that");
+      }
+      onFinalistChanged(!row.isFinalist);
+    } catch (e) {
+      setFlagError(e instanceof Error ? e.message : "Could not change that");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Always the property id. It used to be the pipeline entry id, falling back
   // to "/properties" — the page you are already on — when the house had no
   // entry. Since neither the calculator save nor a batch paste creates an
@@ -216,6 +328,40 @@ function ScreenCard({ row }: { row: ScreenRow }) {
           </Link>
         </div>
 
+        {/* Both sit above the card-wide link overlay, as siblings of it. */}
+        <div className="relative z-10 flex items-center gap-2 shrink-0">
+          <label
+            className="flex items-center gap-1 cursor-pointer"
+            title="Pick for comparison"
+          >
+            <input
+              type="checkbox"
+              checked={picked}
+              onChange={(e) => onPick(e.target.checked)}
+              data-testid={`compare-pick-${row.propertyId}`}
+              aria-label={`Compare ${row.address}`}
+              className="accent-(--color-accent)"
+            />
+            <span className="text-[10px] text-(--color-text-tertiary)">Compare</span>
+          </label>
+
+          <button
+            type="button"
+            onClick={() => void toggleFinalist()}
+            disabled={busy}
+            data-testid={`finalist-${row.propertyId}`}
+            aria-pressed={row.isFinalist}
+            aria-label={row.isFinalist ? "Remove from finalists" : "Mark as a finalist"}
+            className={`p-1 transition-colors disabled:opacity-40 ${
+              row.isFinalist
+                ? "text-(--color-accent)"
+                : "text-(--color-text-tertiary) hover:text-(--color-accent)"
+            }`}
+          >
+            <Star size={14} fill={row.isFinalist ? "currentColor" : "none"} />
+          </button>
+        </div>
+
         {row.listingUrl && (
           <a
             href={row.listingUrl}
@@ -231,6 +377,10 @@ function ScreenCard({ row }: { row: ScreenRow }) {
           </a>
         )}
       </div>
+
+      {flagError && (
+        <p className="text-[10px] text-(--color-danger) mt-1">{flagError}</p>
+      )}
 
       {row.needsAddressReview && (
         <p
