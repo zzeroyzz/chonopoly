@@ -583,6 +583,9 @@ export type Database = {
           dpa_rate: number
           dpa_structure: string
           dpa_term_years: number
+          federal_long_term_pct: number
+          federal_ordinary_pct: number
+          filing_status: string
           holding_monthly: number
           holding_months: number
           id: string
@@ -592,6 +595,7 @@ export type Database = {
           owner_type: string
           renovation_program: string
           selling_pct: number
+          state_tax_rates_pct: Json
           term_years: number
           updated_at: string
         }
@@ -610,6 +614,9 @@ export type Database = {
           dpa_rate?: number
           dpa_structure?: string
           dpa_term_years?: number
+          federal_long_term_pct?: number
+          federal_ordinary_pct?: number
+          filing_status?: string
           holding_monthly?: number
           holding_months?: number
           id?: string
@@ -619,6 +626,7 @@ export type Database = {
           owner_type: string
           renovation_program?: string
           selling_pct?: number
+          state_tax_rates_pct?: Json
           term_years?: number
           updated_at?: string
         }
@@ -637,6 +645,9 @@ export type Database = {
           dpa_rate?: number
           dpa_structure?: string
           dpa_term_years?: number
+          federal_long_term_pct?: number
+          federal_ordinary_pct?: number
+          filing_status?: string
           holding_monthly?: number
           holding_months?: number
           id?: string
@@ -646,6 +657,7 @@ export type Database = {
           owner_type?: string
           renovation_program?: string
           selling_pct?: number
+          state_tax_rates_pct?: Json
           term_years?: number
           updated_at?: string
         }
@@ -1192,6 +1204,56 @@ export type Database = {
         }
         Relationships: []
       }
+      offers: {
+        Row: {
+          amount: number
+          created_at: string
+          created_by: string
+          id: string
+          note: string | null
+          offered_on: string
+          owner_id: string
+          owner_type: string
+          property_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          created_by: string
+          id?: string
+          note?: string | null
+          offered_on?: string
+          owner_id: string
+          owner_type: string
+          property_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          created_by?: string
+          id?: string
+          note?: string | null
+          offered_on?: string
+          owner_id?: string
+          owner_type?: string
+          property_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offers_property_id_fkey"
+            columns: ["property_id"]
+            isOneToOne: false
+            referencedRelation: "properties"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           created_at: string
@@ -1548,6 +1610,7 @@ export type Database = {
           facts_source: string
           facts_updated_at: string | null
           id: string
+          is_finalist: boolean
           last_sale_date: string | null
           last_sale_price: number | null
           latitude: number | null
@@ -1582,6 +1645,7 @@ export type Database = {
           facts_source?: string
           facts_updated_at?: string | null
           id?: string
+          is_finalist?: boolean
           last_sale_date?: string | null
           last_sale_price?: number | null
           latitude?: number | null
@@ -1616,6 +1680,7 @@ export type Database = {
           facts_source?: string
           facts_updated_at?: string | null
           id?: string
+          is_finalist?: boolean
           last_sale_date?: string | null
           last_sale_price?: number | null
           latitude?: number | null

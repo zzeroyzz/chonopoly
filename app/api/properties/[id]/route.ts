@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveContext } from "@/lib/context";
-import { getProperty, updatePropertyFacts, type PropertyFactsPatch } from "@/lib/property/propertyService";
+import {
+  getProperty,
+  updatePropertyFacts,
+  setFinalist,
+  type PropertyFactsPatch,
+} from "@/lib/property/propertyService";
 import { getDetail, getDetailByProperty } from "@/lib/crm/detailService";
 
 /**
@@ -104,6 +109,22 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       user.id
     );
     if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+    const { id: patchId } = await params;
+
+    // Marking a finalist is its own small edit, not a fact about the building,
+    // so it short-circuits the facts patch below.
+    if (typeof payload.is_finalist === "boolean") {
+      try {
+        const isFinalist = await setFinalist(patchId, payload.is_finalist, ctx);
+        return NextResponse.json({ isFinalist });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Failed to set the finalist flag";
+        // "needs the migration" is a configuration answer, not a server fault.
+        const status = message.includes("migration") ? 409 : 500;
+        return NextResponse.json({ error: message }, { status });
+      }
+    }
 
     const { id } = await params;
     const patch: PropertyFactsPatch = {};

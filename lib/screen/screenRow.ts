@@ -49,6 +49,13 @@ export interface ScreenHouse {
   listingUrl: string | null;
   needsAddressReview: boolean;
   visitCompletedAt: string | null;
+  /**
+   * One of the handful being decided between.
+   *
+   * Optional because the column arrives with a migration that may not have
+   * run — absent reads as false rather than as an error.
+   */
+  isFinalist?: boolean;
   /** The primary financing analysis's stored inputs, when there is one. */
   analysisInputs: HouseInputs | null;
   analysisLabel: string | null;
@@ -90,6 +97,16 @@ export interface ScreenRow {
 
   /** True when the ARV came from unreviewed comps. */
   provisionalArv: boolean;
+  isFinalist: boolean;
+  /** Everything the compare view needs, from the same build as the card. */
+  loanType: string;
+  /** True profit over cash in. Null when no cash went in. */
+  roiPct: number | null;
+  /** Down payment, closing, points and any rehab paid in cash. */
+  cashIn: number;
+  holdMonths: number;
+  /** Carry plus the monthly extras for one more month. */
+  oneMoreMonth: number;
   /** Which kind of estimate the rehab number came from, when there is one. */
   rehabSource: "photos" | "visit" | null;
   /** The reno budget the loan was sized on, for the budget check. */
@@ -196,6 +213,12 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     deal: dealVerdict,
     checklist,
     provisionalArv,
+    isFinalist: house.isFinalist ?? false,
+    loanType: inputs.loanType,
+    roiPct: deal.roiPct,
+    cashIn: deal.cashIn,
+    holdMonths: built.holdMonths,
+    oneMoreMonth: deal.oneMoreMonth,
     rehabSource: rehab.budgetOnly
       ? null
       : rehab.source === "estimate_visit"

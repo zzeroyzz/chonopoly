@@ -165,6 +165,34 @@ export async function getProperty(id: string, ctx: RequestContext): Promise<Prop
   return (data as Property) ?? null;
 }
 
+/**
+ * Mark a house as one of the finalists, or unmark it.
+ *
+ * Throws a readable error when the column is missing rather than a Postgres
+ * one, because until the migration runs that is the expected answer and the
+ * UI says so instead of showing a failed request.
+ */
+export async function setFinalist(
+  id: string,
+  isFinalist: boolean,
+  ctx: RequestContext
+): Promise<boolean> {
+  const { error } = await db()
+    .from("properties")
+    .update({ is_finalist: isFinalist })
+    .eq("id", id)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id);
+
+  if (error) {
+    if (/is_finalist/.test(error.message)) {
+      throw new Error("Finalists need the finalists migration to be run first");
+    }
+    throw new Error(error.message);
+  }
+  return isFinalist;
+}
+
 /** Clear the review flag after a human confirms the fuzzy match was correct. */
 export async function confirmAddressMatch(id: string, ctx: RequestContext): Promise<void> {
   const { error } = await db()
