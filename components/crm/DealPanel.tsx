@@ -25,13 +25,19 @@ interface Props {
   ctxParams: string;
   /** Two-letter state, for the state capital-gains rate. */
   state?: string | null;
+  /** So the page can re-read its scenario rows when the primary moves. */
+  onPrimaryChanged?: () => void;
 }
 
-export function DealPanel({ propertyId, ctxParams, state = null }: Props) {
+export function DealPanel({ propertyId, ctxParams, state = null, onPrimaryChanged }: Props) {
   const [profile, setProfile] = useState<BuyerProfile | null>(null);
   const [arv, setArv] = useState<number | null>(null);
   const [primaryInputs, setPrimaryInputs] = useState<MortgageInputs | null>(null);
   const [primaryLabel, setPrimaryLabel] = useState<string | null>(null);
+  const [options, setOptions] = useState<
+    { id: string; label: string; isPrimary: boolean }[]
+  >([]);
+  const [switching, setSwitching] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [edits, setEdits] = useState<ProfitCardEdits>({});
   const [saving, setSaving] = useState(false);
@@ -58,18 +64,21 @@ export function DealPanel({ propertyId, ctxParams, state = null }: Props) {
     // the rest of the app means when it says "the price" and "the rehab".
     if (listRes?.ok) {
       const body = (await listRes.json()) as {
-        scenarios: { id: string; label: string; isPrimary?: boolean }[];
+        scenarios: { id: string; label: string; isPrimary?: boolean; inputs: MortgageInputs }[];
       };
       const primary = body.scenarios.find((s) => s.isPrimary) ?? body.scenarios[0];
+      setOptions(
+        body.scenarios.map((s) => ({
+          id: s.id,
+          label: s.label,
+          isPrimary: s.id === primary?.id,
+        }))
+      );
       if (primary) {
-        const detail = await fetch(
-          `/api/mortgage/scenarios/${primary.id}?${ctxParams}`
-        ).catch(() => null);
-        if (detail?.ok) {
-          const d = (await detail.json()) as { scenario: { inputs: MortgageInputs } };
-          setPrimaryInputs(d.scenario.inputs);
-          setPrimaryLabel(primary.label);
-        }
+        // The list hands back the stored inputs now, so the detail fetch that
+        // used to follow it is gone.
+        setPrimaryInputs(primary.inputs);
+        setPrimaryLabel(primary.label);
       }
     }
     setLoaded(true);
@@ -140,12 +149,33 @@ export function DealPanel({ propertyId, ctxParams, state = null }: Props) {
     }
   }
 
+  async function makePrimary(id: string) {
+    setSwitching(true);
+    try {
+      await fetch(`/api/mortgage/scenarios/${id}?${ctxParams}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_primary: true, context_type: "personal" }),
+      });
+      await load();
+      onPrimaryChanged?.();
+    } finally {
+      setSwitching(false);
+    }
+  }
+
   return (
     <div className="mt-4">
       <ProfitCard
         built={built}
         edits={edits}
         onChange={setEdits}
+        basedOn={{
+          name: primaryLabel ?? "this house's numbers",
+          options,
+          onPick: (id) => void makePrimary(id),
+          busy: switching,
+        }}
         onSave={() => void save()}
         saving={saving}
         missingArvNote="Add comps on the Comps tab and tick the renovated ones, or enter an ARV by hand."

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveContext } from "@/lib/context";
-import { getScenario, renameScenario, deleteScenario } from "@/lib/mortgage/scenarioService";
+import { getScenario, renameScenario, setPrimary, deleteScenario } from "@/lib/mortgage/scenarioService";
 
 const notFound = (message: string) => (message.includes("not found") ? 404 : 500);
 
@@ -32,7 +32,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { label?: string; context_type?: string; context_id?: string };
+  let body: {
+    label?: string;
+    /** Make this the house's primary scenario. */
+    is_primary?: boolean;
+    context_type?: string;
+    context_id?: string;
+  };
   try {
     body = await request.json();
   } catch {
@@ -42,11 +48,23 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const ctx = await resolveContext(body.context_type, body.context_id, user.id);
   if (!ctx) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  if (!body.label?.trim()) {
-    return NextResponse.json({ error: "label is required" }, { status: 400 });
+  const { id } = await params;
+
+  // Promoting and renaming are both small edits to one scenario, so they share
+  // the route rather than growing a /primary endpoint beside it.
+  if (body.is_primary === true) {
+    try {
+      return NextResponse.json({ scenario: await setPrimary(id, ctx) });
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Failed to set the primary";
+      return NextResponse.json({ error: message }, { status: notFound(message) });
+    }
   }
 
-  const { id } = await params;
+  if (!body.label?.trim()) {
+    return NextResponse.json({ error: "label or is_primary is required" }, { status: 400 });
+  }
+
   try {
     return NextResponse.json({ scenario: await renameScenario(id, body.label, ctx) });
   } catch (e) {
