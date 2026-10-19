@@ -23,24 +23,6 @@ function db() {
   );
 }
 
-/**
- * Untyped, and only for `offers`.
- *
- * Everything else here uses the generated schema so a mistyped column is a
- * compile error. `offers` cannot be in that schema yet: the table arrives with
- * a migration that has not run, and `npm run db:types` reads the live
- * database. Narrowed to this one table and this one reason.
- *
- * TODO once the migration is applied: run `npm run db:types` and switch these
- * calls back to the typed client, which will then check the columns.
- */
-function offersDb() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  );
-}
-
 const TABLE = "offers";
 
 export const OFFER_STATUSES = [
@@ -104,7 +86,7 @@ export async function listOffers(
   propertyId: string,
   ctx: RequestContext
 ): Promise<{ offers: Offer[]; available: boolean }> {
-  const { data, error } = await offersDb()
+  const { data, error } = await db()
     .from(TABLE)
     .select("id, property_id, amount, offered_on, status, note, created_at")
     .eq("owner_type", ctx.type)
@@ -137,7 +119,7 @@ export async function saveOffer(
   const property = await getProperty(propertyId, ctx);
   if (!property) throw new Error("Property not found");
 
-  const { data, error } = await offersDb()
+  const { data, error } = await db()
     .from(TABLE)
     .insert({
       owner_type: ctx.type,

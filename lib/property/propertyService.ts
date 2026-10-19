@@ -179,7 +179,7 @@ export async function setFinalist(
 ): Promise<boolean> {
   const { error } = await db()
     .from("properties")
-    .update({ is_finalist: isFinalist } as never)
+    .update({ is_finalist: isFinalist })
     .eq("id", id)
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id);
