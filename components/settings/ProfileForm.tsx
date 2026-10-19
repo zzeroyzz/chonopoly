@@ -20,6 +20,27 @@ import { dollars } from "@/components/mortgage/format";
  * `include in ratios` has nothing to attach to. An excluded debt stays visible
  * — it just leaves the ratios, which is how a lender exclusion actually works.
  */
+/**
+ * The column headings for a name/amount row.
+ *
+ * Shared by Income and Debts because the columns are the same question twice,
+ * and a heading that drifts between two lists is worse than none.
+ */
+function ColumnHeaders() {
+  return (
+    <div className="flex items-end gap-2" aria-hidden="true">
+      <span className="flex-1 min-w-0 text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
+        Name
+      </span>
+      <span className="w-32 shrink-0 text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
+        Monthly amount
+      </span>
+      {/* Matches the remove button, so the headings sit over their columns. */}
+      <span className="w-[22px] shrink-0" />
+    </div>
+  );
+}
+
 export function ProfileForm() {
   const [profile, setProfile] = useState<BuyerProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -126,8 +147,12 @@ export function ProfileForm() {
       <Card>
         <SectionLabel>Income</SectionLabel>
         <div className="grid gap-2">
+          {/* Named columns, once. Both boxes used to be unlabelled except for a
+              placeholder that vanished the moment you typed, which is how an
+              amount ended up in the name box. */}
+          <ColumnHeaders />
           {profile.incomes.map((row, i) => (
-            <div key={row.id || i} className="flex items-center gap-2">
+            <div key={row.id || i} className="flex items-end gap-2">
               <input
                 type="text"
                 value={row.label}
@@ -141,19 +166,24 @@ export function ProfileForm() {
                 placeholder="Salary"
                 className={`${field} flex-1 min-w-0`}
               />
-              <input
-                type="text"
-                inputMode="numeric"
-                value={String(row.grossMonthly)}
-                onChange={(e) => {
-                  const incomes = [...profile.incomes];
-                  incomes[i] = { ...row, grossMonthly: Number(e.target.value.replace(/[^\d.]/g, "")) || 0 };
-                  setProfile({ ...profile, incomes });
-                }}
-                aria-label={`Income amount ${i + 1}`}
-                data-testid={`settings-income-amount-${i}`}
-                className={`${field} w-28 shrink-0 font-(--font-mono)`}
-              />
+              <div className="w-32 shrink-0">
+                <NumberField
+                  label=""
+                  ariaLabel={`Income amount ${i + 1}`}
+                  testId={`settings-income-amount-${i}`}
+                  value={row.grossMonthly}
+                  onChange={(grossMonthly) => {
+                    const incomes = [...profile.incomes];
+                    incomes[i] = { ...row, grossMonthly };
+                    setProfile({ ...profile, incomes });
+                  }}
+                  prefix="$"
+                  suffix="/mo"
+                  placeholder="0"
+                  blankWhenZero
+                  min={0}
+                />
+              </div>
               <button
                 type="button"
                 onClick={() =>
@@ -181,6 +211,10 @@ export function ProfileForm() {
           >
             <Plus size={13} /> Add income
           </button>
+          <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed mt-1">
+            W-2: gross monthly pay. 1099: average monthly net income from your
+            last two years of tax returns.
+          </p>
           <p className="text-[12px] text-(--color-text-secondary) mt-1 pt-2 border-t border-(--color-border-subtle)">
             Total {dollars(totalMonthlyIncome(profile.incomes), 0)}/mo
           </p>
@@ -190,9 +224,10 @@ export function ProfileForm() {
       <Card>
         <SectionLabel>Debts</SectionLabel>
         <div className="grid gap-2">
+          <ColumnHeaders />
           {profile.debts.map((row, i) => (
             <div key={row.id || i}>
-              <div className="flex items-center gap-2">
+              <div className="flex items-end gap-2">
                 <input
                   type="text"
                   value={row.label}
@@ -206,19 +241,24 @@ export function ProfileForm() {
                   placeholder="Car loan"
                   className={`${field} flex-1 min-w-0`}
                 />
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={String(row.monthlyPayment)}
-                  onChange={(e) => {
-                    const debts = [...profile.debts];
-                    debts[i] = { ...row, monthlyPayment: Number(e.target.value.replace(/[^\d.]/g, "")) || 0 };
-                    setProfile({ ...profile, debts });
-                  }}
-                  aria-label={`Debt amount ${i + 1}`}
-                  data-testid={`settings-debt-amount-${i}`}
-                  className={`${field} w-28 shrink-0 font-(--font-mono)`}
-                />
+                <div className="w-32 shrink-0">
+                  <NumberField
+                    label=""
+                    ariaLabel={`Debt amount ${i + 1}`}
+                    testId={`settings-debt-amount-${i}`}
+                    value={row.monthlyPayment}
+                    onChange={(monthlyPayment) => {
+                      const debts = [...profile.debts];
+                      debts[i] = { ...row, monthlyPayment };
+                      setProfile({ ...profile, debts });
+                    }}
+                    prefix="$"
+                    suffix="/mo"
+                    placeholder="0"
+                    blankWhenZero
+                    min={0}
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() =>
@@ -268,16 +308,22 @@ export function ProfileForm() {
         <div className="grid gap-3.5">
           <NumberField
             label="Available for down payment and closing"
+            testId="settings-cash-available"
             value={profile.cashAvailable}
             onChange={(cashAvailable) => setProfile({ ...profile, cashAvailable })}
             prefix="$"
+            placeholder="0"
+            blankWhenZero
             min={0}
           />
           <NumberField
             label="Reserves to keep"
+            testId="settings-cash-reserves"
             value={profile.cashReserves}
             onChange={(cashReserves) => setProfile({ ...profile, cashReserves })}
             prefix="$"
+            placeholder="0"
+            blankWhenZero
             min={0}
           />
         </div>
