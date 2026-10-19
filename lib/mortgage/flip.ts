@@ -1,206 +1,207 @@
-import { type MortgageInputs, type MortgageResult } from "./types";
 import { VERDICT_THRESHOLDS } from "./defaults";
 
 /**
- * Flip economics: what you are all in for, what is left at resale, and what the
- * 70% rule would have you offer.
+ * The one profit calculation in the app.
  *
- * profit = ARV − purchase − rehab − buying − holding − financing − selling
+ * It answers two questions in the order they actually get asked:
  *
- * Financing is its own line and is never folded into holding cost. Holding cost
- * is hand-entered on the buyer profile — utilities, taxes, insurance, lawn —
- * while financing is derived from the loan amount and the rate, both of which
- * move every time the price moves. Rolling the derived figure into the typed
- * one would mean the number on screen stops matching the number the user
- * entered, and they would have to recompute their own holding figure for every
- * house. Separate lines also let the breakdown say "you are paying $8,400 to
- * borrow this money", which is the line that changes minds about a thin deal.
+ *   WALK-AWAY CASH — what lands in your account when the sale closes. This is
+ *   the headline, because it is the money that buys the next house. It is the
+ *   resale price minus everything that comes out of the closing statement.
+ *
+ *   TRUE PROFIT — what the deal made you, after the money you put in and the
+ *   months you carried it. Walk-away cash flatters a deal where you brought
+ *   $40k and carried it a year; true profit does not.
+ *
+ * The old version computed a single `profit` as ARV minus an all-in cost, which
+ * conflated the two. A deal could show a healthy profit while handing back less
+ * cash than you put in, and nothing on screen said so.
+ *
+ * Every line carries where it came from and whether it was typed over, because
+ * a number you cannot trace is a number you cannot argue with — and these get
+ * argued with, usually at an offer deadline.
  */
 
-/** Where the financing figure came from. Always shown on the breakdown. */
-export type FlipFinancingSource = "financing_analysis" | "generic_estimate";
+/** Where a figure came from, shown on every line of the breakdown. */
+export type LineSource =
+  | "financing_analysis"
+  | "hard_money_terms"
+  | "valuation"
+  | "rehab_estimate"
+  | "rehab_budget"
+  | "defaults"
+  | "manual"
+  | "computed";
 
-export interface FlipFinancing {
-  source: FlipFinancingSource;
-  /** Which analysis supplied it, for the "from <label>" line. */
-  analysisLabel: string | null;
-  /** Interest paid across the hold. */
-  interest: number;
-  /** FHA UFMIP or the VA funding fee. Zero on the generic estimate. */
-  upfrontMortgageInsurance: number;
-  /** Monthly MIP/PMI summed across the hold. Zero on the generic estimate. */
-  monthlyMortgageInsurance: number;
-  /** Origination points. */
-  points: number;
-  total: number;
-  /** The loan itself, for the cash-invested figure. Null when unknown. */
-  loanAmount: number | null;
+export const LINE_SOURCE_LABEL: Record<LineSource, string> = {
+  financing_analysis: "from the financing analysis",
+  hard_money_terms: "from the loan terms",
+  valuation: "from the ARV",
+  rehab_estimate: "from the rehab estimate",
+  rehab_budget: "from the rehab budget",
+  defaults: "from your defaults",
+  manual: "entered",
+  computed: "calculated",
+};
+
+/** One figure, with its provenance. */
+export interface DealLine {
+  value: number;
+  source: LineSource;
+  /** True when the user typed over the derived figure. */
+  overridden: boolean;
+  /** Shown under the line when it needs explaining. */
+  note?: string;
 }
 
-/**
- * Financing costs taken from a real financing analysis.
- *
- * Preferred whenever the house has a primary financing scenario, because these
- * are the actual numbers that scenario produced rather than a flat-rate
- * approximation of them. On an FHA 203(k) the difference is large: UFMIP and
- * monthly MIP are thousands that a points-plus-interest estimate omits entirely.
- *
- * Interest is summed from the amortization schedule rather than approximated,
- * so an amortizing loan is charged what it actually costs over those months
- * instead of a flat rate on the opening balance.
- */
-export function financingFromAnalysis(
-  inputs: MortgageInputs,
-  result: MortgageResult,
-  holdingMonths: number,
-  analysisLabel: string | null
-): FlipFinancing {
-  const months = Math.max(0, Math.round(holdingMonths));
-
-  const interest = result.schedule
-    .slice(0, months)
-    .reduce((sum, row) => sum + row.interest, 0);
-
-  // Upfront MI is a cost whether it was financed or paid at closing: financed
-  // just means it is repaid out of the sale proceeds instead of up front.
-  const upfrontMortgageInsurance = result.ufmip ?? result.vaFundingFee ?? 0;
-
-  const monthlyMortgageInsurance = result.schedule
-    .slice(0, months)
-    .reduce((sum, row) => sum + row.mortgageInsurance, 0);
-
-  const points = result.pointsCost ?? 0;
-
-  return {
-    source: "financing_analysis",
-    analysisLabel,
-    interest,
-    upfrontMortgageInsurance,
-    monthlyMortgageInsurance,
-    points,
-    total: interest + upfrontMortgageInsurance + monthlyMortgageInsurance + points,
-    loanAmount: result.loanAmount,
-  };
+export function line(
+  value: number,
+  source: LineSource,
+  overridden = false,
+  note?: string
+): DealLine {
+  return { value, source, overridden, note };
 }
 
-/**
- * The fallback estimate, for a house with no financing analysis — hard money,
- * or cash with a line of credit behind it.
- *
- * Interest-only, which is how a rehab carry actually works: hard money lenders
- * take interest monthly and the principal at payoff, so nothing amortizes
- * during a six-month hold.
- */
-export function genericFinancing(
-  loanAmount: number,
-  annualRatePct: number,
-  pointsPct: number,
-  holdingMonths: number
-): FlipFinancing {
-  const principal = Math.max(0, loanAmount);
-  const months = Math.max(0, holdingMonths);
-
-  const interest = principal * (Math.max(0, annualRatePct) / 100 / 12) * months;
-  const points = principal * (Math.max(0, pointsPct) / 100);
-
-  return {
-    source: "generic_estimate",
-    analysisLabel: null,
-    interest,
-    upfrontMortgageInsurance: 0,
-    monthlyMortgageInsurance: 0,
-    points,
-    total: interest + points,
-    loanAmount: principal,
-  };
+/** A named cost that does not fit any other line. */
+export interface OtherFee {
+  name: string;
+  amount: number;
 }
 
-export interface FlipParams {
-  arv: number;
-  purchasePrice: number;
-  /** Rehab including its contingency — photos or visit, whichever applies. */
-  rehabTotal: number;
-  /** Buying costs as a percent of the purchase price. */
-  buyingPct: number;
-  /** Selling costs as a percent of the resale price. */
-  sellingPct: number;
-  holdingMonthly: number;
-  holdingMonths: number;
-  financing: FlipFinancing;
-}
+export interface DealParams {
+  /** Resale price. Null when the house has no ARV yet. */
+  arv: DealLine | null;
 
-export interface FlipResult {
-  arv: number;
+  // ── Out of the closing statement ──────────────────────────────────────────
+  /** Balance repaid at sale. Amortized balance after the hold, or the full
+   *  hard money loan. */
+  loanPayoff: DealLine;
+  sellerClosingCosts: DealLine;
+  dpaRepayment: DealLine;
+  capitalGains: DealLine;
+  otherFees: OtherFee[];
+
+  // ── Out of pocket ─────────────────────────────────────────────────────────
+  downPayment: DealLine;
+  buyerClosingCosts: DealLine;
+  points: DealLine;
+  /** Rehab not covered by the loan. All of it on FHA/conventional. */
+  rehabPaidInCash: DealLine;
+  /** A hard money ARV ceiling shortfall, which the buyer has to bring. */
+  loanShortfall: DealLine;
+
+  // ── Carry ─────────────────────────────────────────────────────────────────
+  holdMonths: number;
+  /** PITI across the hold, or the hard money interest total. */
+  carry: DealLine;
+  /** Utilities, lawn, staging — per month. */
+  monthlyExtras: DealLine;
+  /** What one more month adds, for the "another month costs" line. */
+  oneMoreMonthCarry: number;
+
+  /** For the 70% rule figure only. */
   purchasePrice: number;
   rehabTotal: number;
-  buyingCosts: number;
-  holdingCosts: number;
-  sellingCosts: number;
-  financingCosts: number;
-  financing: FlipFinancing;
+}
 
-  /** Everything the deal costs, financing included. */
-  allInCost: number;
-  profit: number;
-  /** Profit as a percent of ARV. Null when there is no ARV to divide by. */
+export interface DealResult {
+  arv: number | null;
+  /** True when there is no ARV, so both headline numbers are unknowable. */
+  missingArv: boolean;
+
+  otherFeesTotal: number;
+  /** ARV − payoff − seller closing − DPA − capital gains − other fees. */
+  walkAwayCash: number | null;
+
+  cashIn: number;
+  holdingCost: number;
+  /** Walk-away cash − cash in − holding cost. */
+  trueProfit: number | null;
+
+  /** Profit as a percent of ARV. Null without an ARV. */
   marginPct: number | null;
-  /** Profit over cash actually invested. Null when the loan is unknown. */
+  /** True profit over cash in. Null when no cash went in. */
   roiPct: number | null;
-  cashInvested: number | null;
 
-  /** The 70% rule: ARV × 70% − rehab. A figure on the screen, not a gate. */
-  maxOffer: number;
-  /** How far over max offer the price is. Zero when at or under. */
-  overMaxOfferBy: number;
+  /** What holding it one more month costs: carry plus the monthly extras. */
+  oneMoreMonth: number;
+
+  /** The 70% rule: ARV × 70% − rehab. A figure, never a gate. */
+  maxOffer: number | null;
+  overMaxOfferBy: number | null;
 }
 
-export function calculateFlip(params: FlipParams): FlipResult {
-  const arv = Math.max(0, params.arv);
-  const purchasePrice = Math.max(0, params.purchasePrice);
-  const rehabTotal = Math.max(0, params.rehabTotal);
+export function calculateDeal(params: DealParams): DealResult {
+  const arv = params.arv ? Math.max(0, params.arv.value) : null;
 
-  const buyingCosts = purchasePrice * (Math.max(0, params.buyingPct) / 100);
-  const sellingCosts = arv * (Math.max(0, params.sellingPct) / 100);
-  const holdingCosts =
-    Math.max(0, params.holdingMonthly) * Math.max(0, params.holdingMonths);
-  const financingCosts = params.financing.total;
+  const otherFeesTotal = params.otherFees.reduce(
+    (sum, fee) => sum + Math.max(0, fee.amount),
+    0
+  );
 
-  const allInCost =
-    purchasePrice + rehabTotal + buyingCosts + holdingCosts + sellingCosts + financingCosts;
+  const outOfClosing =
+    params.loanPayoff.value +
+    params.sellerClosingCosts.value +
+    params.dpaRepayment.value +
+    params.capitalGains.value +
+    otherFeesTotal;
 
-  const profit = arv - allInCost;
+  // Null rather than zero: a house with no ARV has an unknown walk-away, and
+  // showing $0 reads as a deal that makes nothing rather than one nobody has
+  // priced yet.
+  const walkAwayCash = arv === null ? null : arv - outOfClosing;
 
-  const loanAmount = params.financing.loanAmount;
-  // Selling costs come out of the proceeds at closing, not out of pocket, so
-  // they are excluded from cash invested — counting them would understate ROI.
-  const cashInvested =
-    loanAmount === null
+  const cashIn =
+    params.downPayment.value +
+    params.buyerClosingCosts.value +
+    params.points.value +
+    params.rehabPaidInCash.value +
+    params.loanShortfall.value;
+
+  const months = Math.max(0, params.holdMonths);
+  const holdingCost = params.carry.value + params.monthlyExtras.value * months;
+
+  const trueProfit = walkAwayCash === null ? null : walkAwayCash - cashIn - holdingCost;
+
+  const maxOffer =
+    arv === null
       ? null
       : Math.max(
           0,
-          purchasePrice + rehabTotal + buyingCosts + holdingCosts + financingCosts - loanAmount
+          arv * (VERDICT_THRESHOLDS.maxOfferArvPct / 100) - Math.max(0, params.rehabTotal)
         );
-
-  const maxOffer = Math.max(
-    0,
-    arv * (VERDICT_THRESHOLDS.maxOfferArvPct / 100) - rehabTotal
-  );
 
   return {
     arv,
-    purchasePrice,
-    rehabTotal,
-    buyingCosts,
-    holdingCosts,
-    sellingCosts,
-    financingCosts,
-    financing: params.financing,
-    allInCost,
-    profit,
-    marginPct: arv > 0 ? (profit / arv) * 100 : null,
-    roiPct: cashInvested !== null && cashInvested > 0 ? (profit / cashInvested) * 100 : null,
-    cashInvested,
+    missingArv: arv === null,
+    otherFeesTotal,
+    walkAwayCash,
+    cashIn,
+    holdingCost,
+    trueProfit,
+    marginPct: arv !== null && arv > 0 && trueProfit !== null ? (trueProfit / arv) * 100 : null,
+    roiPct: cashIn > 0 && trueProfit !== null ? (trueProfit / cashIn) * 100 : null,
+    oneMoreMonth: params.oneMoreMonthCarry + params.monthlyExtras.value,
     maxOffer,
-    overMaxOfferBy: Math.max(0, purchasePrice - maxOffer),
+    overMaxOfferBy:
+      maxOffer === null ? null : Math.max(0, Math.max(0, params.purchasePrice) - maxOffer),
   };
+}
+
+/**
+ * The balance still owed after holding an amortizing loan for N months.
+ *
+ * Hard money does not amortize, so its payoff is the full loan — handled by the
+ * caller, which knows which kind of loan this is.
+ */
+export function payoffAfterMonths(
+  schedule: { principal: number }[],
+  loanAmount: number,
+  months: number
+): number {
+  const paid = schedule
+    .slice(0, Math.max(0, Math.round(months)))
+    .reduce((sum, row) => sum + row.principal, 0);
+  return Math.max(0, loanAmount - paid);
 }

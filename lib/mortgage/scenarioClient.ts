@@ -23,6 +23,8 @@ export interface SaveAnalysisInput {
   monthlyPayment: number;
   /** An existing house. Null or omitted saves the analysis unattached. */
   propertyId?: string | null;
+  /** "flip" saves a deal analysis. Omitted saves a financing one. */
+  kind?: "financing" | "flip";
   contextType?: string;
   contextId?: string;
 }
@@ -45,6 +47,7 @@ export async function saveAnalysis(input: SaveAnalysisInput): Promise<SaveAnalys
       // Omitted entirely when there is no house, which the route reads as
       // "quick math, attach nothing".
       ...(input.propertyId ? { property_id: input.propertyId } : {}),
+      ...(input.kind ? { kind: input.kind } : {}),
       context_type: input.contextType ?? "personal",
       ...(input.contextId ? { context_id: input.contextId } : {}),
     }),

@@ -125,6 +125,22 @@ TypeScript, Tailwind, Next.js, Supabase, Vercel. One new external service: RentC
 - Adding a house puts it in the CRM pipeline at the first stage. Screening results appear as verdicts on the house, and a stage only changes when you change it.
 - Visiting is optional. A rehab estimate can come from the listing photos or from a walkthrough. You can also skip estimating and keep the reno budget you set.
 - Comps come from RentCast, and your agent's MLS comps can be entered by hand alongside them.
+- **The loan is picked once, in Run the numbers** — added 2026-10-18. Hard money
+  sits in the same dropdown as FHA, 203(k) and conventional, so a house has one
+  loan and everything downstream reads it. Hard money has no DTI: it is sized off
+  the deal, not the borrower, and "can you afford it" means cash in plus the
+  carry against the cash you have.
+- **Rehab has one source** — added 2026-10-18. One resolver answers "what does
+  this house need?": the estimate when one exists, otherwise the reno budget from
+  the primary financing analysis, labelled *Budget only*. Where that money comes
+  from depends on the loan — inside a 203(k), partly inside hard money, entirely
+  out of pocket on a plain FHA or conventional loan — and that is what decides
+  whether a deal is doable.
+- **Walk-away cash is the headline; true profit is the verdict** — added
+  2026-10-18. Walk-away is what lands in the account and buys the next house.
+  True profit is what the deal made after the cash you brought and the months you
+  carried it. A deal can hand back a healthy cheque and still have lost money, so
+  the verdict judges true profit while the eye goes to walk-away.
 - Income and debts are entered once in Settings and used for every ratio until you change them.
 
 ## Six rules the rebuild follows
@@ -145,19 +161,21 @@ TypeScript, Tailwind, Next.js, Supabase, Vercel. One new external service: RentC
         │
   1. ADD        paste addresses             → property + facts + comps (RentCast)
   2. SCREEN     can we afford it?            → financing on your profile + ARV check
+  2.5 ANALYZE   what does it actually make?  → walk-away cash, then true profit
   3. ESTIMATE   what does it need?           → rehab estimate from listing photos
      (VISIT)    optional walkthrough         → refines the estimate
   4. CHECK      estimate vs. reno budget     → over / under, re-screen if over
-  5. COMPARE    finalists side by side       → profit, cash, payment
+  5. COMPARE    finalists side by side       → walk-away, true profit, cash
   6. OFFER
 ```
 
-**Shortest path:** Add → Screen → Compare, using the reno budget you set during the screen.
+**Shortest path:** Add → Screen → Analyze, using the reno budget you set during the screen.
 
 | Step | You do | The app does | Optional? |
 |---|---|---|---|
 | 1 Add | Paste one or more addresses, each with an optional price and listing link | Matches or creates each property (`upsertProperty`, `origin: "analysis"`) and pulls facts and comps from RentCast | No |
 | 2 Screen | Look over the table and check off the renovated comps | Runs financing on your profile, calculates ARV, checks the 203(k) cap and the 70% rule, and shows the verdicts | No. Every house gets screened |
+| 2.5 Analyze | Set the hold, capital gains and any other fees | Prefills from the primary financing analysis, the ARV and the rehab, and shows walk-away cash with true profit under it | No. It is where the deal verdict comes from |
 | 3 Estimate | Go through the listing photos one system at a time | Adds up costs and applies contingency | Yes. If you skip it, your reno budget stays in place |
 | Visit | Schedule it, walk the house, take notes | Creates a visit task in the CRM, saves notes as activity, and updates the estimate | Yes |
 | 4 Check | Nothing to do; it happens automatically | Compares the estimate with the reno budget and, if the estimate is higher, offers to re-screen with the new number | Runs whenever there's an estimate |
@@ -441,7 +459,10 @@ All of these are pure functions that sit alongside the existing ones, and each h
 | Function | Returns |
 |---|---|
 | `calculateArv` | ARV, $/sqft, comp count |
-| `calculateFlip` | All-in cost, profit, margin %, ROI, max offer (70% rule) |
+| `calculateDeal` | Walk-away cash, true profit, margin %, ROI, max offer (70% rule). Replaces `calculateFlip` |
+| `sizeHardMoneyLoan` | Purchase advance, funded rehab, the ARV ceiling and the shortfall it creates |
+| `hardMoneyInterest` | The monthly interest table, Dutch or Non-Dutch |
+| `resolveRehab` | The house's rehab number and where it came from |
 | `calculate203kCap` | Maximum loan, whether purchase + rehab fits under it, and the out-of-pocket gap |
 | `calculateRehab` | Subtotal per system, contingency, total |
 | `resolveInputs` | A complete `MortgageInputs` built from profile + defaults + house |
@@ -506,6 +527,16 @@ Each phase gets its own branch and PR, can ship by itself, and leaves the app in
 - Batch add (with listing links), the screen table, both verdicts, `calculateArv`, `calculate203kCap`,e and `calculateFlip` (needed for the deal verdict).
 - The progress checklist on each house.
 
+**Phase 2.5: Deal analyzer**
+- Hard money as a loan type in Run the numbers, with its own sizing, draws and
+  interest table.
+- One rehab resolver, and the funding split that decides what is cash.
+- The profit card on the Numbers tab: walk-away cash, true profit, every line
+  showing its source. Saved as an analysis of kind `flip`, with versions.
+- Walk-away and true profit on the properties list, the header chip and compare.
+- `/tools/flip`, the same calculation with nothing required.
+- Pulled forward out of Phase 4, which had "the complete Flip analysis tab".
+
 **Phase 3: Estimate, Visit, Check**
 - Per-system rehab estimate from photos, `calculateRehab`, and source-based contingency.
 - Optional visit: a CRM task, with notes that refine the estimate in place.
@@ -513,7 +544,8 @@ Each phase gets its own branch and PR, can ship by itself, and leaves the app in
 
 **Phase 4: Compare and Offer**
 - `/compare`, marking finalists, and offer entry showing the max offer.
-- The complete Flip analysis tab.
+- *(The flip analysis tab moved to Phase 2.5 — the deal numbers are needed to
+  screen, not just to compare finalists.)*
 
 **Phase 5: Rental estimate and cleanup**
 - A rough rental estimate in `/tools/rental` using RentCast's rent AVM, which costs one request per house.
@@ -764,6 +796,119 @@ Rewritten — the original tested the Phase 2 screen.
 7. `include_in_ratios` off changes the back-end DTI.
 
 Unit: `resolveInputs` parity — given the same values, it produces the `MortgageInputs` the current form produces. API: 401, 403 on another user's profile, 400 on a negative income. Plus updating `tests/unit/scenarios.test.ts` and `tests/20-mortgage-scenarios.spec.ts`, which exercise the two signatures that change.
+
+---
+
+## Phase 2.5 in full
+
+**Added 2026-10-18.** Pulled ahead of Phase 3, because the deal numbers decide
+which houses are worth estimating at all. Everything here was either in Phase 4
+or nowhere.
+
+### Why it exists
+
+The old `calculateFlip` produced one number — `profit = ARV − all-in cost` —
+which conflated two different questions and answered neither cleanly:
+
+- **What lands in my account at closing?** The money that buys the next house.
+- **What did this deal actually make me?** After the cash I brought and the
+  months I carried it.
+
+A deal can be strong on the first and negative on the second. Nothing on screen
+said so, and "profit at X% margin" was the only figure the verdict had.
+
+### The two numbers
+
+```
+  ARV
+  − Loan payoff at sale        balance after the hold, or the whole hard money loan
+  − Seller closing costs       % of ARV from defaults, editable
+  − DPA repayment              from the financing analysis; a grant is not repaid
+  − Capital gains              entered
+  − Other fees                 named list
+  ─────────────────────────────
+  = WALK-AWAY CASH             the headline
+
+  − Cash in                    down payment + buyer closing + points + rehab in cash
+  − Holding cost               PITI × months, or the interest table; plus monthly extras
+  ─────────────────────────────
+  = TRUE PROFIT                what the verdict judges
+```
+
+Every line carries its source and marks overrides, because these get argued
+with at an offer deadline and a figure you cannot trace is one you cannot
+defend.
+
+### The loan is picked once
+
+Hard money joins FHA, 203(k) and conventional in the Run the numbers dropdown.
+Its fields: rate (15%), points (2%), purchase LTV (85%), rehab funded (100%),
+max loan-to-ARV (75%), Dutch or Non-Dutch, and draws.
+
+```
+loan = purchase × LTV + rehab × funded%,  capped at ARV × maxLoanToArv
+```
+
+When the cap bites it trims the rehab draws, not the purchase advance — the
+purchase advance is wired at closing. The shortfall does not vanish: it becomes
+cash the buyer brings, shown with a warning.
+
+**Dutch vs Non-Dutch is the draw question.** Dutch charges interest on the whole
+committed loan from day one; Non-Dutch charges only what has been advanced. A
+draw in month N accrues from month N. On the worked example below the difference
+is $1,875 over six months.
+
+**Hard money has no DTI.** Nothing about it is a ratio test. Affordability means
+cash in plus the carry against the cash you have.
+
+### Rehab has one source
+
+`resolveRehab(estimate, renovationBudget)` → the estimate if there is one,
+otherwise the budget, labelled *Budget only*. Phase 3 supplies the estimate and
+plugs in here; nothing else changes when it does.
+
+`splitRehabFunding` then decides what is cash:
+
+| Loan | In the loan | Cash |
+|---|---|---|
+| 203(k) / HomeStyle | all of it | — |
+| Hard money | the funded part | the rest, plus any ceiling shortfall |
+| FHA / conventional, no reno program | — | all of it |
+
+### Worked examples, checked by hand
+
+**203(k).** ARV $250,000, payoff overridden to $177,722, seller closing $15,000,
+DPA $10,000, capital gains $12,000 → **walk-away $35,278**. Cash in $2,085,
+holding $20,532 → **true profit $12,661**.
+
+**Hard money.** Purchase $200,000, rehab $50,000, ARV $325,000, 15%, 2 points,
+85% LTV, Non-Dutch, draws of $25,000 in months 3 and 5, 6 months, seller closing
+6% → loan **$220,000** (ceiling $243,750, not binding), **walk-away $85,500**.
+Cash in $34,400 (down $30,000 + points $4,400), holding $14,625 → **true profit
+$36,475**.
+
+**FHA with no rehab financing**, $30,000 budget → the whole $30,000 lands in
+cash in.
+
+### Where it shows
+
+- **Numbers tab:** the profit card, prefilled, saved as kind `flip` with
+  versions. Shows what one more month of holding costs.
+- **Properties list:** every card reads *"Walk-away $X · True profit $Y"* in
+  place of *"$X profit at Y% margin"*, and both go in the number grid.
+- **Header chip and compare:** walk-away first, true profit under it.
+- **No ARV:** both read "—" and say what is missing, rather than showing $0,
+  which reads as a deal that makes nothing instead of one nobody has priced.
+- **No income on the profile:** one banner at the top of the list linking to
+  Settings → Profile, not a chip on every card. DTI reads "—", never 0%. Hard
+  money houses do not need income at all.
+- **`/tools/flip`:** the same calculation, all manual, nothing required, with
+  the optional "Save to a house" picker.
+
+### Out of scope here
+
+- The rehab estimate itself. That is Phase 3, and this is built so it drops in.
+- Marking finalists and offer entry, which stay in Phase 4.
 
 ---
 

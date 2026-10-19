@@ -13,6 +13,7 @@ import { StageMenu } from "./StageMenu";
 import { ContactCard } from "./ContactCard";
 import { CompsPanel } from "./CompsPanel";
 import { NumbersModal } from "@/components/mortgage/NumbersModal";
+import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
 import { propertyTypeLabel } from "@/lib/property/types";
 import { useCrmContext, useShellProfile } from "./useCrmContext";
@@ -384,6 +385,9 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     Another scenario for this house
                   </button>
                 )}
+
+                {/* What the deal makes, worked back from the analysis above. */}
+                {property && <DealPanel propertyId={property.id} ctxParams={ctxParams ?? ""} />}
               </div>
             )}
 

@@ -18,7 +18,13 @@ export async function GET(request: Request) {
     // property_id scopes the list to one house, which is what the property
     // page's Numbers tab asks for.
     const propertyId = params.get("property_id") ?? undefined;
-    return NextResponse.json({ scenarios: await listScenarios(ctx, { propertyId }) });
+    const kind = params.get("kind") ?? undefined;
+    return NextResponse.json({
+      scenarios: await listScenarios(ctx, {
+        propertyId,
+        ...(kind === "flip" || kind === "rehab" || kind === "rental" ? { kind } : {}),
+      }),
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to list scenarios";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -38,6 +44,8 @@ export async function POST(request: Request) {
     property_id?: string | null;
     /** Accepted only to be refused — see below. */
     address?: unknown;
+    /** "financing" (default) or "flip". */
+    kind?: string;
     context_type?: string;
     context_id?: string;
   };
@@ -90,6 +98,7 @@ export async function POST(request: Request) {
         // Null means quick math with no house yet, which lands under
         // "Unassigned" and can be pointed at a house later.
         propertyId: body.property_id ?? null,
+        ...(body.kind === "flip" ? { kind: "flip" as const } : {}),
       },
       ctx,
       user.id

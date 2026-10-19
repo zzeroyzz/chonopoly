@@ -100,6 +100,11 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
     // report "not applicable", which the UI turns into "set your income".
     grossMonthlyIncome: 0,
     otherMonthlyDebt: 0,
+    hardMoneyPurchaseLtvPct: 85,
+    hardMoneyRehabFundedPct: 100,
+    hardMoneyMaxLoanToArvPct: 75,
+    hardMoneyInterestStyle: "non_dutch",
+    hardMoneyDraws: [],
 
     fhaUfmipFinanced: true,
 
