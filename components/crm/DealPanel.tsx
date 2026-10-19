@@ -176,6 +176,18 @@ export function DealPanel({
   }
 
   async function makePrimary(id: string) {
+    const picked = options.find((o) => o.id === id);
+    // One tap changes what the card, the header and both verdicts read, so it
+    // asks first. Silently re-pointing every number in the app off a dropdown
+    // is how the card and this tab came to disagree in the first place.
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Use "${picked?.label ?? "this one"}" for this house's profit everywhere?\n\nIts numbers will show on the house, the Properties list and the verdicts.`
+      )
+    ) {
+      return;
+    }
     setSwitching(true);
     try {
       await fetch(`/api/mortgage/scenarios/${id}?${ctxParams}`, {

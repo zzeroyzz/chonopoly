@@ -83,7 +83,12 @@ export async function loadScreenRows(
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
     .in("property_id", propertyIds)
-    .is("archived_at", null);
+    .is("archived_at", null)
+    // Same order the property page reads them in. Without this the two sides
+    // agreed whenever a house had a primary and silently disagreed when it did
+    // not — each kept a different "first" scenario, so a card and its own Deal
+    // tab showed different money for the same house.
+    .order("updated_at", { ascending: false });
 
   if (analysisError) throw new Error(`Failed to load analyses: ${analysisError.message}`);
 

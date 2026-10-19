@@ -35,6 +35,32 @@ are fine — deletion as a bugfix is not.
   `npx playwright test <test-file>`
 - Playwright tests live in /tests or alongside the feature — do not scatter them
 
+# Writing (all user-facing text)
+
+Write for a first-time investor, not a developer. These apply to every label,
+button, verdict, warning, error, empty state and tooltip.
+
+- **Every number says what it is, whether it is good or bad, and why it
+  matters.** Not "$1,915 cash left". Instead: "$1,915 left after closing.
+  That's less than 3 months of payments, so one surprise could stall the flip."
+- **Every verdict or warning says why, and what to do about it.** A verdict
+  with no reason is a verdict nobody can act on.
+- **Every empty screen says what goes there and how to fill it**, with a button
+  that does it.
+- **Every error says what happened and what to do next.** No status codes, no
+  internal terms.
+- **Each page opens with one plain sentence saying what it is for.**
+- **Jargon gets a tap-to-explain (ⓘ)** with a one-sentence plain definition:
+  ARV, PITI, DTI, DPA, 203(k), cap, comps, margin, walk-away cash, true profit,
+  holding costs, points, reserves.
+- **Spell out what a percentage is a percentage of**, every time. "Margin" alone
+  means nothing; "profit as a % of the resale price" does.
+- **Short sentences.**
+- **Never use internal words in the UI**: analysis, scenario, primary, carry,
+  fixture, resolver, deployment, migration, endpoint, payload.
+- **Do not explain how the app calculates something** unless the user taps for
+  details. They want the answer, not the method.
+
 # Scope Boundaries
 - Do not modify files outside the task scope
 - Do not install new packages without asking first
