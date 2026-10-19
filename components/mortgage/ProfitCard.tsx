@@ -22,6 +22,8 @@ import { dollars } from "./format";
 export interface ProfitCardEdits {
   holdMonths?: number;
   capitalGains?: number;
+  /** Lived in it two of the last five years. */
+  primaryResidence?: boolean;
   monthlyExtras?: number;
   sellerClosingCosts?: number;
   dpaRepayment?: number;
@@ -245,6 +247,28 @@ export function ProfitCard({
         onOverride={(v) => set({ capitalGains: v })}
         onClear={() => set({ capitalGains: undefined })}
       />
+
+      {/* The exclusion is worth up to $500,000, so it is not a detail. It
+          lives here rather than in Settings because it is true of a house,
+          not of a person. */}
+      <label className="flex items-start gap-2 py-1.5 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={edits.primaryResidence ?? false}
+          onChange={(e) => set({ primaryResidence: e.target.checked })}
+          data-testid="primary-residence"
+          className="mt-0.5 accent-(--color-accent)"
+        />
+        <span className="min-w-0">
+          <span className="block text-[12px] text-(--color-text-primary)">
+            Lived in it 2 of the last 5 years
+          </span>
+          <span className="block text-[10px] text-(--color-text-tertiary) leading-relaxed">
+            Applies the primary-residence exclusion — up to $250,000, or
+            $500,000 filing jointly.
+          </span>
+        </span>
+      </label>
 
       {/* Other fees: a named list, because "misc $3,400" is unauditable. */}
       <div className="py-1.5">

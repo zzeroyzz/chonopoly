@@ -64,6 +64,10 @@ interface ProfileRow {
   holding_months: number;
   contingency_photos_pct: number;
   contingency_visit_pct: number;
+  filing_status?: string;
+  federal_ordinary_pct?: number;
+  federal_long_term_pct?: number;
+  state_tax_rates_pct?: unknown;
 }
 
 function toDefaults(row: ProfileRow): ProfileDefaults {
@@ -85,6 +89,18 @@ function toDefaults(row: ProfileRow): ProfileDefaults {
     holdingMonths: row.holding_months,
     contingencyPhotosPct: Number(row.contingency_photos_pct),
     contingencyVisitPct: Number(row.contingency_visit_pct),
+    // Present only once the tax-defaults migration has run. Reading them
+    // defensively keeps the app working either side of it.
+    ...(row.filing_status !== undefined ? { filingStatus: String(row.filing_status) } : {}),
+    ...(row.federal_ordinary_pct !== undefined
+      ? { federalOrdinaryPct: Number(row.federal_ordinary_pct) }
+      : {}),
+    ...(row.federal_long_term_pct !== undefined
+      ? { federalLongTermPct: Number(row.federal_long_term_pct) }
+      : {}),
+    ...(row.state_tax_rates_pct !== undefined && row.state_tax_rates_pct !== null
+      ? { stateTaxRatesPct: row.state_tax_rates_pct as Record<string, number> }
+      : {}),
   };
 }
 
@@ -95,6 +111,16 @@ const PROFILE_COLUMNS = `
   dpa_term_years, buying_pct, selling_pct, holding_monthly, holding_months,
   contingency_photos_pct, contingency_visit_pct
 `;
+
+/**
+ * The tax columns, which exist only after 20261019030000_tax_defaults.sql runs.
+ *
+ * Selected separately and retried without them on failure, so this deploy is
+ * safe to ship before the migration is approved. Naming a column that does not
+ * exist is a 400 from PostgREST, and that 400 would take the whole profile
+ * down — the calculator, every verdict, the Properties list — over a tax rate.
+ */
+const TAX_COLUMNS = `, filing_status, federal_ordinary_pct, federal_long_term_pct, state_tax_rates_pct`;
 
 /**
  * The profile, or null when there isn't one yet.
@@ -123,17 +149,24 @@ export async function getPersonalProfile(userId: string): Promise<BuyerProfile |
 export async function getProfile(ctx: RequestContext): Promise<BuyerProfile | null> {
   assertPersonal(ctx);
 
-  const { data, error } = await db()
-    .from(PROFILES)
-    .select(PROFILE_COLUMNS)
-    .eq("owner_type", ctx.type)
-    .eq("owner_id", ctx.id)
-    .maybeSingle();
+  const read = (columns: string) =>
+    db()
+      .from(PROFILES)
+      .select(columns)
+      .eq("owner_type", ctx.type)
+      .eq("owner_id", ctx.id)
+      .maybeSingle();
+
+  let { data, error } = await read(PROFILE_COLUMNS + TAX_COLUMNS);
+  if (error) {
+    // Pre-migration: fall back to the columns that have always been there.
+    ({ data, error } = await read(PROFILE_COLUMNS));
+  }
 
   if (error) throw new Error(error.message);
   if (!data) return null;
 
-  const row = data as ProfileRow;
+  const row = data as unknown as ProfileRow;
 
   const [incomes, debts] = await Promise.all([
     db().from(INCOMES).select("id, label, income_type, gross_monthly, borrower")
@@ -285,6 +318,13 @@ export async function updateProfile(
   if (d?.holdingMonths !== undefined) patch.holding_months = d.holdingMonths;
   if (d?.contingencyPhotosPct !== undefined) patch.contingency_photos_pct = d.contingencyPhotosPct;
   if (d?.contingencyVisitPct !== undefined) patch.contingency_visit_pct = d.contingencyVisitPct;
+  // Skipped silently until the migration adds the columns, rather than failing
+  // the whole save for a field the table does not have yet.
+  const taxPatch = patch as Record<string, unknown>;
+  if (d?.filingStatus !== undefined) taxPatch.filing_status = d.filingStatus;
+  if (d?.federalOrdinaryPct !== undefined) taxPatch.federal_ordinary_pct = d.federalOrdinaryPct;
+  if (d?.federalLongTermPct !== undefined) taxPatch.federal_long_term_pct = d.federalLongTermPct;
+  if (d?.stateTaxRatesPct !== undefined) taxPatch.state_tax_rates_pct = d.stateTaxRatesPct;
 
   if (Object.keys(patch).length > 0) {
     const { error } = await db().from(PROFILES).update(patch).eq("id", existing.id);

@@ -9,7 +9,12 @@ export type LoanType = "conventional" | "fha" | "va" | "hardMoney" | "dscr";
  * deferred   — no monthly payment; principal due on sale, refinance or payoff.
  * amortizing — a real second lien with a monthly payment from day one.
  */
-export type DpaStructure = "grant" | "deferred" | "amortizing";
+/**
+ * How assistance is repaid, which is the only thing about it that changes the
+ * deal. "forgivable" was missing and is the common one: forgiven over a term,
+ * with whatever is left owed if you sell early.
+ */
+export type DpaStructure = "grant" | "deferred" | "forgivable" | "amortizing";
 
 export type RepairLevel = "light" | "moderate" | "heavy";
 
@@ -84,6 +89,9 @@ export interface MortgageInputs {
    */
   dpaEnabled: boolean;
   dpaStructure: DpaStructure;
+  /** Forgivable: the term, and whether it forgives in one go or year by year. */
+  dpaForgivenessYears: number;
+  dpaForgivenessStyle: "cliff" | "prorated";
   /** Amortizing structures only. Annual rate as a percent; 0 is common. */
   dpaRate: number;
   /** Amortizing structures only. */
