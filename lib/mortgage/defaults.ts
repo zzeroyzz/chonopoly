@@ -87,7 +87,7 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
     // No assistance until the user says otherwise — the calculator shouldn't
     // assume a program he may not qualify for.
     dpaEnabled: false,
-    dpaStructure: "grant",
+    dpaStructure: "deferred",
     dpaRate: 0,
     dpaTermYears: 10,
 
@@ -100,6 +100,8 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
     // report "not applicable", which the UI turns into "set your income".
     grossMonthlyIncome: 0,
     otherMonthlyDebt: 0,
+    dpaForgivenessYears: 5,
+    dpaForgivenessStyle: "prorated",
     hardMoneyPurchaseLtvPct: 85,
     hardMoneyRehabFundedPct: 100,
     hardMoneyMaxLoanToArvPct: 75,

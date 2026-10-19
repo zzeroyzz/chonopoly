@@ -8,6 +8,7 @@ import { buildDeal } from "@/lib/deal/buildDeal";
 import { resolveRehab } from "@/lib/rehab/resolveRehab";
 import { saveAnalysis } from "@/lib/mortgage/scenarioClient";
 import { type BuyerProfile } from "@/lib/profile/types";
+import { taxDefaultsFrom } from "@/lib/mortgage/capitalGains";
 import { ProfitCard, type ProfitCardEdits } from "@/components/mortgage/ProfitCard";
 
 /**
@@ -22,9 +23,11 @@ import { ProfitCard, type ProfitCardEdits } from "@/components/mortgage/ProfitCa
 interface Props {
   propertyId: string;
   ctxParams: string;
+  /** Two-letter state, for the state capital-gains rate. */
+  state?: string | null;
 }
 
-export function DealPanel({ propertyId, ctxParams }: Props) {
+export function DealPanel({ propertyId, ctxParams, state = null }: Props) {
   const [profile, setProfile] = useState<BuyerProfile | null>(null);
   const [arv, setArv] = useState<number | null>(null);
   const [primaryInputs, setPrimaryInputs] = useState<MortgageInputs | null>(null);
@@ -86,10 +89,18 @@ export function DealPanel({ propertyId, ctxParams }: Props) {
     const rehab = resolveRehab(null, inputs.renovationBudget);
 
     return buildDeal(
-      { inputs, result, arv, rehab, sellerClosingPct: profile?.defaults.sellingPct ?? 8 },
+      {
+        inputs,
+        result,
+        arv,
+        rehab,
+        sellerClosingPct: profile?.defaults.sellingPct ?? 8,
+        taxes: taxDefaultsFrom(profile?.defaults),
+        state,
+      },
       edits
     );
-  }, [primaryInputs, profile, arv, edits]);
+  }, [primaryInputs, profile, arv, edits, state]);
 
   if (loaded && !primaryInputs) {
     return (

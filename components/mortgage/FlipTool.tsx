@@ -9,6 +9,7 @@ import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { buildDeal } from "@/lib/deal/buildDeal";
 import { resolveRehab } from "@/lib/rehab/resolveRehab";
+import { DEFAULT_TAX_DEFAULTS } from "@/lib/mortgage/capitalGains";
 import { saveAnalysis } from "@/lib/mortgage/scenarioClient";
 import { type LoanType } from "@/lib/mortgage/types";
 import { LOAN_PRODUCTS } from "@/lib/mortgage/loanTypes";
@@ -91,7 +92,17 @@ export default function FlipTool() {
     const result = calculateMortgage(inputs);
 
     return buildDeal(
-      { inputs, result, arv: arv > 0 ? arv : null, rehab: resolveRehab(null, rehab), sellerClosingPct },
+      {
+        inputs,
+        result,
+        arv: arv > 0 ? arv : null,
+        rehab: resolveRehab(null, rehab),
+        sellerClosingPct,
+        // No profile here, so the module's rates stand in. The estimate is
+        // still shown with its working and stays overridable.
+        taxes: DEFAULT_TAX_DEFAULTS,
+        state: "GA",
+      },
       edits
     );
   }, [product, price, rehab, arv, rate, points, sellerClosingPct, edits]);

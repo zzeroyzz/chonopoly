@@ -18,6 +18,12 @@ import {
   type InterestSchedule,
 } from "../mortgage/hardMoney";
 import { splitRehabFunding, type ResolvedRehab } from "../rehab/resolveRehab";
+import { dpaRepaymentAtSale } from "../mortgage/dpa";
+import {
+  calculateCapitalGains,
+  DEFAULT_TAX_DEFAULTS,
+  type TaxDefaults,
+} from "../mortgage/capitalGains";
 
 /**
  * Assemble the deal from a house, so every surface reads one calculation.
@@ -51,6 +57,10 @@ export interface DealHouse {
   rehab: ResolvedRehab;
   /** Seller closing, as a percent of the resale price. From defaults. */
   sellerClosingPct: number;
+  /** Rates for the capital-gains estimate. Falls back to the module defaults. */
+  taxes?: TaxDefaults;
+  /** Two-letter state, for the state rate. */
+  state?: string | null;
 }
 
 /** Everything a person can type over. Absent means "use the derived figure". */
@@ -60,6 +70,8 @@ export interface DealOverrides {
   sellerClosingCosts?: number;
   dpaRepayment?: number;
   capitalGains?: number;
+  /** Lived in it two of the last five years. */
+  primaryResidence?: boolean;
   otherFees?: OtherFee[];
   monthlyExtras?: number;
   /** Hard money only. */
@@ -122,11 +134,22 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
 
   const derivedSellerClosing = (arv ?? 0) * (Math.max(0, house.sellerClosingPct) / 100);
 
-  // Only a second lien is repaid at sale. A grant is not owed back, and
-  // treating it as if it were would quietly cost the seller ten thousand
-  // dollars of walk-away on every DPA deal.
-  const derivedDpa =
-    inputs.dpaEnabled && inputs.dpaStructure !== "grant" ? result.dpaApplied : 0;
+  // What is still owed on the award the day you sell. A grant is nothing, a
+  // deferred loan is all of it, and a forgivable one is whatever has not been
+  // forgiven yet — which a single "is it a grant" flag could not express, so
+  // a real loan was being written off as free money.
+  const dpa = dpaRepaymentAtSale(
+    {
+      enabled: inputs.dpaEnabled,
+      structure: inputs.dpaStructure,
+      amount: result.dpaApplied,
+      forgivenessYears: inputs.dpaForgivenessYears,
+      forgivenessStyle: inputs.dpaForgivenessStyle,
+      ratePct: inputs.dpaRate,
+      termYears: inputs.dpaTermYears,
+    },
+    holdMonths
+  );
 
   // ── Out of pocket ─────────────────────────────────────────────────────────
   const derivedDownPayment = hardMoney ? hardMoney.loan.downPayment : result.downPaymentAmount;
@@ -142,6 +165,27 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
   const oneMoreMonthCarry = hardMoney
     ? hardMoney.schedule.oneMoreMonth
     : result.totalMonthlyWithMortgageInsurance;
+
+  // ── Tax on the sale ───────────────────────────────────────────────────────
+  //
+  // Derived from figures the deal already holds rather than typed, because a
+  // number you have to work out yourself is a number that stays at zero — and
+  // on a twelve-month flip the tax is the difference between a deal and a job.
+  // Uses the effective seller closing, so an override moves the gain with it.
+  const effectiveSellerClosing =
+    overrides.sellerClosingCosts ?? derivedSellerClosing;
+
+  const gains = calculateCapitalGains({
+    salePrice: arv ?? 0,
+    sellerClosingCosts: effectiveSellerClosing,
+    purchasePrice: inputs.homeValue,
+    buyerClosingCosts: derivedBuyerClosing,
+    rehabTotal: rehab.total,
+    holdMonths,
+    state: house.state ?? null,
+    primaryResidence: overrides.primaryResidence ?? false,
+    taxes: house.taxes ?? DEFAULT_TAX_DEFAULTS,
+  });
 
   const params: DealParams = {
     arv: arv === null ? null : line(arv, "valuation"),
@@ -166,16 +210,12 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
     dpaRepayment:
       overrides.dpaRepayment !== undefined
         ? line(overrides.dpaRepayment, "financing_analysis", true)
-        : line(
-            derivedDpa,
-            "financing_analysis",
-            false,
-            inputs.dpaEnabled && inputs.dpaStructure === "grant"
-              ? "A grant is not repaid"
-              : undefined
-          ),
+        : line(dpa.dueAtSale, "financing_analysis", false, dpa.explanation),
 
-    capitalGains: line(overrides.capitalGains ?? 0, "manual", overrides.capitalGains !== undefined),
+    capitalGains:
+      overrides.capitalGains !== undefined
+        ? line(overrides.capitalGains, "manual", true)
+        : line(gains.tax, "computed", false, `Estimate · ${gains.explanation}`),
     otherFees: overrides.otherFees ?? [],
 
     downPayment: line(

@@ -176,6 +176,73 @@ export function InputPanel({ inputs, onChange, profileState, onSetIncome }: Prop
                   ? `Covers the ${config.minDownPercent}% minimum first — ${dollars(minimumDownPayment(inputs), 0)} — and the rest goes to closing costs. You still bring at least ${dollars(BORROWER_MINIMUM_INVESTMENT, 0)} of your own.`
                   : "A fixed award that covers the minimum down payment, with the remainder applied to closing costs."}
               </p>
+
+              {/* How it is repaid. This is the whole difference at sale: a
+                  grant costs nothing and a deferred loan costs the full award
+                  out of the proceeds. Modelling it as one bit wrote a real
+                  debt off as free money on the Profit card. */}
+              {inputs.dpaEnabled && (
+                <div className="mt-3 grid gap-2.5">
+                  <SelectField
+                    label="How it's repaid"
+                    value={inputs.dpaStructure}
+                    onChange={(v) =>
+                      onChange({ dpaStructure: v as MortgageInputs["dpaStructure"] })
+                    }
+                    options={[
+                      { value: "deferred", label: "Deferred — due in full at sale" },
+                      { value: "forgivable", label: "Forgivable — forgiven over a term" },
+                      { value: "amortizing", label: "Amortizing second — monthly payment" },
+                      { value: "grant", label: "Grant — never repaid" },
+                    ]}
+                  />
+
+                  {inputs.dpaStructure === "forgivable" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <NumberField
+                        label="Forgiven over"
+                        testId="dpa-forgiveness-years"
+                        value={inputs.dpaForgivenessYears}
+                        onChange={(dpaForgivenessYears) => onChange({ dpaForgivenessYears })}
+                        suffix="yrs"
+                        min={1}
+                      />
+                      <SelectField
+                        label="Forgiveness"
+                        value={inputs.dpaForgivenessStyle}
+                        onChange={(v) =>
+                          onChange({
+                            dpaForgivenessStyle: v as MortgageInputs["dpaForgivenessStyle"],
+                          })
+                        }
+                        options={[
+                          { value: "prorated", label: "A share each year" },
+                          { value: "cliff", label: "All at the end" },
+                        ]}
+                      />
+                    </div>
+                  )}
+
+                  {inputs.dpaStructure === "amortizing" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <NumberField
+                        label="Second lien rate"
+                        value={inputs.dpaRate}
+                        onChange={(dpaRate) => onChange({ dpaRate })}
+                        suffix="%"
+                        min={0}
+                      />
+                      <NumberField
+                        label="Second lien term"
+                        value={inputs.dpaTermYears}
+                        onChange={(dpaTermYears) => onChange({ dpaTermYears })}
+                        suffix="yrs"
+                        min={1}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
