@@ -336,6 +336,13 @@ function ScreenCard({ row }: { row: ScreenRow }) {
         {CHECKLIST_STEPS.map((step) => {
           const key = step.toLowerCase() as "numbers" | "comps" | "estimate" | "visit";
           const done = row.checklist[key];
+          // "Estimate ✓ photos" says more than "Estimate ✓": a photo estimate
+          // and a walkthrough carry different contingencies and different
+          // confidence, and the chip is where that difference is visible.
+          const label =
+            key === "estimate" && done && row.rehabSource
+              ? `${step} ${row.rehabSource === "visit" ? "visit" : "photos"}`
+              : step;
           return (
             <span
               key={step}
@@ -347,7 +354,7 @@ function ScreenCard({ row }: { row: ScreenRow }) {
                   : "border-(--color-border-default) text-(--color-text-tertiary)"
               }`}
             >
-              {step}
+              {label}
             </span>
           );
         })}

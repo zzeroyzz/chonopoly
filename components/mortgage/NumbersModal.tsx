@@ -28,6 +28,14 @@ export interface NumbersModalProps {
   target: "new" | string;
   /** The label to open with, when editing an analysis that already has one. */
   initialLabel?: string;
+  /**
+   * Opens with this reno budget instead of the house's current one.
+   *
+   * Set by "Re-run the numbers at $52k": the estimate came in over what the
+   * loan was written for, and this is how the loan gets re-sized on the real
+   * figure rather than the buyer being told to retype it.
+   */
+  rehabBudget?: number | null;
   onClose: () => void;
   /** Saved: the host closes, refreshes the Numbers tab and the verdicts. */
   onSaved: () => void;
@@ -38,6 +46,7 @@ export function NumbersModal({
   heading,
   target,
   initialLabel = "",
+  rehabBudget = null,
   onClose,
   onSaved,
 }: NumbersModalProps) {
@@ -50,15 +59,6 @@ export function NumbersModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmingClose, setConfirmingClose] = useState(false);
-
-  // A name that describes the scenario rather than the house, offered as soon
-  // as the loan is known. Only while the user has not typed their own: a name
-  // somebody picked is not ours to overwrite.
-  useEffect(() => {
-    if (!isNew || nameTouched || !numbers) return;
-    const suggested = suggestScenarioName(numbers.inputs);
-    setLabel((current) => (current.trim() === "" ? suggested : current));
-  }, [isNew, nameTouched, numbers]);
 
   // Escape closes, through the same guard as Cancel.
   useEffect(() => {
@@ -92,7 +92,7 @@ export function NumbersModal({
 
   async function save() {
     if (!numbers || busy) return;
-    if (!label.trim()) {
+    if (!shownLabel.trim()) {
       setError("Give this analysis a name");
       return;
     }
@@ -100,7 +100,7 @@ export function NumbersModal({
     setError(null);
     try {
       await saveAnalysis({
-        label,
+        label: shownLabel,
         inputs: numbers.inputs,
         monthlyPayment: numbers.monthlyPayment,
         // The house this modal was opened over. No address, ever.
@@ -114,6 +114,13 @@ export function NumbersModal({
       setBusy(false);
     }
   }
+
+  // A name that describes the scenario rather than the house, offered as soon
+  // as the loan is known. Derived rather than written into state from an
+  // effect: the box shows the suggestion until the user types, and what they
+  // type always wins.
+  const suggestion = isNew && numbers ? suggestScenarioName(numbers.inputs) : "";
+  const shownLabel = label.trim() === "" && !nameTouched ? suggestion : label;
 
   return (
     <div
@@ -165,6 +172,7 @@ export function NumbersModal({
           <CalculatorCore
             propertyId={propertyId}
             scenarioId={isNew ? null : target}
+            rehabBudget={rehabBudget}
             onNumbersChange={setNumbers}
             onTouchedChange={setTouched}
             // The header already names the house, and amortization is long
@@ -185,7 +193,7 @@ export function NumbersModal({
               Name
             </span>
             <input
-              value={label}
+              value={shownLabel}
               onChange={(e) => {
                 setLabel(e.target.value);
                 setNameTouched(true);

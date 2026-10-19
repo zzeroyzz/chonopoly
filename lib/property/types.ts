@@ -32,6 +32,10 @@ export interface Property {
   longitude: number | null;
   description: string | null;
   photo_url: string | null;
+  /** The listing page, so the photos are one tap away when estimating. */
+  listing_url?: string | null;
+  /** Stamped when a walkthrough is recorded. Drives the progress checklist. */
+  visit_completed_at?: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;

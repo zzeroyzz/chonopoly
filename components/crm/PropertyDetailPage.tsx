@@ -13,6 +13,7 @@ import { ContactCard } from "./ContactCard";
 import { CompsPanel } from "./CompsPanel";
 import { NumbersModal } from "@/components/mortgage/NumbersModal";
 import { ScenarioRows } from "./ScenarioRows";
+import { RehabPanel } from "./RehabPanel";
 import { type BuyerProfile } from "@/lib/profile/types";
 import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
@@ -66,6 +67,8 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   const [arv, setArv] = useState<number | null>(null);
   /** Bumped to remount the Profit card when the primary moves. */
   const [dealKey, setDealKey] = useState(0);
+  /** Carried into Run the numbers when re-running at the estimate. */
+  const [rerunBudget, setRerunBudget] = useState<number | null>(null);
   const router = useRouter();
   const profile = useShellProfile();
   const { ctx, ctxParams } = useCrmContext();
@@ -129,6 +132,13 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   // the Numbers tab is scoped to it. A useCallback rather than a bare effect so
   // saving from the modal can re-run exactly this read.
   const propertyId = property?.id ?? null;
+
+  // The reno budget the loan was sized on — what the estimate is checked
+  // against, and what the loan can actually cover.
+  const primaryBudget =
+    analyses.find((a) => a.isPrimary)?.inputs.renovationBudget ??
+    analyses[0]?.inputs.renovationBudget ??
+    0;
 
   const loadAnalyses = useCallback(async () => {
     if (!propertyId || !ctxParams) return;
@@ -411,6 +421,10 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     ctxParams={ctxParams ?? ""}
                     state={property.state}
                     onPrimaryChanged={() => void loadAnalyses()}
+                    onRerunAtEstimate={(rehabBudget) => {
+                      setRerunBudget(rehabBudget);
+                      openNumbers("new");
+                    }}
                   />
                 )}
               </div>
@@ -420,11 +434,27 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               <CompsPanel propertyId={property.id} ctx={ctx} ctxParams={ctxParams} />
             )}
 
-            {tab === "Rehab" && (
-              <p data-testid="panel-rehab" className="text-[12px] text-(--color-text-secondary) leading-relaxed">
-                The rehab estimate arrives with the estimating step — a checklist
-                by system, worked from the listing photos or a walkthrough.
-              </p>
+            {tab === "Rehab" && property && (
+              <RehabPanel
+                propertyId={property.id}
+                ctxParams={ctxParams ?? ""}
+                listingUrl={property.listing_url ?? null}
+                renovationBudget={primaryBudget}
+                profile={buyerProfile}
+                visitCompletedAt={property.visit_completed_at ?? null}
+                entryId={detail.entry?.id ?? null}
+                onRerun={(rehabBudget) => {
+                  // Opens Run the numbers prefilled, so the loan can be sized
+                  // on the figure the estimate actually produced.
+                  setRerunBudget(rehabBudget);
+                  openNumbers("new");
+                  setTab("Numbers");
+                }}
+                onSaved={async () => {
+                  await loadAnalyses();
+                  setDealKey((k) => k + 1);
+                }}
+              />
             )}
 
             {tab === "Overview" && (
@@ -566,13 +596,18 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
             .filter(Boolean)
             .join(", ")}
           target={numbersTarget}
+          rehabBudget={rerunBudget}
           initialLabel={
             numbersTarget === "new"
               ? ""
               : (analyses.find((a) => a.id === numbersTarget)?.label ?? "")
           }
-          onClose={closeNumbers}
+          onClose={() => {
+            setRerunBudget(null);
+            closeNumbers();
+          }}
           onSaved={async () => {
+            setRerunBudget(null);
             closeNumbers();
             // The Numbers tab and the header both read from these.
             await Promise.all([loadAnalyses(), load()]);

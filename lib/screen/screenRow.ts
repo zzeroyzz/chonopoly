@@ -90,6 +90,12 @@ export interface ScreenRow {
 
   /** True when the ARV came from unreviewed comps. */
   provisionalArv: boolean;
+  /** Which kind of estimate the rehab number came from, when there is one. */
+  rehabSource: "photos" | "visit" | null;
+  /** The reno budget the loan was sized on, for the budget check. */
+  rehabBudget: number;
+  /** The rehab figure actually in use — the estimate, or the budget. */
+  rehabTotal: number;
   listingUrl: string | null;
 }
 
@@ -190,6 +196,13 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     deal: dealVerdict,
     checklist,
     provisionalArv,
+    rehabSource: rehab.budgetOnly
+      ? null
+      : rehab.source === "estimate_visit"
+        ? "visit"
+        : "photos",
+    rehabBudget: inputs.renovationBudget,
+    rehabTotal: rehab.total,
     listingUrl: house.listingUrl,
   };
 }

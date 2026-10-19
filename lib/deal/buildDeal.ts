@@ -108,7 +108,14 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
       interestStyle: inputs.hardMoneyInterestStyle,
       ...overrides.hardMoney,
     };
-    const loan = sizeHardMoneyLoan(inputs.homeValue, rehab.total, arv ?? 0, terms);
+    const loan = sizeHardMoneyLoan(
+      inputs.homeValue,
+      // Sized on what the lender underwrote, which is the budget on the
+      // financing analysis — not on an estimate produced afterwards.
+      Math.min(rehab.total, inputs.renovationBudget),
+      arv ?? 0,
+      terms
+    );
     const stored = inputs.hardMoneyDraws;
     const draws =
       overrides.draws ?? (stored.length > 0 ? stored : defaultDraws(loan.rehabFunded, holdMonths));
@@ -120,7 +127,11 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
     rehab.total,
     inputs.loanType,
     inputs.renovationProgram,
-    hardMoney?.loan.rehabFunded ?? null
+    hardMoney?.loan.rehabFunded ?? null,
+    // The loan was sized on the reno budget stored with the financing
+    // analysis. If the estimate came in higher, the gap is cash until the
+    // numbers are re-run at the new figure.
+    inputs.renovationBudget
   );
 
   // ── Out of the closing statement ──────────────────────────────────────────
