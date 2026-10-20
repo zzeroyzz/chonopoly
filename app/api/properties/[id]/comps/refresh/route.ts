@@ -94,6 +94,25 @@ function normalizedFor(row: PropertyRow): string {
   });
 }
 
+/**
+ * The specs RentCast matches on that this house does not have yet.
+ *
+ * Only sqft and beds: those two are what the comp search is actually built
+ * around, and demanding baths or year built as well would stop a lookup that
+ * would have been fine.
+ */
+function describeMissingFacts(row: PropertyRow): string[] {
+  const missing: string[] = [];
+  if (!row.sqft) missing.push("square footage");
+  if (!row.beds) missing.push("bedroom count");
+  return missing;
+}
+
+/** ["a", "b"] -> "a and b". Two items at most here, so no serial comma. */
+function joinPlainly(parts: string[]): string {
+  return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
 function nextRefreshIn(days: number): string {
   const next = new Date();
   next.setUTCDate(next.getUTCDate() + days);
@@ -211,6 +230,31 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
         { status: 403 }
       );
     }
+  }
+
+  // ── Gate 2b: don't spend a request on a house we can't describe ────────────
+  //
+  // RentCast picks the comps from the specs we send. With no sqft and no bed
+  // count it returns whatever is nearby, and that answer is then cached for 30
+  // days — so a blind lookup is not just wasted, it is locked in. 674 White
+  // Bird Way went out this way and came back with fifteen comps between 1,938
+  // and 2,505 sqft for a 1,357 sqft house, none of them usable.
+  //
+  // The facts arrive in the very same response, which is what makes this worth
+  // stopping for: wait, fill them in, and the next lookup is aimed.
+  const missingFacts = describeMissingFacts(row);
+  if (missingFacts.length > 0 && payload.acknowledgeMissingFacts !== true) {
+    return NextResponse.json({
+      ...(await currentState(id, ctx, row)),
+      degraded: "missing_facts",
+      missingFacts,
+      message:
+        `This house has no ${joinPlainly(missingFacts)} yet, and RentCast picks the comps using ` +
+        `${missingFacts.length === 1 ? "it" : "them"}. A lookup now comes back with whatever is ` +
+        `nearby, and that answer is saved for ${CACHE_WINDOW_DAYS} days. Add the ` +
+        `${joinPlainly(missingFacts)} on the House tab first, or look up anyway.`,
+      usage,
+    });
   }
 
   // ── Gate 3: the in-flight lock ─────────────────────────────────────────────

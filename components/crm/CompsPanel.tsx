@@ -28,6 +28,8 @@ interface CompsResponse {
   arv: ArvResult;
   degraded?: string | null;
   message?: string | null;
+  /** Which specs are missing, when the lookup stopped rather than go out blind. */
+  missingFacts?: string[] | null;
   source?: "live" | "cached" | "rebuilt" | "mock" | null;
   /** The subject's own facts, for the per-comp fit reason. Each one the panel
    *  does not have is a check it cannot explain on screen. */
@@ -172,11 +174,19 @@ export function CompsPanel({
   const [subjectBeds, setSubjectBeds] = useState<number | null>(null);
   const [subjectFit, setSubjectFit] = useState<SubjectFit>({});
   const [confirmingForce, setConfirmingForce] = useState(false);
+  /** Set when a lookup stopped because the house has no size or bed count. */
+  const [blindLookup, setBlindLookup] = useState<{ message: string; facts: string[] } | null>(null);
 
   const apply = useCallback((data: CompsResponse) => {
     setComps(data.comps ?? []);
     setArv(data.arv ?? null);
-    setDegraded(data.message ?? null);
+    // A blind-lookup stop gets its own panel with a way past it, so it must not
+    // also appear as a plain amber notice with no button attached.
+    const stoppedForFacts = data.degraded === "missing_facts";
+    setBlindLookup(
+      stoppedForFacts ? { message: data.message ?? "", facts: data.missingFacts ?? [] } : null
+    );
+    setDegraded(stoppedForFacts ? null : (data.message ?? null));
     setSource(data.source ?? null);
     setSubjectBeds(data.subjectBeds ?? null);
     setSubjectFit({
@@ -239,7 +249,9 @@ export function CompsPanel({
     })();
   }, [load, loadStatus]);
 
-  async function refresh(options: { force?: boolean; rebuild?: boolean } = {}) {
+  async function refresh(
+    options: { force?: boolean; rebuild?: boolean; acknowledgeMissingFacts?: boolean } = {}
+  ) {
     if (!ctx) return;
     setRefreshing(true);
     setError(null);
@@ -252,6 +264,7 @@ export function CompsPanel({
           context_id: ctx.id,
           ...(options.force ? { force: true } : {}),
           ...(options.rebuild ? { rebuild: true } : {}),
+          ...(options.acknowledgeMissingFacts ? { acknowledgeMissingFacts: true } : {}),
         }),
       });
       // A degraded lookup is a 200 carrying a reason, not an error — the comps
@@ -420,6 +433,40 @@ export function CompsPanel({
                 className="h-9 px-3 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Stopped before the request was spent, because RentCast matches on
+            specs this house does not have yet. Says what is missing, what it
+            costs to go ahead anyway, and leaves the choice open. */}
+        {blindLookup && (
+          <div
+            data-testid="missing-facts-warning"
+            className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3"
+          >
+            <p className="flex gap-1.5 text-[12px] text-amber-300 leading-relaxed">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              <span>{blindLookup.message}</span>
+            </p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => void refresh({ acknowledgeMissingFacts: true })}
+                disabled={refreshing || !ctx}
+                data-testid="missing-facts-proceed"
+                className="h-9 px-3 rounded-(--radius-pill) border border-(--color-border-default) text-[12px] font-medium disabled:opacity-50"
+              >
+                {refreshing ? "Pulling…" : "Look up anyway"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBlindLookup(null)}
+                data-testid="missing-facts-dismiss"
+                className="h-9 px-3 rounded-(--radius-pill) text-[12px] font-medium text-(--color-text-secondary)"
+              >
+                Not yet
               </button>
             </div>
           </div>
