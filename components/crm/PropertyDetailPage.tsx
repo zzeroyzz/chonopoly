@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Plus, Pencil } from "lucide-react";
+import { ArrowLeft, Check, Plus, Pencil, ExternalLink } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { VerdictTag } from "@/components/mortgage/VerdictTag";
@@ -25,6 +25,7 @@ import { Star } from "lucide-react";
 import { type BuyerProfile } from "@/lib/profile/types";
 import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
+import { searchUrls } from "./CompLinks";
 import { propertyTypeLabel } from "@/lib/property/types";
 import { useCrmContext, useShellProfile } from "./useCrmContext";
 
@@ -408,6 +409,29 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
                     {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
                   </p>
+
+                  {/* Somewhere to go and look at the house itself. The comps
+                      have had this since they were added; the house they are
+                      being compared to did not. Built from the address the
+                      same way, by the same function. */}
+                  {property?.address_line1 && (
+                    <a
+                      href={
+                        searchUrls(
+                          [property.address_line1, property.city, property.state, property.zip]
+                            .filter(Boolean)
+                            .join(", ")
+                        ).zillow
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="property-zillow"
+                      className="inline-flex items-center gap-1 min-h-11 text-[12px] text-(--color-accent)"
+                    >
+                      View on Zillow
+                      <ExternalLink size={11} />
+                    </a>
+                  )}
                   {/* The numbers and the two verdicts arrive on the screen
                       read, one round trip after the address. Holding their
                       space stops the header growing under your thumb. */}

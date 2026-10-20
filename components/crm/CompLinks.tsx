@@ -18,7 +18,12 @@ import { type Comp } from "@/lib/comps/types";
  * search.
  */
 
-function searchUrls(address: string) {
+/**
+ * Exported so the property page can link to the subject house the same way.
+ * One definition: a second copy would drift the moment one of these sites
+ * changes its URL shape.
+ */
+export function searchUrls(address: string) {
   const q = encodeURIComponent(address);
   return {
     zillow: `https://www.zillow.com/homes/${q}_rb/`,
