@@ -87,6 +87,14 @@ export function CalculatorCore({
   // One serializable object rather than a field per useState — which is what
   // makes persisting the whole thing a one-liner.
   const [inputs, setInputs] = useState<MortgageInputs>(() => defaultInputs());
+  /**
+   * What the house itself knows, so each field can say where its figure came
+   * from and offer a way back to it after an edit.
+   */
+  const [houseFacts, setHouseFacts] = useState<{
+    listPrice: number | null;
+    arv: number | null;
+  }>({ listPrice: null, arv: null });
   const [restored, setRestored] = useState(false);
 
   // Whether a draft already existed for this house, captured by the restore
@@ -117,9 +125,11 @@ export function CalculatorCore({
     (async () => {
       try {
         // Independent reads, so they go together rather than in sequence.
-        const [propertyRes, listRes] = await Promise.all([
+        const [propertyRes, listRes, compsRes] = await Promise.all([
           fetch(`/api/properties/${propertyId}?context_type=personal`),
           fetch(`/api/mortgage/scenarios?context_type=personal&property_id=${propertyId}`),
+          // The ARV belongs to the comps, not to a scenario's copy of it.
+          fetch(`/api/properties/${propertyId}/comps?context_type=personal`).catch(() => null),
         ]);
 
         if (!propertyRes.ok) return;
@@ -150,8 +160,15 @@ export function CalculatorCore({
           }
         }
 
+        let houseArv: number | null = null;
+        if (compsRes && compsRes.ok) {
+          const body = (await compsRes.json()) as { arv?: { value: number | null } | null };
+          houseArv = body.arv?.value ?? null;
+        }
         if (cancelled) return;
-        const seed = housePrefill(property, primaryInputs);
+
+        setHouseFacts({ listPrice: property.list_price ?? null, arv: houseArv });
+        const seed = housePrefill({ ...property, arv: houseArv }, primaryInputs);
         // Applied last: re-running at the estimate is the whole reason this
         // calculator was opened, so it wins over the house's stored budget.
         if (rehabBudget !== null) seed.renovationBudget = rehabBudget;
@@ -279,6 +296,17 @@ export function CalculatorCore({
             onChange={patch}
             profileState={profileState}
             onSetIncome={() => setShowIncomeModal(true)}
+            houseFacts={propertyId ? houseFacts : null}
+            onUseHouseArv={
+              houseFacts.arv !== null
+                ? () => patch({ afterRepairValue: houseFacts.arv })
+                : undefined
+            }
+            onUseHousePrice={
+              houseFacts.listPrice !== null
+                ? () => patch({ homeValue: houseFacts.listPrice as number })
+                : undefined
+            }
           />
         </div>
 

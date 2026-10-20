@@ -50,6 +50,8 @@ export interface ScreenHouse {
   sqft: number | null;
   /** For the comp-fit check: a four-bed is not a comp for a two-bed. */
   beds?: number | null;
+  /** What the house is on the market for, as entered on Add or Edit. */
+  listPrice?: number | null;
   annualTaxes: number | null;
   listingUrl: string | null;
   photoUrl?: string | null;
@@ -119,6 +121,14 @@ export interface ScreenRow {
   rehabSource: "photos" | "visit" | null;
   /** The reno budget the loan was sized on, for the budget check. */
   rehabBudget: number;
+  /**
+   * The asking price the house itself carries, if anyone has entered one.
+   *
+   * Separate from `price`, which falls back to the calculator's default when
+   * no analysis exists — that default is what made every new house read
+   * $350,000 as though it were a fact about the house.
+   */
+  listPrice: number | null;
   /** The rehab figure actually in use — the estimate, or the budget. */
   rehabTotal: number;
   listingUrl: string | null;
@@ -145,6 +155,13 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
   // path the calculator takes, so the table and the calculator cannot
   // disagree about a house.
   const houseInputs: HouseInputs = {
+    // The house's own asking price seeds the figures, so a house nobody has
+    // run the numbers on still reads its real price rather than the
+    // calculator's $350,000 default. An analysis set on top of it wins,
+    // because that is a price someone chose deliberately.
+    ...(house.listPrice !== null && house.listPrice !== undefined
+      ? { homeValue: house.listPrice }
+      : {}),
     ...(house.analysisInputs ?? {}),
     ...(house.annualTaxes !== null ? { propertyTaxYearly: house.annualTaxes } : {}),
   };
@@ -245,6 +262,7 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     needsAddressReview: house.needsAddressReview,
 
     price: inputs.homeValue,
+    listPrice: house.listPrice ?? null,
     piti: result.totalMonthlyWithMortgageInsurance,
     backDti: dti.applicable ? dti.backEnd : null,
     cashToClose: result.cashToClose + (renovationCap?.outOfPocketGap ?? 0),

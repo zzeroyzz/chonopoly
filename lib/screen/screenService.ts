@@ -68,6 +68,7 @@ export async function loadScreenRows(
     zip: string | null;
     sqft: number | null;
     beds: number | null;
+    list_price?: number | null;
     annual_taxes: number | null;
     listing_url: string | null;
     photo_url: string | null;
@@ -179,6 +180,7 @@ export async function loadScreenRows(
       zip: row.zip,
       sqft: row.sqft,
       beds: row.beds,
+      listPrice: row.list_price ?? null,
       annualTaxes: row.annual_taxes,
       listingUrl: row.listing_url,
       photoUrl: row.photo_url,

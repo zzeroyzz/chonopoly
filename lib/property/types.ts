@@ -34,6 +34,11 @@ export interface Property {
   photo_url: string | null;
   /** The listing page, so the photos are one tap away when estimating. */
   listing_url?: string | null;
+  /**
+   * What the house is on the market for. Null when nobody has said — never a
+   * calculator default standing in for one.
+   */
+  list_price?: number | null;
   /** Stamped when a walkthrough is recorded. Drives the progress checklist. */
   visit_completed_at?: string | null;
   created_by: string;
@@ -61,6 +66,8 @@ export interface PropertyInput {
   photo_url?: string | null;
   /** The listing page, so the photos are one tap away when estimating. */
   listing_url?: string | null;
+  /** What the house is on the market for. */
+  list_price?: number | null;
 }
 
 /** How an upsert resolved — surfaced so callers can explain a merge to the user. */
