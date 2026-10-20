@@ -175,6 +175,9 @@ function compsFromResponse(
     correlation: mapped.correlation,
     // Default true: that is what a fresh save does, and it is the right
     // assumption for a comp we have never stored.
+    buyerType: null,
+    buyerName: null,
+    county: null,
     included: mapped.external_id ? (includedByExternalId.get(mapped.external_id) ?? true) : true,
     notes: null,
     updatedAt: mapped.last_seen_date ?? "",
@@ -393,6 +396,9 @@ async function diagnoseRecordedSales(db: Db, query: string): Promise<void> {
         : null,
     daysOld: null,
     correlation: null,
+    buyerType: sale.buyer_type,
+    buyerName: sale.buyer_name,
+    county: sale.county,
     included: true,
     notes: null,
     updatedAt: sale.removed_date ?? "",

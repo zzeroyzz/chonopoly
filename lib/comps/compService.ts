@@ -103,7 +103,10 @@ function toComp(row: CompRow): Comp {
   return {
     id: row.id,
     propertyId: row.property_id,
-    source: row.source === "manual" ? "manual" : "rentcast",
+    source:
+      row.source === "manual" || row.source === "public_record"
+        ? row.source
+        : "rentcast",
     externalId: row.external_id,
     formattedAddress: row.formatted_address,
     city: row.city,
@@ -127,6 +130,14 @@ function toComp(row: CompRow): Comp {
     distanceMiles: row.distance_miles === null ? null : Number(row.distance_miles),
     daysOld: row.days_old,
     correlation: row.correlation === null ? null : Number(row.correlation),
+    // Not yet read from the row. The columns arrive with
+    // 20261020120000_recorded_sales.sql, which is written and NOT run; adding
+    // them to COMP_FIELDS before that would be a compile error, which is the
+    // typed-schema guard doing its job. Wire these up in the same change that
+    // runs the migration.
+    buyerType: null,
+    buyerName: null,
+    county: null,
     included: row.included,
     notes: row.notes,
     updatedAt: row.updated_at,

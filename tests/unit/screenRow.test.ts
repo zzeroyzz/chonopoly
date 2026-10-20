@@ -56,7 +56,8 @@ function comp(pricePerSqft: number, id: string): Comp {
     price: pricePerSqft * 1_000,
     status: "sold", listingType: null, listedDate: null, removedDate: null,
     lastSeenDate: null, daysOnMarket: null, distanceMiles: null, daysOld: null,
-    correlation: null, included: true, notes: null, updatedAt: "",
+    correlation: null, buyerType: null, buyerName: null, county: null,
+    included: true, notes: null, updatedAt: "",
   };
 }
 

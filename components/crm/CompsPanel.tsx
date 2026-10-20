@@ -6,6 +6,7 @@ import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
 import { type Comp, type CompStatus, COMP_STATUS_LABELS } from "@/lib/comps/types";
 import { type ArvResult, type SubjectFit, compEligibility } from "@/lib/comps/arv";
+import { isPossibleFixer, ORGANIZATION_BUYER } from "@/lib/comps/fromPropertyRecords";
 import { CompLinks } from "./CompLinks";
 
 /** "$380k" — the way a price range gets said out loud. */
@@ -105,6 +106,41 @@ function perSqft(comp: Comp): string | null {
 const PRICE_MEANING: Partial<Record<CompStatus, string>> = {
   sold: "sold for",
 };
+
+/**
+ * Where a sold comp's price came from.
+ *
+ * A county deed and an agent's closed-sales list are both real sales, but
+ * they are not the same kind of fact, and a reader deciding whether to trust
+ * a number is entitled to know which one they are looking at.
+ */
+function provenanceLabel(comp: Comp): string | null {
+  if (comp.status !== "sold") return null;
+  return comp.source === "public_record" ? "county record" : "you entered this";
+}
+
+/**
+ * Why this sale might be below what a finished house is worth.
+ *
+ * Says the number, who bought it, and what to do — never hides the comp. One
+ * of these on 1653 Sylvan Rd SW sits inside the ARV holding the median down,
+ * and a $145,000 sale on a street fetching $274,000 is either a fixer or the
+ * best evidence in the set. Only a person can tell which.
+ */
+function fixerUpperNote(comp: Comp): string | null {
+  if (comp.source !== "public_record" || comp.price === null) return null;
+  if (!isPossibleFixer(comp.price, comp.buyerType)) return null;
+
+  const boughtBy =
+    comp.buyerType === ORGANIZATION_BUYER
+      ? `Bought by a company${comp.buyerName ? ` (${comp.buyerName})` : ""}`
+      : "Sold";
+
+  return (
+    `${boughtBy} for ${dollars(comp.price)}, which may be below what a finished ` +
+    `house here is worth. Untick it to leave it out.`
+  );
+}
 
 function monthYear(iso: string): string {
   // Day-level precision is noise here; what matters is how stale the comp is.
@@ -712,6 +748,8 @@ function CompRow({
 }) {
   const ppsf = perSqft(comp);
   const date = compDate(comp);
+  const provenance = provenanceLabel(comp);
+  const fixerNote = fixerUpperNote(comp);
   // Falls back to the local check so an optimistic tick shows a reason
   // immediately, before the server's recomputed ARV lands.
   const fitReasons = !comp.included
@@ -772,6 +810,14 @@ function CompRow({
                 {date}
               </span>
             )}
+            {provenance && (
+              <span
+                data-testid={`comp-provenance-${comp.id}`}
+                className="text-[10px] px-1.5 py-0.5 rounded bg-(--color-elevated) text-(--color-text-tertiary)"
+              >
+                {provenance}
+              </span>
+            )}
           </div>
 
           <p className="text-[11px] text-(--color-text-tertiary) mt-1">
@@ -788,6 +834,18 @@ function CompRow({
 
           {comp.notes && (
             <p className="text-[11px] text-(--color-text-secondary) mt-1 italic">{comp.notes}</p>
+          )}
+
+          {/* Flagged, still counted. The tick box is the control — dropping a
+              cheap sale on our own would quietly raise every ARV. */}
+          {fixerNote && (
+            <p
+              data-testid={`comp-fixer-${comp.id}`}
+              className="flex gap-1.5 text-[11px] text-amber-400 mt-1 leading-relaxed"
+            >
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+              <span>{fixerNote}</span>
+            </p>
           )}
 
           {fitReasons.length > 0 && (
