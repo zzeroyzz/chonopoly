@@ -45,13 +45,36 @@ function compsAtPricePerSqft(perSqft: number[], status: CompStatus = "removed"):
 }
 
 describe("calculateArv", () => {
-  it("uses the median price per sqft times the subject's size", () => {
+  it("takes the median of each comp's price adjusted for size", () => {
+    // Comps are 1,000 sqft at 180k-220k; the subject is 1,600 sqft, so each
+    // price gains 600 x $40 = $24,000. Median 200,000 -> 224,000.
     const comps = compsAtPricePerSqft([180, 190, 200, 210, 220]);
     const result = calculateArv(comps, 1_600);
 
-    expect(result.medianPricePerSqft).toBeCloseTo(200, 6);
-    expect(result.value).toBeCloseTo(320_000, 6);
+    expect(result.value).toBeCloseTo(224_000, 6);
+    expect(result.adjustmentPerSqft).toBe(40);
     expect(result.usedComps).toHaveLength(5);
+  });
+
+  it("does not scale price per sqft onto a house bigger than its comps", () => {
+    // The bug this method replaced: 2,658 sqft against ~2,100 sqft comps that
+    // fetched $272k-$389k produced $438,406, above everything in the street.
+    const comps = [
+      comp({ id: "a", externalId: "rc-a", sqft: 2_752, price: 272_000 }),
+      comp({ id: "b", externalId: "rc-b", sqft: 2_250, price: 325_000 }),
+      comp({ id: "c", externalId: "rc-c", sqft: 2_122, price: 349_999 }),
+      comp({ id: "d", externalId: "rc-d", sqft: 2_123, price: 309_000 }),
+      comp({ id: "e", externalId: "rc-e", sqft: 2_008, price: 389_000 }),
+      comp({ id: "f", externalId: "rc-f", sqft: 1_800, price: 329_000 }),
+    ];
+
+    const result = calculateArv(comps, 2_658);
+
+    expect(result.value).not.toBeNull();
+    // Inside the range those houses actually fetched, not above it.
+    expect(result.value!).toBeLessThan(400_000);
+    expect(result.value!).toBeGreaterThan(300_000);
+    expect(result.sanityWarning).toBeNull();
   });
 
   it("ignores comps that are not included", () => {
@@ -64,8 +87,7 @@ describe("calculateArv", () => {
 
     const result = calculateArv(comps, 1_600);
 
-    expect(result.medianPricePerSqft).toBeCloseTo(200, 6);
-    expect(result.value).toBeCloseTo(320_000, 6);
+    expect(result.value).toBeCloseTo(224_000, 6);
     expect(result.usedComps).toHaveLength(5);
     expect(result.usedComps.map((c) => c.compId)).not.toContain("outlier");
   });
@@ -79,6 +101,7 @@ describe("calculateArv", () => {
       1_000
     );
 
+    // Same size as the subject, so no adjustment applies either way.
     expect(before.value).toBeCloseTo(200_000, 6);
     // Dropping the 220 leaves [180,190,200,210]; median 195.
     expect(after.value).toBeCloseTo(195_000, 6);
@@ -88,9 +111,9 @@ describe("calculateArv", () => {
     const withOutlier = compsAtPricePerSqft([180, 190, 200, 210, 1_000]);
     const result = calculateArv(withOutlier, 1_000);
 
-    const mean = (180 + 190 + 200 + 210 + 1_000) / 5;
-    expect(result.medianPricePerSqft).toBeCloseTo(200, 6);
-    expect(result.medianPricePerSqft).toBeLessThan(mean);
+    const mean = ((180 + 190 + 200 + 210 + 1_000) / 5) * 1_000;
+    expect(result.value).toBeCloseTo(200_000, 6);
+    expect(result.value!).toBeLessThan(mean);
   });
 
   it("reports the mix it was built on", () => {
@@ -101,27 +124,30 @@ describe("calculateArv", () => {
 
     const result = calculateArv(comps, 1_000);
 
+    // Two or more sold comps and the listings drop out entirely, so the
+    // label describes the sold set the number was actually built on.
+    expect(result.soldOnly).toBe(true);
     expect(result.soldCount).toBe(3);
-    expect(result.removedCount).toBe(2);
+    expect(result.removedCount).toBe(0);
     expect(result.activeCount).toBe(0);
-    expect(result.basisLabel).toBe("3 sold · 2 removed listings");
+    expect(result.basisLabel).toBe("3 sold");
   });
 
-  it("singularises one removed listing", () => {
+  it("keeps the listing in the mix when only one comp has sold", () => {
     const comps = [
-      ...compsAtPricePerSqft([180, 200], "sold"),
+      ...compsAtPricePerSqft([180], "sold"),
       comp({ id: "r-1", externalId: "rc-r1", sqft: 1_000, price: 190_000, status: "removed" }),
     ];
 
-    expect(calculateArv(comps, 1_000).basisLabel).toBe("2 sold · 1 removed listing");
+    expect(calculateArv(comps, 1_000).basisLabel).toBe("1 sold · 1 removed listing");
   });
 
   it("warns when nothing in the set is a confirmed sale", () => {
     const result = calculateArv(compsAtPricePerSqft([180, 190, 200, 210, 220], "removed"), 1_000);
 
     expect(result.soldCount).toBe(0);
-    expect(result.warnings.join(" ")).toMatch(/No confirmed sales/);
-    expect(result.warnings.join(" ")).toMatch(/may not have sold/);
+    expect(result.warnings.join(" ")).toMatch(/None of these are confirmed sales/);
+    expect(result.warnings.join(" ")).toMatch(/Add a sold comp from your agent/);
   });
 
   it("does not warn about sales when the comps are sold", () => {
@@ -143,11 +169,11 @@ describe("calculateArv", () => {
     expect(result.warnings.join(" ")).toMatch(/No comps are included/);
   });
 
-  it("returns null when the subject has no square footage", () => {
+  it("asks for the square footage when the subject has none", () => {
     const result = calculateArv(compsAtPricePerSqft([180, 200, 220]), null);
 
     expect(result.value).toBeNull();
-    expect(result.warnings.join(" ")).toMatch(/no square footage/);
+    expect(result.warnings.join(" ")).toMatch(/Add this house's square footage/);
   });
 
   it("skips comps with no price or no size and says how many", () => {
@@ -196,9 +222,10 @@ describe("calculateArv", () => {
     expect(result.valueHigh!).toBeGreaterThan(result.value!);
   });
 
-  it("normalises for size rather than averaging prices", () => {
-    // Two comps at the same $/sqft but much bigger than the subject. Averaging
-    // their prices would say 400,000; the correct answer is 200 × 1,000.
+  it("discounts a bigger comp without scaling it down by price per sqft", () => {
+    // Two comps that fetched 400,000 at twice the subject's size. Price per
+    // sqft would say 200,000, which is far below anything on the street;
+    // adjusting at $40/sqft says 400,000 - 1,000 x 40 = 360,000.
     const comps = [
       comp({ id: "big-1", externalId: "rc-b1", sqft: 2_000, price: 400_000 }),
       comp({ id: "big-2", externalId: "rc-b2", sqft: 2_000, price: 400_000 }),
@@ -206,7 +233,22 @@ describe("calculateArv", () => {
 
     const result = calculateArv(comps, 1_000);
 
-    expect(result.value).toBeCloseTo(200_000, 6);
+    expect(result.value).toBeCloseTo(360_000, 6);
+  });
+
+  it("flags an ARV that lands outside what the street actually fetched", () => {
+    // A subject far bigger than its comps pushes the adjusted median above
+    // every real price, which is the shape of the bug this replaced.
+    const comps = [
+      comp({ id: "s-1", externalId: "rc-s1", sqft: 1_000, price: 200_000 }),
+      comp({ id: "s-2", externalId: "rc-s2", sqft: 1_000, price: 210_000 }),
+    ];
+
+    const result = calculateArv(comps, 3_000);
+
+    expect(result.nearbyLow).toBe(200_000);
+    expect(result.nearbyHigh).toBe(210_000);
+    expect(result.sanityWarning).toMatch(/above the most expensive home/);
   });
 });
 

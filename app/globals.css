@@ -136,6 +136,27 @@ html, body {
   font-family: var(--font-body), system-ui, sans-serif;
 }
 
+/* ── No zoom when a field is tapped ──────────────────────────────────────── */
+
+/*
+ * iOS zooms the whole page in when you focus a control whose own text is
+ * under 16px, and it does not zoom back out — so one tap on a field leaves
+ * every screen after it oversized. Raising the control's text to 16px is the
+ * documented fix, and unlike a maximum-scale viewport tag it leaves
+ * pinch-zoom alone.
+ *
+ * Scoped to touch screens so the desktop type scale is untouched, and
+ * !important because every field here carries a Tailwind text-[Npx] class,
+ * which outranks any plain element selector no matter how it is written.
+ */
+@media (hover: none) and (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* ── Loading skeleton shimmer ─────────────────────────────────────────────── */
 
 @keyframes shimmer {

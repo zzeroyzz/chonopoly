@@ -5,7 +5,13 @@ import { RefreshCw, Plus, Trash2, AlertTriangle, Lock } from "lucide-react";
 import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
 import { type Comp, COMP_STATUS_LABELS } from "@/lib/comps/types";
-import { type ArvResult } from "@/lib/comps/arv";
+import { type ArvResult, compEligibility } from "@/lib/comps/arv";
+import { CompLinks } from "./CompLinks";
+
+/** "$380k" — the way a price range gets said out loud. */
+function dollarsShort(n: number): string {
+  return `$${Math.round(n / 1000).toLocaleString("en-US")}k`;
+}
 
 /**
  * Comparable sales for one property, and the ARV they produce.
@@ -458,14 +464,41 @@ export function CompsPanel({
             on no comps" directly above a warning saying "No comps are included
             yet", which is the same sentence twice. The warning is the better
             of the two, because it says what to do. */}
+        {/* How the number was reached, in a sentence, then the sanity check
+            against what houses there actually fetched. Someone has to be able
+            to argue with an ARV, and they cannot argue with a bare figure. */}
         {arv && arv.value !== null && (
-          <p data-testid="arv-basis" className="text-[12px] text-(--color-text-secondary) mt-3">
-            {`Built on ${arv.basisLabel}`}
-            {arv.medianPricePerSqft
-              ? ` · median $${Math.round(arv.medianPricePerSqft)}/sqft`
-              : ""}
-            {arv.subjectSqft ? ` × ${arv.subjectSqft.toLocaleString()} sqft` : ""}
-          </p>
+          <>
+            <p data-testid="arv-plain" className="text-[12px] text-(--color-text-primary) mt-3 leading-relaxed">
+              {arv.plainSummary}
+            </p>
+
+            <p data-testid="arv-basis" className="text-[11px] text-(--color-text-secondary) mt-1.5 leading-relaxed">
+              {`Built on ${arv.basisLabel}`}
+              {`, each one's price adjusted by $${arv.adjustmentPerSqft}
+                per square foot of size difference from this house's
+                ${arv.subjectSqft?.toLocaleString()} sq ft.`}
+              {arv.soldOnly
+                ? " Only confirmed sales were used — they outrank listings."
+                : ""}
+            </p>
+
+            {arv.nearbyLow !== null && arv.nearbyHigh !== null && (
+              <p data-testid="arv-nearby" className="text-[11px] text-(--color-text-secondary) mt-1">
+                Similar homes nearby: {dollarsShort(arv.nearbyLow)}–{dollarsShort(arv.nearbyHigh)}.
+              </p>
+            )}
+
+            {arv.sanityWarning && (
+              <p
+                data-testid="arv-sanity"
+                className="flex gap-1.5 text-[11px] text-amber-400 mt-2 leading-relaxed"
+              >
+                <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                <span>{arv.sanityWarning}</span>
+              </p>
+            )}
+          </>
         )}
 
         {arv && arv.confidence !== "none" && (
@@ -632,6 +665,11 @@ function CompRow({
           {comp.notes && (
             <p className="text-[11px] text-(--color-text-secondary) mt-1 italic">{comp.notes}</p>
           )}
+
+          {/* Somewhere to go and check whether this one was renovated. */}
+          <div className="mt-1.5">
+            <CompLinks comp={comp} />
+          </div>
         </div>
 
         {/* Only hand-entered comps can be deleted. A RentCast comp is untick-ed,

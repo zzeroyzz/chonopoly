@@ -140,15 +140,16 @@ describe("the ARV and the deal", () => {
       { profile: profile(), now: NOW }
     );
 
-    // Median $210/sqft × 1,750 sqft.
-    expect(row.arv).toBeCloseTo(367_500, 6);
+    // Median price $210,000, plus 750 sqft of size difference at $40.
+    expect(row.arv).toBeCloseTo(210_000 + 750 * 40, 6);
   });
 
   it("ignores comps that are not included", () => {
     const comps = [comp(200, "a"), comp(210, "b"), { ...comp(900, "outlier"), included: false }];
     const row = buildScreenRow(house({ comps }), { profile: profile(), now: NOW });
 
-    expect(row.arv).toBeCloseTo(205 * 1_750, 6);
+    // Median of 200,000 and 210,000, plus the same size adjustment.
+    expect(row.arv).toBeCloseTo(205_000 + 750 * 40, 6);
   });
 
   it("marks the ARV provisional until the comps are reviewed", () => {
@@ -173,8 +174,9 @@ describe("the ARV and the deal", () => {
   it("reports max offer as a figure", () => {
     const row = buildScreenRow(house({ comps: [comp(200, "a")] }), { profile: profile(), now: NOW });
 
-    // 350,000 ARV × 70% − 0 rehab.
-    expect(row.maxOffer).toBeCloseTo(245_000, 6);
+    // One comp at 200,000 plus 750 sqft at $40 is a 230,000 ARV; 70% of it,
+    // less no rehab.
+    expect(row.maxOffer).toBeCloseTo(230_000 * 0.7, 6);
   });
 });
 
