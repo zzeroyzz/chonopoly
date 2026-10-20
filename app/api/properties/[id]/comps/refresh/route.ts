@@ -3,27 +3,22 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveContext, canForceRentCastRefresh } from "@/lib/context";
 import { getProperty } from "@/lib/property/propertyService";
 import { normalizeAddress } from "@/lib/property/address";
-import {
-  listComps,
-  saveRentCastComps,
-  applySubjectFacts,
-} from "@/lib/comps/compService";
+import { listComps, savePublicRecordComps } from "@/lib/comps/compService";
 import { calculateArv, subjectOptions } from "@/lib/comps/arv";
-import { mapComparables, mapSubjectFacts } from "@/lib/comps/fromRentCast";
+import { mapPropertyRecords } from "@/lib/comps/fromPropertyRecords";
 import {
-  fetchValueEstimate,
-  COMP_COUNT_DEFAULT,
-  DEFAULT_MAX_RADIUS_MILES,
-  DEFAULT_DAYS_OLD,
+  fetchPropertyRecords,
+  RECORDED_SALES_LIMIT,
   rentCastMode,
   hasApiKey,
   CACHE_WINDOW_DAYS,
-  VALUE_ESTIMATE_ENDPOINT,
+  PROPERTY_RECORDS_ENDPOINT,
   MockModeWriteError,
   type RentCastFailure,
 } from "@/lib/rentcast/client";
 import {
   getUsage,
+  type RentCastResponseBody,
   findCachedResponse,
   findLatestResponse,
   claimRequest,
@@ -31,7 +26,7 @@ import {
   abandonClaim,
   clearStaleClaims,
 } from "@/lib/rentcast/quota";
-import { type RentCastValueResponse } from "@/lib/rentcast/types";
+import { type RentCastPropertyRecord } from "@/lib/rentcast/types";
 import { type RequestContext } from "@/lib/context";
 
 /**
@@ -61,7 +56,7 @@ import { type RequestContext } from "@/lib/context";
  * endpoint cannot inherit this one's 30-day window. Imported rather than
  * retyped — the string is part of the cache key.
  */
-const ENDPOINT = VALUE_ESTIMATE_ENDPOINT;
+const ENDPOINT = PROPERTY_RECORDS_ENDPOINT;
 
 /** What the user can actually do about each failure. */
 const DEGRADED_MESSAGES: Record<RentCastFailure, string> = {
@@ -119,6 +114,18 @@ function describeMissingFacts(row: PropertyRow): string[] {
 /** ["a", "b"] -> "a and b". Two items at most here, so no serial comma. */
 function joinPlainly(parts: string[]): string {
   return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
+/**
+ * A stored body for this endpoint is an array of records.
+ *
+ * Anything else is a row written before the cache became endpoint-aware.
+ * Returning null rather than mapping an object into zero sales: "no comps
+ * found" and "we replayed the wrong kind of response" look identical on
+ * screen and are not the same problem.
+ */
+function recordsFrom(body: RentCastResponseBody): RentCastPropertyRecord[] | null {
+  return Array.isArray(body) ? body : null;
 }
 
 function nextRefreshIn(days: number): string {
@@ -190,8 +197,17 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
         message: "There's no saved RentCast response for this address to rebuild from.",
       });
     }
+    const storedRecords = recordsFrom(stored.response);
+    if (!storedRecords) {
+      return NextResponse.json({
+        ...(await currentState(id, ctx, row)),
+        degraded: "no_stored_response",
+        message:
+          "The saved response for this address is from the old listings lookup, so there are no recorded sales to rebuild from.",
+      });
+    }
     return NextResponse.json(
-      await applyResponse(stored.response, id, ctx, user.id, {
+      await applyResponse(storedRecords, id, ctx, user.id, {
         source: "rebuilt",
         fetchedAt: stored.requestedAt,
         nextRefreshAt: stored.nextRefreshAt,
@@ -213,9 +229,11 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
   // ── Gate 2: the 30-day cache ───────────────────────────────────────────────
   const cached = await findCachedResponse(normalized, ENDPOINT, ctx);
 
-  if (cached && !force) {
+  const cachedRecords = cached ? recordsFrom(cached.response) : null;
+
+  if (cached && cachedRecords && !force) {
     return NextResponse.json(
-      await applyResponse(cached.response, id, ctx, user.id, {
+      await applyResponse(cachedRecords, id, ctx, user.id, {
         source: "cached",
         fetchedAt: cached.requestedAt,
         nextRefreshAt: cached.nextRefreshAt,
@@ -242,25 +260,24 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
 
   // ── Gate 2b: don't spend a request on a house we can't describe ────────────
   //
-  // RentCast picks the comps from the specs we send. With no sqft and no bed
-  // count it returns whatever is nearby, and that answer is then cached for 30
-  // days — so a blind lookup is not just wasted, it is locked in. 674 White
-  // Bird Way went out this way and came back with fifteen comps between 1,938
-  // and 2,505 sqft for a 1,357 sqft house, none of them usable.
+  // /properties does not filter on size or beds — it returns every recorded
+  // sale of a single-family house within a mile. Those facts are what decides
+  // which of them are comparable afterwards, in compEligibility. Without
+  // them, every sale that comes back is kept, the ARV is a median of whatever
+  // sold nearby, and the answer is cached for 30 days.
   //
-  // The facts arrive in the very same response, which is what makes this worth
-  // stopping for: wait, fill them in, and the next lookup is aimed.
+  // No override. There is nothing useful to do with the response until the
+  // facts exist, so the button goes to the form instead.
   const missingFacts = describeMissingFacts(row);
-  if (missingFacts.length > 0 && payload.acknowledgeMissingFacts !== true) {
+  if (missingFacts.length > 0) {
     return NextResponse.json({
       ...(await currentState(id, ctx, row)),
       degraded: "missing_facts",
       missingFacts,
       message:
-        `This house has no ${joinPlainly(missingFacts)} yet, and RentCast picks the comps using ` +
-        `${missingFacts.length === 1 ? "it" : "them"}. A lookup now comes back with whatever is ` +
-        `nearby, and that answer is saved for ${CACHE_WINDOW_DAYS} days. Add the ` +
-        `${joinPlainly(missingFacts)} on the House tab first, or look up anyway.`,
+        `Add this house's size and bedrooms to pull sales. Without them every ` +
+        `sale nearby counts as a comparison, and the answer is saved for ` +
+        `${CACHE_WINDOW_DAYS} days.`,
       usage,
     });
   }
@@ -283,19 +300,12 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
   // ── Gate 4: the call ───────────────────────────────────────────────────────
   let result;
   try {
-    result = await fetchValueEstimate({
-      address: requestedAddress,
-      compCount: Number(payload.compCount) || COMP_COUNT_DEFAULT,
-      maxRadius: Number(payload.maxRadius) || DEFAULT_MAX_RADIUS_MILES,
-      daysOld: Number(payload.daysOld) || DEFAULT_DAYS_OLD,
-      // Only sent when known. A guessed sqft produces confidently wrong comps.
-      ...(row.sqft ? { squareFootage: row.sqft } : {}),
-      ...(row.beds ? { bedrooms: row.beds } : {}),
-      ...(row.baths ? { bathrooms: row.baths } : {}),
-      // Never sent before, and never checked either, so a townhouse could be a
-      // comp for a detached house.
-      ...(row.property_type ? { propertyType: row.property_type } : {}),
-    });
+    // Only propertyType, radius, saleDateRange and limit. The API supports
+    // size, bed, bath and year ranges and we deliberately do not send them:
+    // filtering locally means the full response is stored and can be rebuilt
+    // for free when the tolerances change. A server-side filter bakes today's
+    // rules into data we have already paid for.
+    result = await fetchPropertyRecords({ address: requestedAddress });
   } catch (e) {
     // The claim must not outlive the attempt, or this address stays locked.
     await abandonClaim(claim.requestId, e instanceof Error ? e.message : "Call threw");
@@ -353,52 +363,48 @@ interface ApplyMeta {
 }
 
 /**
- * Turn a response body into stored comps and facts.
+ * Turn a stored /properties body into recorded sales on this house.
  *
  * Shared by the live path, the cache path and the rebuild path so all three
  * produce identical state. A separate rebuild implementation would be a second
  * place for the mapping to drift.
+ *
+ * No subject facts are applied here. /properties describes the comps, not the
+ * house being valued — the owner enters its size, beds, baths and year built,
+ * and nothing in this path may overwrite them.
+ *
+ * Listings already stored from /avm/value are left exactly where they are.
+ * savePublicRecordComps is scoped to source = 'public_record', so an old
+ * house keeps its Active and Removed rows beside its new sales.
  */
 async function applyResponse(
-  response: RentCastValueResponse,
+  records: RentCastPropertyRecord[],
   propertyId: string,
   ctx: RequestContext,
   userId: string,
   meta: ApplyMeta
 ) {
-  const mapped = mapComparables(response.comparables);
+  const sales = mapPropertyRecords(records);
 
-  await applySubjectFacts(propertyId, mapSubjectFacts(response.subjectProperty), ctx);
+  const comps = await savePublicRecordComps(propertyId, sales, ctx, userId);
 
-  const comps = await saveRentCastComps(propertyId, mapped, ctx, userId);
-
-  // Re-read: the subject's sqft may have just been filled in, and the ARV
-  // depends on it.
   const refreshed = (await getProperty(propertyId, ctx)) as unknown as PropertyRow | null;
   const subjectSqft = refreshed?.sqft ?? null;
   const subjectBeds = refreshed?.beds ?? null;
 
   return {
-    degraded: mapped.length === 0 ? "no_comps" : null,
+    degraded: sales.length === 0 ? "no_comps" : null,
     message:
-      mapped.length === 0
-        ? "RentCast found no comparable sales near this address. Enter comps by hand."
+      sales.length === 0
+        ? "No recorded sales of a similar house within a mile in the last year. Add a sold comp by hand from your agent's list."
         : null,
+    // A full page of records means there are probably more we did not see.
+    atRecordLimit: records.length >= RECORDED_SALES_LIMIT,
     comps,
-    // Was calculateArv(comps, subjectSqft) with no subjectBeds, so the bedroom
-    // filter was skipped right after a refresh and applied again on reload —
-    // the same house showing two different ARVs depending on how you got there.
     arv: refreshed
       ? calculateArv(comps, subjectSqft, subjectOptions(refreshed))
       : calculateArv(comps, subjectSqft),
-    // The panel reads this to show each comp's fit reason. Omitting it blanked
-    // the bedroom reason after every refresh.
     subjectBeds,
-    estimate: {
-      price: response.price ?? null,
-      priceRangeLow: response.priceRangeLow ?? null,
-      priceRangeHigh: response.priceRangeHigh ?? null,
-    },
     source: meta.source,
     fetchedAt: meta.fetchedAt,
     nextRefreshAt: meta.nextRefreshAt,

@@ -3,13 +3,24 @@ import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { type Database, type Json } from "../supabase/database.types";
 import { type RequestContext } from "../context";
-import { type RentCastValueResponse } from "./types";
+import {
+  type RentCastValueResponse,
+  type RentCastPropertyRecord,
+} from "./types";
+
 import {
   MONTHLY_REQUEST_CAP,
   CACHE_WINDOW_DAYS,
   FREE_PLAN_MONTHLY_REQUESTS,
   assertNotMockMode,
 } from "./client";
+
+/**
+ * What a stored response body can be, which now depends on the endpoint:
+ * an object from /avm/value, an array of records from /properties. Callers
+ * narrow by the endpoint they asked for.
+ */
+export type RentCastResponseBody = RentCastValueResponse | RentCastPropertyRecord[];
 
 /**
  * Everything that stands between a button press and a billable request.
@@ -102,7 +113,7 @@ export async function getUsage(
 
 export interface CachedResponse {
   requestId: string;
-  response: RentCastValueResponse;
+  response: RentCastResponseBody;
   requestedAt: string;
   /** When this address may be looked up again. */
   nextRefreshAt: string;
@@ -151,7 +162,7 @@ export async function findCachedResponse(
 
   return {
     requestId: data.id,
-    response: data.response_body as unknown as RentCastValueResponse,
+    response: data.response_body as unknown as RentCastResponseBody,
     requestedAt: data.requested_at,
     nextRefreshAt: nextRefreshFrom(data.requested_at),
     propertyId: data.property_id,
@@ -182,7 +193,7 @@ export async function findLatestResponse(
 
   return {
     requestId: data.id,
-    response: data.response_body as unknown as RentCastValueResponse,
+    response: data.response_body as unknown as RentCastResponseBody,
     requestedAt: data.requested_at,
     nextRefreshAt: nextRefreshFrom(data.requested_at),
     propertyId: data.property_id,
@@ -248,7 +259,7 @@ export interface CompleteRequestInput {
   billable: boolean;
   error: string | null;
   /** Stored before anything parses it. The whole point of the exercise. */
-  responseBody: RentCastValueResponse | null;
+  responseBody: RentCastResponseBody | null;
 }
 
 /**

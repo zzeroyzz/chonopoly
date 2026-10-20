@@ -4,6 +4,7 @@ import { type RequestContext } from "../context";
 import { type Comp, type CompStatus, type ManualCompInput } from "./types";
 import { assertNotMockMode } from "../rentcast/client";
 import { type MappedComp, type MappedSubjectFacts } from "./fromRentCast";
+import { type MappedRecordedSale } from "./fromPropertyRecords";
 
 /**
  * Reading and writing comps, and the RentCast usage log.
@@ -53,6 +54,9 @@ interface CompRow {
   distance_miles: number | null;
   days_old: number | null;
   correlation: number | null;
+  buyer_type: string | null;
+  buyer_name: string | null;
+  county: string | null;
   included: boolean;
   notes: string | null;
   updated_at: string;
@@ -92,6 +96,9 @@ const COMP_FIELDS: CompColumn[] = [
   "distance_miles",
   "days_old",
   "correlation",
+  "buyer_type",
+  "buyer_name",
+  "county",
   "included",
   "notes",
   "updated_at",
@@ -130,14 +137,9 @@ function toComp(row: CompRow): Comp {
     distanceMiles: row.distance_miles === null ? null : Number(row.distance_miles),
     daysOld: row.days_old,
     correlation: row.correlation === null ? null : Number(row.correlation),
-    // Not yet read from the row. The columns arrive with
-    // 20261020120000_recorded_sales.sql, which is written and NOT run; adding
-    // them to COMP_FIELDS before that would be a compile error, which is the
-    // typed-schema guard doing its job. Wire these up in the same change that
-    // runs the migration.
-    buyerType: null,
-    buyerName: null,
-    county: null,
+    buyerType: row.buyer_type,
+    buyerName: row.buyer_name,
+    county: row.county,
     included: row.included,
     notes: row.notes,
     updatedAt: row.updated_at,
@@ -259,6 +261,101 @@ export async function saveRentCastComps(
       .eq("owner_type", ctx.type)
       .eq("owner_id", ctx.id);
     if (error) throw new Error(`Failed to update a comp: ${error.message}`);
+  }
+
+  return listComps(propertyId, ctx);
+}
+
+/**
+ * Store recorded sales from county records.
+ *
+ * Same read-update-insert shape as `saveRentCastComps` and for the same
+ * reason: the unique index on (property_id, source, external_id) is partial,
+ * so PostgREST cannot drive an upsert against it.
+ *
+ * Scoped to `source = 'public_record'` throughout, so this can never touch a
+ * listing or a hand-entered sale. The two sets live side by side on a house
+ * that has both.
+ *
+ * `included` is never written on an update, exactly as for listings: a
+ * refresh must not silently re-tick a sale the owner unticked as a probable
+ * fixer-upper, which would move the ARV with no visible cause.
+ */
+export async function savePublicRecordComps(
+  propertyId: string,
+  sales: MappedRecordedSale[],
+  ctx: RequestContext,
+  userId: string
+): Promise<Comp[]> {
+  // Mock mode has no /properties fixture, so there is nothing legitimate to
+  // write here — and inventing sale prices is worse than storing none.
+  assertNotMockMode("recorded sales");
+
+  if (sales.length === 0) return listComps(propertyId, ctx);
+
+  const { data: existingRows, error: readError } = await db()
+    .from("property_comps")
+    .select("id, external_id")
+    .eq("property_id", propertyId)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id)
+    .eq("source", "public_record");
+
+  if (readError) throw new Error(`Failed to read existing sales: ${readError.message}`);
+
+  const idByExternalId = new Map<string, string>();
+  for (const row of existingRows ?? []) {
+    if (row.external_id) idByExternalId.set(row.external_id, row.id);
+  }
+
+  const now = new Date().toISOString();
+  const toInsert: MappedRecordedSale[] = [];
+  const updates: { id: string; sale: MappedRecordedSale }[] = [];
+
+  for (const sale of sales) {
+    const existingId = sale.external_id ? idByExternalId.get(sale.external_id) : undefined;
+    if (existingId) updates.push({ id: existingId, sale });
+    else toInsert.push(sale);
+  }
+
+  if (toInsert.length > 0) {
+    const { error } = await db()
+      .from("property_comps")
+      .insert(
+        toInsert.map((sale) => ({
+          ...sale,
+          property_id: propertyId,
+          owner_type: ctx.type,
+          owner_id: ctx.id,
+          source: "public_record",
+          created_by: userId,
+          updated_at: now,
+        }))
+      );
+    if (error) throw new Error(`Failed to save the recorded sales: ${error.message}`);
+  }
+
+  for (const { id, sale } of updates) {
+    const { error } = await db()
+      .from("property_comps")
+      .update({
+        price: sale.price,
+        status: sale.status,
+        sqft: sale.sqft,
+        beds: sale.beds,
+        baths: sale.baths,
+        lot_sqft: sale.lot_sqft,
+        year_built: sale.year_built,
+        removed_date: sale.removed_date,
+        buyer_type: sale.buyer_type,
+        buyer_name: sale.buyer_name,
+        county: sale.county,
+        updated_at: now,
+      })
+      .eq("id", id)
+      .eq("owner_type", ctx.type)
+      .eq("owner_id", ctx.id);
+    if (error) throw new Error(`Failed to update a recorded sale: ${error.message}`);
   }
 
   return listComps(propertyId, ctx);

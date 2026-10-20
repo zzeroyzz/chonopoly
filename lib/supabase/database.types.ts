@@ -1614,6 +1614,7 @@ export type Database = {
           last_sale_date: string | null
           last_sale_price: number | null
           latitude: number | null
+          list_price: number | null
           listing_url: string | null
           longitude: number | null
           lot_sqft: number | null
@@ -1649,6 +1650,7 @@ export type Database = {
           last_sale_date?: string | null
           last_sale_price?: number | null
           latitude?: number | null
+          list_price?: number | null
           listing_url?: string | null
           longitude?: number | null
           lot_sqft?: number | null
@@ -1684,6 +1686,7 @@ export type Database = {
           last_sale_date?: string | null
           last_sale_price?: number | null
           latitude?: number | null
+          list_price?: number | null
           listing_url?: string | null
           longitude?: number | null
           lot_sqft?: number | null
@@ -1707,8 +1710,11 @@ export type Database = {
         Row: {
           baths: number | null
           beds: number | null
+          buyer_name: string | null
+          buyer_type: string | null
           city: string | null
           correlation: number | null
+          county: string | null
           created_at: string
           created_by: string
           days_old: number | null
@@ -1742,8 +1748,11 @@ export type Database = {
         Insert: {
           baths?: number | null
           beds?: number | null
+          buyer_name?: string | null
+          buyer_type?: string | null
           city?: string | null
           correlation?: number | null
+          county?: string | null
           created_at?: string
           created_by: string
           days_old?: number | null
@@ -1777,8 +1786,11 @@ export type Database = {
         Update: {
           baths?: number | null
           beds?: number | null
+          buyer_name?: string | null
+          buyer_type?: string | null
           city?: string | null
           correlation?: number | null
+          county?: string | null
           created_at?: string
           created_by?: string
           days_old?: number | null

@@ -756,7 +756,14 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
             )}
 
             {tab === "ARV" && property && (
-              <CompsPanel propertyId={property.id} ctx={ctx} ctxParams={ctxParams} />
+              <CompsPanel
+                propertyId={property.id}
+                ctx={ctx}
+                ctxParams={ctxParams}
+                // The facts form lives above the tabs, so opening it is
+                // enough — there is no tab to switch to.
+                onEditFacts={() => setEditingHouse(true)}
+              />
             )}
 
             {tab === "Rehab" && property && (

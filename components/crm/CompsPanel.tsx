@@ -204,10 +204,13 @@ export function CompsPanel({
   propertyId,
   ctx,
   ctxParams,
+  onEditFacts,
 }: {
   propertyId: string;
   ctx: ActiveContext | null;
   ctxParams: string | null;
+  /** Opens the house facts form, which is the only way past a blocked lookup. */
+  onEditFacts: () => void;
 }) {
   const [comps, setComps] = useState<Comp[]>([]);
   const [arv, setArv] = useState<ArvResult | null>(null);
@@ -297,7 +300,7 @@ export function CompsPanel({
   }, [load, loadStatus]);
 
   async function refresh(
-    options: { force?: boolean; rebuild?: boolean; acknowledgeMissingFacts?: boolean } = {}
+    options: { force?: boolean; rebuild?: boolean } = {}
   ) {
     if (!ctx) return;
     setRefreshing(true);
@@ -311,7 +314,6 @@ export function CompsPanel({
           context_id: ctx.id,
           ...(options.force ? { force: true } : {}),
           ...(options.rebuild ? { rebuild: true } : {}),
-          ...(options.acknowledgeMissingFacts ? { acknowledgeMissingFacts: true } : {}),
         }),
       });
       // A degraded lookup is a 200 carrying a reason, not an error — the comps
@@ -508,23 +510,17 @@ export function CompsPanel({
               <AlertTriangle size={13} className="shrink-0 mt-0.5" />
               <span>{blindLookup.message}</span>
             </p>
+            {/* No override. Without the size and bed count every sale nearby
+                counts as a comparison, so there is nothing useful to do with
+                the response — the button goes to the form instead. */}
             <div className="flex flex-wrap gap-2 mt-3">
               <button
                 type="button"
-                onClick={() => void refresh({ acknowledgeMissingFacts: true })}
-                disabled={refreshing || !ctx}
-                data-testid="missing-facts-proceed"
-                className="h-9 px-3 rounded-(--radius-pill) border border-(--color-border-default) text-[12px] font-medium disabled:opacity-50"
+                onClick={onEditFacts}
+                data-testid="missing-facts-edit"
+                className="h-9 px-3 rounded-(--radius-pill) bg-(--color-accent) text-(--color-base) text-[12px] font-semibold"
               >
-                {refreshing ? "Pulling…" : "Look up anyway"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setBlindLookup(null)}
-                data-testid="missing-facts-dismiss"
-                className="h-9 px-3 rounded-(--radius-pill) text-[12px] font-medium text-(--color-text-secondary)"
-              >
-                Not yet
+                Add size and bedrooms
               </button>
             </div>
           </div>
