@@ -162,9 +162,14 @@ function describeSkip(
   subjectSqft: number | null,
   subjectBeds: number | null,
   subjectFit: SubjectFit,
+  decidedReasons: string[] | undefined,
   soldOnly: boolean
 ): string {
   if (!comp.included) return "unticked on the Comps tab";
+
+  // The ARV's own verdict wins: a duplicate listing is only a duplicate next
+  // to its twin, which the per-comp check cannot see on its own.
+  if (decidedReasons) return decidedReasons.join(", ");
 
   const fit = compEligibility(comp, subjectSqft, subjectBeds, subjectFit);
   if (!fit.eligible) return fit.reasons.join(", ");
@@ -194,6 +199,7 @@ function diagnose(property: PropertyRow, request: RequestRow, trustedValue: numb
 
   const arv = calculateArv(comps, subjectSqft, subjectOptions(property));
   const usedIds = new Set(arv.usedComps.map((c) => c.compId));
+  const decided = new Map(arv.excludedForFit.map((e) => [e.compId, e.reasons]));
 
   console.log("");
   console.log("─".repeat(140));
@@ -213,7 +219,9 @@ function diagnose(property: PropertyRow, request: RequestRow, trustedValue: numb
 
   for (const comp of comps) {
     const used = usedIds.has(comp.id);
-    const why = used ? "" : describeSkip(comp, subjectSqft, subjectBeds, subjectFit, arv.soldOnly);
+    const why = used
+      ? ""
+      : describeSkip(comp, subjectSqft, subjectBeds, subjectFit, decided.get(comp.id), arv.soldOnly);
     console.log(
       "  " +
         pad(used ? "YES " : "no  ", 6) +
