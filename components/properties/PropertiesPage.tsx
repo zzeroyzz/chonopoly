@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Home, AlertTriangle, ExternalLink, Star } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
+import { VerdictTag } from "@/components/mortgage/VerdictTag";
 import { useCrmContext } from "@/components/crm/useCrmContext";
 import { dollars } from "@/components/mortgage/format";
 import {
@@ -463,34 +464,36 @@ function ScreenCard({
         </p>
       )}
 
-      {/* The two verdicts, first, because they are the reason to look. */}
+      {/* The two verdicts, first, because they are the reason to look. Each
+          one opens what it means for this house. */}
       <div className="flex flex-wrap gap-1.5 mt-2">
-        <span
-          data-testid={`verdict-afford-${row.propertyId}`}
-          className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
-            AFFORDABILITY_STYLE[row.affordability.verdict]
-          }`}
-        >
-          {AFFORDABILITY_LABEL[row.affordability.verdict]}
-        </span>
+        <VerdictTag
+          label={AFFORDABILITY_LABEL[row.affordability.verdict]}
+          toneClassName={AFFORDABILITY_STYLE[row.affordability.verdict]}
+          explanation={row.explanations.afford}
+          breakdownHref={`${href}?step=deal`}
+          testId={`verdict-afford-${row.propertyId}`}
+        />
 
-        <span
-          data-testid={`verdict-deal-${row.propertyId}`}
-          className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
-            DEAL_STYLE[row.deal.verdict]
-          }`}
-        >
-          {row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : "No ARV"}
-        </span>
+        <VerdictTag
+          label={row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : "No ARV"}
+          toneClassName={DEAL_STYLE[row.deal.verdict]}
+          explanation={row.explanations.deal}
+          breakdownHref={`${href}?step=deal`}
+          testId={`verdict-deal-${row.propertyId}`}
+        />
 
-        {row.provisionalArv && (
-          <span
-            data-testid={`verdict-provisional-${row.propertyId}`}
-            title="Built on every comp RentCast returned — review them on the Comps tab"
-            className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-(--color-base) text-(--color-text-tertiary)"
-          >
-            Unreviewed
-          </span>
+        {row.provisionalArv && row.explanations.arv && (
+          <VerdictTag
+            label="ARV not checked"
+            toneClassName="bg-(--color-base) text-(--color-text-tertiary)"
+            explanation={row.explanations.arv}
+            breakdownHref={`${href}?step=arv`}
+            // This one sends you to the comps rather than the breakdown,
+            // because checking them is the thing that resolves it.
+            action={{ label: "Check the comps →", href: `${href}?step=arv` }}
+            testId={`verdict-provisional-${row.propertyId}`}
+          />
         )}
       </div>
 
