@@ -38,7 +38,22 @@ export const COMP_ELIGIBILITY = {
   maxDistanceMiles: 1,
   bedsTolerance: 1,
   bathsTolerance: 1,
-  yearBuiltTolerance: 20,
+  /**
+   * Age only disqualifies a comp when a modern build is being compared to an
+   * old house.
+   *
+   * A flat ±20 years was too blunt where it mattered most. On 1653 Sylvan Rd
+   * SW — built 1930 — it threw out five of fifteen comps for being built in
+   * the 1950s, four of them the cheapest in the set, and pushed the ARV up
+   * $30,820. In a pre-war neighbourhood a 1951 house IS the comparable stock;
+   * excluding it does not make the number more honest.
+   *
+   * What actually breaks a comparison is new construction standing next to an
+   * old house. So both conditions must hold: one of the two was built this
+   * century, AND they are at least a generation apart.
+   */
+  modernBuildFromYear: 2000,
+  modernBuildMinGapYears: 30,
 } as const;
 
 /** At least this many sold comps and the listings stop being used at all. */
@@ -235,14 +250,23 @@ export function compEligibility(
     }
   }
 
-  // Age stands in for everything we cannot see: wiring, windows, layout, the
-  // roof. A 2026 build next door to a 1965 house is a different product.
+  // New construction beside an old house is a different product: wiring,
+  // windows, layout, the roof. Two old houses a generation apart are not —
+  // in a pre-war street the 1950s stock IS the comparable stock.
+  //
+  // So both have to be true before age disqualifies anything: one of them was
+  // built this century, and they are at least a generation apart.
   const subjectYear = subject.yearBuilt;
   if (subjectYear !== null && subjectYear !== undefined && comp.yearBuilt !== null) {
-    const diff = comp.yearBuilt - subjectYear;
-    if (Math.abs(diff) > COMP_ELIGIBILITY.yearBuiltTolerance) {
+    const gap = Math.abs(comp.yearBuilt - subjectYear);
+    const newest = Math.max(comp.yearBuilt, subjectYear);
+    if (
+      newest >= COMP_ELIGIBILITY.modernBuildFromYear &&
+      gap >= COMP_ELIGIBILITY.modernBuildMinGapYears
+    ) {
+      const compIsNewer = comp.yearBuilt > subjectYear;
       reasons.push(
-        `built ${comp.yearBuilt}, ${Math.abs(diff)} years ${diff > 0 ? "newer" : "older"}`
+        `built ${comp.yearBuilt}, ${gap} years ${compIsNewer ? "newer" : "older"}`
       );
     }
   }
