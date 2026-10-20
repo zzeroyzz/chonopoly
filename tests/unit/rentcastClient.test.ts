@@ -1,4 +1,5 @@
 import fixture from "@/lib/rentcast/fixtures/valueEstimate.json";
+import { COMP_ELIGIBILITY } from "@/lib/comps/arv";
 
 /**
  * `server-only` is a Next bundler marker with no Node resolution, so it is
@@ -239,8 +240,20 @@ describe("request parameters", () => {
     expect((await capturedUrl({ compCount: 12 })).searchParams.get("compCount")).toBe("12");
   });
 
-  it("defaults compCount to RentCast's own default of 15", async () => {
-    expect((await capturedUrl({})).searchParams.get("compCount")).toBe("15");
+  it("asks for the maximum 25 comps, because the count is free", async () => {
+    expect((await capturedUrl({})).searchParams.get("compCount")).toBe("25");
+  });
+
+  it("searches the same 1 mile the ARV is willing to count", async () => {
+    // Searching wider than the filter means paying for comps that are thrown
+    // away the moment they arrive.
+    expect((await capturedUrl({})).searchParams.get("maxRadius")).toBe(
+      String(COMP_ELIGIBILITY.maxDistanceMiles)
+    );
+  });
+
+  it("looks back six months, not nine", async () => {
+    expect((await capturedUrl({})).searchParams.get("daysOld")).toBe("180");
   });
 
   it("keeps daysOld at the documented minimum of 1", async () => {
