@@ -4,10 +4,28 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Plus, Trash2, AlertTriangle, Lock } from "lucide-react";
 import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
-import { type Comp, type CompStatus, COMP_STATUS_LABELS } from "@/lib/comps/types";
-import { type ArvResult, type SubjectFit, compEligibility } from "@/lib/comps/arv";
-import { isPossibleFixer, ORGANIZATION_BUYER } from "@/lib/comps/fromPropertyRecords";
+import {
+  type Comp,
+  type CompStatus,
+  type CompReview,
+  COMP_STATUS_LABELS,
+  COMP_REVIEW_LABELS,
+  COMP_REVIEW_ORDER,
+} from "@/lib/comps/types";
+import { type ArvResult, type CompNote } from "@/lib/comps/arv";
+import { ORGANIZATION_BUYER } from "@/lib/comps/fromPropertyRecords";
 import { CompLinks } from "./CompLinks";
+import { Dropdown, type DropdownTone } from "@/components/ui/Dropdown";
+import {
+  CompControls,
+  FILTER_LABELS,
+  defaultFilter,
+  filterCounts,
+  matchesFilter,
+  sortComps,
+  type CompFilter,
+  type CompSort,
+} from "./CompControls";
 
 /** "$380k" — the way a price range gets said out loud. */
 function dollarsShort(n: number): string {
@@ -84,6 +102,14 @@ const CONFIDENCE_LABEL: Record<ArvResult["confidence"], string> = {
   good: "Good confidence",
 };
 
+/** Green counts, amber skips, grey undecided — the same at a glance. */
+const REVIEW_TONE: Record<CompReview, DropdownTone> = {
+  needs_review: "neutral",
+  renovated_use: "good",
+  not_renovated_skip: "warn",
+  not_comparable_skip: "warn",
+};
+
 const STATUS_STYLE: Record<string, string> = {
   // Sold is the evidence that counts, so it gets the accent.
   sold: "bg-(--color-accent-glow) text-(--color-accent)",
@@ -122,14 +148,12 @@ function provenanceLabel(comp: Comp): string | null {
 /**
  * Why this sale might be below what a finished house is worth.
  *
- * Says the number, who bought it, and what to do — never hides the comp. One
- * of these on 1653 Sylvan Rd SW sits inside the ARV holding the median down,
- * and a $145,000 sale on a street fetching $274,000 is either a fixer or the
- * best evidence in the set. Only a person can tell which.
+ * The decision is the ARV's, not this component's: it depends on what the
+ * counted comps fetched, which a single card cannot see. Here we only phrase
+ * it.
  */
 function fixerUpperNote(comp: Comp): string | null {
-  if (comp.source !== "public_record" || comp.price === null) return null;
-  if (!isPossibleFixer(comp.price, comp.buyerType)) return null;
+  if (comp.price === null) return null;
 
   const boughtBy =
     comp.buyerType === ORGANIZATION_BUYER
@@ -222,10 +246,11 @@ export function CompsPanel({
   const [status, setStatus] = useState<RefreshStatus | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [subjectBeds, setSubjectBeds] = useState<number | null>(null);
-  const [subjectFit, setSubjectFit] = useState<SubjectFit>({});
   const [confirmingForce, setConfirmingForce] = useState(false);
   /** Set when a lookup stopped because the house has no size or bed count. */
   const [blindLookup, setBlindLookup] = useState<{ message: string; facts: string[] } | null>(null);
+  const [sort, setSort] = useState<CompSort>("closest");
+  const [filter, setFilter] = useState<CompFilter | null>(null);
 
   const apply = useCallback((data: CompsResponse) => {
     setComps(data.comps ?? []);
@@ -239,11 +264,6 @@ export function CompsPanel({
     setDegraded(stoppedForFacts ? null : (data.message ?? null));
     setSource(data.source ?? null);
     setSubjectBeds(data.subjectBeds ?? null);
-    setSubjectFit({
-      baths: data.subjectBaths ?? null,
-      propertyType: data.subjectPropertyType ?? null,
-      yearBuilt: data.subjectYearBuilt ?? null,
-    });
 
     // Fold the refresh metadata back into the status so the lock message
     // updates without a second round trip.
@@ -299,6 +319,35 @@ export function CompsPanel({
     })();
   }, [load, loadStatus]);
 
+  /**
+   * Remember how this house was last sorted and filtered.
+   *
+   * Per house, because the right view of a 10-comp house is not the right
+   * view of an 80-comp one. sessionStorage rather than localStorage: it is a
+   * view preference, and resetting with the browser is fine.
+   */
+  const viewKey = `comps:view:${propertyId}`;
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(viewKey);
+      if (!saved) return;
+      const parsed = JSON.parse(saved) as { sort?: CompSort; filter?: CompFilter };
+      if (parsed.sort) setSort(parsed.sort);
+      if (parsed.filter) setFilter(parsed.filter);
+    } catch {
+      // A corrupt or unavailable store is not worth failing the tab over.
+    }
+  }, [viewKey]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(viewKey, JSON.stringify({ sort, filter }));
+    } catch {
+      // Private browsing can refuse writes. The view still works.
+    }
+  }, [viewKey, sort, filter]);
+
   async function refresh(
     options: { force?: boolean; rebuild?: boolean } = {}
   ) {
@@ -342,12 +391,12 @@ export function CompsPanel({
     await refresh({ force: true });
   }
 
-  async function toggle(comp: Comp) {
+  async function review(comp: Comp, next: CompReview) {
     if (!ctxParams) return;
-    // Optimistic: ticking a box should feel instant, and the server's recomputed
-    // ARV lands a moment later.
+    // Optimistic: choosing an answer should feel instant, and the server's
+    // recomputed ARV lands a moment later.
     setComps((current) =>
-      current.map((c) => (c.id === comp.id ? { ...c, included: !c.included } : c))
+      current.map((c) => (c.id === comp.id ? { ...c, review: next } : c))
     );
     try {
       const res = await fetch(
@@ -355,12 +404,12 @@ export function CompsPanel({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ included: !comp.included }),
+          body: JSON.stringify({ review: next }),
         }
       );
-      apply(await readResponse(res, "Failed to update the comp"));
+      apply(await readResponse(res, "Failed to save your review"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to update the comp");
+      setError(e instanceof Error ? e.message : "Failed to save your review");
       await load();
     }
   }
@@ -378,17 +427,23 @@ export function CompsPanel({
     }
   }
 
-  const includedCount = comps.filter((c) => c.included).length;
+  // Null until the comps land, then whichever view has work in it.
+  const activeFilter: CompFilter = filter ?? defaultFilter(comps);
 
   /**
-   * What the ARV actually decided about each comp it left out.
+   * The ARV's verdict on each comp: counted, why not, and any flag.
    *
-   * The card used to recompute this locally, which cannot see the reasons that
-   * depend on the whole set — a duplicate listing is only a duplicate next to
-   * its twin. Where the server has a verdict, it wins.
+   * Computed server-side because most of it depends on the whole set — a
+   * duplicate is only a duplicate beside its twin, and the fixer test needs
+   * the median of the counted comps. A card cannot work that out alone.
    */
-  const excludedReasons = new Map<string, string[]>(
-    (arv?.excludedForFit ?? []).map((e) => [e.compId, e.reasons])
+  const notes = new Map((arv?.compNotes ?? []).map((n) => [n.compId, n]));
+
+  const counts = filterCounts(comps, notes);
+  const visible = sortComps(
+    comps.filter((c) => matchesFilter(c, notes.get(c.id), activeFilter)),
+    sort,
+    arv?.subjectSqft ?? null
   );
 
   return (
@@ -406,6 +461,12 @@ export function CompsPanel({
             <p data-testid="arv-value" className="text-2xl font-bold mt-1">
               {arv && arv.value !== null ? dollars(arv.value) : "—"}
             </p>
+            {/* Not a warning: nothing is wrong, the work has not been done. */}
+            {arv?.reviewPrompt && (
+              <p data-testid="arv-review-prompt" className="text-[12px] text-(--color-text-secondary) mt-1 leading-relaxed">
+                {arv.reviewPrompt}
+              </p>
+            )}
             {/* Narrowed on `arv` itself first. Reaching through an optional
                 chain and comparing to null reads as a guard but isn't one:
                 `arv?.valueLow !== null` is true when arv is null, which is
@@ -589,7 +650,7 @@ export function CompsPanel({
             </p>
 
             <p data-testid="arv-basis" className="text-[11px] text-(--color-text-secondary) mt-1.5 leading-relaxed">
-              {`Built on ${arv.basisLabel}`}
+              {arv.basisLabel}
               {`, each one's price adjusted by $${arv.adjustmentPerSqft}
                 per square foot of size difference from this house's
                 ${arv.subjectSqft?.toLocaleString()} sq ft.`}
@@ -601,6 +662,12 @@ export function CompsPanel({
             {arv.nearbyLow !== null && arv.nearbyHigh !== null && (
               <p data-testid="arv-nearby" className="text-[11px] text-(--color-text-secondary) mt-1">
                 Similar homes nearby: {dollarsShort(arv.nearbyLow)}–{dollarsShort(arv.nearbyHigh)}.
+              </p>
+            )}
+
+            {arv.countedTwice.length > 0 && (
+              <p data-testid="arv-counted-twice" className="text-[11px] text-(--color-text-secondary) mt-1 leading-relaxed">
+                {arv.countedTwice.join(", ")} approved twice, counted once.
               </p>
             )}
 
@@ -620,16 +687,6 @@ export function CompsPanel({
           <p className="text-[11px] text-(--color-text-tertiary) mt-1">
             {CONFIDENCE_LABEL[arv.confidence]} · {arv.usedComps.length} comp
             {arv.usedComps.length === 1 ? "" : "s"} used
-          </p>
-        )}
-
-        {/* Ticked comps that did not count, and why. A comp that was included
-            and ignored is the first thing someone will ask about. */}
-        {arv && arv.excludedForFit.length > 0 && (
-          <p data-testid="arv-excluded" className="text-[11px] text-(--color-text-tertiary) mt-1.5 leading-relaxed">
-            {arv.excludedForFit.length} comp
-            {arv.excludedForFit.length === 1 ? " was" : "s were"} left out as not the
-            same kind of house.
           </p>
         )}
 
@@ -667,7 +724,7 @@ export function CompsPanel({
       {/* ── The comps ───────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <h2 className="text-[13px] font-semibold">
-          Comps{comps.length > 0 ? ` · ${includedCount} of ${comps.length} included` : ""}
+          Comps{comps.length > 0 ? ` · ${counts.approved} of ${comps.length} approved` : ""}
         </h2>
         <button
           type="button"
@@ -692,6 +749,18 @@ export function CompsPanel({
         />
       )}
 
+      {comps.length > 0 && (
+        <CompControls
+          sort={sort}
+          filter={activeFilter}
+          counts={counts}
+          shown={visible.length}
+          total={comps.length}
+          onSortChange={setSort}
+          onFilterChange={setFilter}
+        />
+      )}
+
       {loading ? (
         <p className="text-[12px] text-(--color-text-secondary)">Loading comps…</p>
       ) : comps.length === 0 ? (
@@ -699,18 +768,35 @@ export function CompsPanel({
           No comps yet. Refresh to pull them from RentCast, or add one by hand
           from an agent&apos;s closed-sales list.
         </p>
+      ) : visible.length === 0 ? (
+        <div data-testid="comps-filter-empty" className="flex flex-col items-start gap-2">
+          <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+            No comps match &ldquo;{FILTER_LABELS[activeFilter]}&rdquo;. All {comps.length} are still
+            here and the ARV has not changed.
+          </p>
+          <button
+            type="button"
+            onClick={() => setFilter("all")}
+            data-testid="comps-show-all"
+            className="min-h-11 px-3 rounded-(--radius-pill) border border-(--color-border-default) text-[12px] font-medium"
+          >
+            Show all
+          </button>
+        </div>
       ) : (
-        <ul className="flex flex-col gap-2">
-          {comps.map((comp) => (
+        /* A scrolling list with a ceiling, so the ARV card stays on screen
+           while you work down eighty comps. */
+        <ul
+          data-testid="comp-list"
+          className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto pr-1"
+        >
+          {visible.map((comp) => (
             <CompRow
               key={comp.id}
               comp={comp}
-              onToggle={toggle}
+              note={notes.get(comp.id)}
+              onReview={review}
               onRemove={remove}
-              subjectSqft={arv?.subjectSqft ?? null}
-              subjectBeds={subjectBeds}
-              subjectFit={subjectFit}
-              decidedReasons={excludedReasons.get(comp.id)}
             />
           ))}
         </ul>
@@ -726,51 +812,36 @@ export function CompsPanel({
  */
 function CompRow({
   comp,
-  onToggle,
+  note,
+  onReview,
   onRemove,
-  subjectSqft,
-  subjectBeds,
-  subjectFit,
-  decidedReasons,
 }: {
   comp: Comp;
-  onToggle: (comp: Comp) => void;
+  /** The ARV's verdict on this comp. Absent only before the first load. */
+  note: CompNote | undefined;
+  onReview: (comp: Comp, review: CompReview) => void;
   onRemove: (comp: Comp) => void;
-  subjectSqft: number | null;
-  subjectBeds: number | null;
-  subjectFit: SubjectFit;
-  /** The ARV's own verdict, where it has one. Outranks the local check. */
-  decidedReasons: string[] | undefined;
 }) {
   const ppsf = perSqft(comp);
   const date = compDate(comp);
   const provenance = provenanceLabel(comp);
-  const fixerNote = fixerUpperNote(comp);
-  // Falls back to the local check so an optimistic tick shows a reason
-  // immediately, before the server's recomputed ARV lands.
-  const fitReasons = !comp.included
-    ? []
-    : (decidedReasons ?? compEligibility(comp, subjectSqft, subjectBeds, subjectFit).reasons);
+  const reasons = note?.reasons ?? [];
+  const counted = note?.counted ?? false;
+  // Hints are suppressed on a comp already decided against: a warning about a
+  // settled question is noise.
+  const skipped = comp.review === "not_renovated_skip" || comp.review === "not_comparable_skip";
+  const fixerNote = note?.fixerUpper ? fixerUpperNote(comp) : null;
 
   return (
     <li
       data-testid={`comp-${comp.id}`}
       className={`rounded-xl border p-3 transition-opacity ${
-        comp.included
-          ? "border-(--color-border-default) bg-(--color-elevated)"
-          : "border-(--color-border-default) opacity-50"
+        counted
+          ? "border-(--color-accent) bg-(--color-elevated)"
+          : "border-(--color-border-default)"
       }`}
     >
       <div className="flex items-start gap-3">
-        <input
-          type="checkbox"
-          checked={comp.included}
-          onChange={() => onToggle(comp)}
-          aria-label={`Include ${comp.formattedAddress}`}
-          data-testid={`comp-include-${comp.id}`}
-          className="mt-0.5 size-4 shrink-0 accent-(--color-accent)"
-        />
-
         <div className="min-w-0 flex-1">
           <p className="text-[13px] font-medium leading-snug wrap-break-word">
             {comp.formattedAddress}
@@ -844,12 +915,15 @@ function CompRow({
             </p>
           )}
 
-          {fitReasons.length > 0 && (
+          {/* Hints. They never decide anything — they are what the app
+              noticed, for a person to weigh. */}
+          {reasons.length > 0 && !skipped && (
             <p
-              data-testid={`comp-unfit-${comp.id}`}
-              className="text-[11px] text-amber-400 mt-1"
+              data-testid={`comp-hint-${comp.id}`}
+              className={`text-[11px] mt-1 ${counted ? "text-(--color-text-secondary)" : "text-amber-400"}`}
             >
-              Not counted — {fitReasons.join(", ")}
+              {counted ? "Counted anyway — " : ""}
+              {reasons.join(", ")}
             </p>
           )}
 
@@ -857,6 +931,21 @@ function CompRow({
           <div className="mt-1.5">
             <CompLinks comp={comp} />
           </div>
+
+          {/* The only control that moves the ARV. A native select, which is
+              the right thing to tap on a phone. */}
+          <Dropdown
+            className="mt-2"
+            value={comp.review}
+            options={COMP_REVIEW_ORDER.map((key) => ({
+              value: key,
+              label: COMP_REVIEW_LABELS[key],
+              tone: REVIEW_TONE[key],
+            }))}
+            onChange={(next) => onReview(comp, next)}
+            label={`What to do with ${comp.formattedAddress}`}
+            testId={`comp-review-${comp.id}`}
+          />
         </div>
 
         {/* Only hand-entered comps can be deleted. A RentCast comp is untick-ed,

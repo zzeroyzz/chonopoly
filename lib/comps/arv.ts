@@ -1,5 +1,6 @@
-import { type Comp, type CompStatus } from "./types";
+import { type Comp, type CompStatus, COMP_REVIEW_COUNTS } from "./types";
 import { normalizeStreet } from "../property/address";
+import { ORGANIZATION_BUYER } from "./fromPropertyRecords";
 
 /**
  * After-repair value from comparable sales.
@@ -59,9 +60,37 @@ export const COMP_ELIGIBILITY = {
 /** At least this many sold comps and the listings stop being used at all. */
 const SOLD_ONLY_THRESHOLD = 2;
 
-/** Below this, a median is one opinion rather than a market. */
-const MIN_COMPS_FOR_MODERATE = 5;
-const MIN_COMPS_FOR_GOOD = 8;
+/**
+ * Below this, a recorded "sale" is paperwork rather than a purchase.
+ *
+ * County records carry deed transfers that were never a sale at market: a
+ * $1,000 transfer between family members, an estate moving a title, a quitclaim
+ * tidying up ownership. 1794 Melrose Dr came back at $1,000 next to houses
+ * fetching $280,000.
+ */
+const NOMINAL_TRANSFER_FLOOR = 10_000;
+
+/**
+ * And below this share of what the other sales fetched.
+ *
+ * The flat floor misses a $40,000 paperwork transfer on a street where houses
+ * sell for $400,000. Judged against the other sales rather than a fixed
+ * number, because what counts as implausible depends on the street.
+ */
+const NOMINAL_TRANSFER_MEDIAN_FRACTION = 0.3;
+
+/** Under this, a sale may be a fixer rather than a finished house. */
+const FIXER_PRICE_CEILING = 200_000;
+
+/**
+ * How many approved comps make a number worth trusting.
+ *
+ * Lower than the old automatic thresholds (5 and 8) on purpose: every comp
+ * here has been looked at by a person, so three deliberate ones say more than
+ * five the app guessed at.
+ */
+const MIN_APPROVED_FOR_MODERATE = 3;
+const MIN_APPROVED_FOR_GOOD = 6;
 
 /** How far outside the plain range of nearby prices the ARV may sit. */
 const SANITY_TOLERANCE_PCT = 10;
@@ -130,6 +159,21 @@ export interface ArvResult {
   basisLabel: string;
   /** "5 similar homes, adjusted for size, point to about $345,000." */
   plainSummary: string | null;
+
+  /** One per comp, in the order given: counted, why not, and any flag. */
+  compNotes: CompNote[];
+
+  /** How many comps nobody has judged yet. */
+  stillToReview: number;
+
+  /**
+   * Set instead of a value when nothing is approved. Not a warning — nothing
+   * is wrong, the work simply has not been done yet.
+   */
+  reviewPrompt: string | null;
+
+  /** Approved twice and counted once, by address, for the ARV card. */
+  countedTwice: string[];
 }
 
 function median(values: number[]): number {
@@ -153,12 +197,10 @@ function money(n: number): string {
   return `$${Math.round(n).toLocaleString("en-US")}`;
 }
 
-function buildBasisLabel(sold: number, removed: number, active: number): string {
-  const parts: string[] = [];
-  if (sold > 0) parts.push(`${sold} sold`);
-  if (removed > 0) parts.push(`${removed} removed listing${removed === 1 ? "" : "s"}`);
-  if (active > 0) parts.push(`${active} active listing${active === 1 ? "" : "s"}`);
-  return parts.length > 0 ? parts.join(" · ") : "no comps";
+/** "Based on 4 comps you approved · 77 still to review" */
+function buildApprovedLabel(approved: number, stillToReview: number): string {
+  const base = `Based on ${approved} comp${approved === 1 ? "" : "s"} you approved`;
+  return stillToReview > 0 ? `${base} · ${stillToReview} still to review` : base;
 }
 
 /**
@@ -367,6 +409,96 @@ function dropDuplicateListings(comps: Comp[]): {
   return { unique: comps.filter((c) => kept.has(c.id)), duplicates };
 }
 
+/**
+ * Everything the screen needs to say about one comp.
+ *
+ * The tick decides whether a comp counts. These notes only explain the
+ * decision and set the default tick for a comp nobody has judged yet.
+ */
+export interface CompNote {
+  compId: string;
+  /** In the ARV right now. Equals the tick, once price and size are present. */
+  counted: boolean;
+  /** Why it fails the filter. Empty when it passes. */
+  reasons: string[];
+  /** Fails the filter but is ticked, so it counts anyway. */
+  countedByOverride: boolean;
+  /** A deed transfer rather than a purchase. Never in the nearby range. */
+  nominalTransfer: boolean;
+  /** Possibly a fixer rather than a finished house. Counted comps only. */
+  fixerUpper: boolean;
+}
+
+/**
+ * Whether a comp would start ticked, and why not.
+ *
+ * Judged across the whole set, not one comp at a time: a duplicate is only a
+ * duplicate beside its twin, and a paperwork transfer is only obvious beside
+ * what the other sales fetched. Exported so the save path, the one-time data
+ * fix and the screen all reach the same verdict from the same code.
+ */
+export function assessComps(
+  comps: Comp[],
+  subjectSqft: number | null,
+  options: ArvOptions = {}
+): Map<string, { passes: boolean; reasons: string[]; nominalTransfer: boolean }> {
+  const verdicts = new Map<
+    string,
+    { passes: boolean; reasons: string[]; nominalTransfer: boolean }
+  >();
+
+  // Duplicates are judged over every comp, ticked or not: the twin that makes
+  // one a duplicate may itself be unticked.
+  const { duplicates } = dropDuplicateListings(comps);
+  const duplicateReasons = new Map(duplicates.map((d) => [d.compId, d.reasons]));
+
+  const salePrices = comps
+    .filter((c) => c.status === "sold" && c.price !== null && c.price > 0)
+    .map((c) => c.price as number);
+
+  for (const comp of comps) {
+    const reasons: string[] = [];
+
+    const nominalTransfer = isNominalTransfer(comp, salePrices);
+    if (nominalTransfer) {
+      reasons.push(
+        `likely a paperwork transfer, not a real sale (${money(comp.price as number)})`
+      );
+    }
+
+    const duplicateReason = duplicateReasons.get(comp.id);
+    if (duplicateReason) reasons.push(...duplicateReason);
+
+    reasons.push(
+      ...compEligibility(comp, subjectSqft, options.subjectBeds ?? null, {
+        baths: options.subjectBaths ?? null,
+        propertyType: options.subjectPropertyType ?? null,
+        yearBuilt: options.subjectYearBuilt ?? null,
+      }).reasons
+    );
+
+    verdicts.set(comp.id, { passes: reasons.length === 0, reasons, nominalTransfer });
+  }
+
+  return verdicts;
+}
+
+/**
+ * A recorded sale too small to be a purchase.
+ *
+ * Measured against the other sales, so this comp's own price cannot drag the
+ * benchmark down with it.
+ */
+function isNominalTransfer(comp: Comp, allSalePrices: number[]): boolean {
+  if (comp.status !== "sold" || comp.price === null || comp.price <= 0) return false;
+  if (comp.price < NOMINAL_TRANSFER_FLOOR) return true;
+
+  const others = allSalePrices.filter((p) => p !== comp.price);
+  if (others.length === 0) return false;
+
+  return comp.price < median(others) * NOMINAL_TRANSFER_MEDIAN_FRACTION;
+}
+
 /** "most are much bigger" — the reason in the fewest words that are true. */
 function summariseReasons(excluded: CompEligibility[]): string {
   const counts = new Map<string, number>();
@@ -414,6 +546,10 @@ function emptyResult(
     warnings,
     basisLabel: "no comps",
     plainSummary: null,
+    compNotes: [],
+    stillToReview: 0,
+    reviewPrompt: null,
+    countedTwice: [],
   };
 }
 
@@ -460,57 +596,52 @@ export function calculateArv(
 ): ArvResult {
   const rate = Math.max(0, options.adjustmentPerSqft ?? DEFAULT_SIZE_ADJUSTMENT_PER_SQFT);
 
-  // Unchecked comps are not part of the answer. This is the whole point of the
-  // include checkbox, and it is tested directly.
-  const included = comps.filter((comp) => comp.included);
+  // Hints, not decisions. These used to remove comps from the number, which
+  // is why it moved four times on its own. They now only produce text.
+  const verdicts = assessComps(comps, subjectSqft, options);
 
-  if (included.length === 0) {
-    return emptyResult(subjectSqft, rate, ["No comps are included yet."]);
+  const approved = comps.filter((c) => c.review === COMP_REVIEW_COUNTS);
+  const stillToReview = comps.filter((c) => c.review === "needs_review").length;
+
+  /** Nothing approved, so nothing is counted and nothing can be flagged. */
+  const notesWithNothingCounted = () =>
+    buildCompNotes(comps, verdicts, new Set<string>(), null);
+
+  if (approved.length === 0) {
+    const result = emptyResult(subjectSqft, rate, []);
+    result.compNotes = notesWithNothingCounted();
+    result.stillToReview = stillToReview;
+    // Not a warning. Nothing is wrong — the work simply has not been done.
+    result.reviewPrompt =
+      stillToReview > 0
+        ? `Review comps to get an ARV. ${stillToReview} to go.`
+        : "Review comps to get an ARV.";
+    return result;
   }
 
   // Size is still needed, but only to measure the difference — not as a
   // multiplier. A missing size now costs an adjustment, not the whole ARV.
   if (subjectSqft === null || subjectSqft <= 0) {
-    return emptyResult(subjectSqft, rate, [
+    const result = emptyResult(subjectSqft, rate, [
       "Add this house's square footage to get an ARV.",
     ]);
-  }
-
-  // Size, distance and bed count decide whether a comp is a comparison at
-  // all. White Bird pulled fourteen comps between 1,938 and 2,505 sqft for a
-  // 1,357 sqft house: every one of them a bigger house, and an ARV built on
-  // them said the deal worked. A comp that is not the same kind of house is
-  // not evidence, however many of them there are.
-  // Duplicates go first: the same listing arriving four times under different
-  // unit numbers would otherwise be weighted four times in the median.
-  const { unique, duplicates } = dropDuplicateListings(included);
-
-  const eligibility = unique.map((c) =>
-    compEligibility(c, subjectSqft, options.subjectBeds ?? null, {
-      baths: options.subjectBaths ?? null,
-      propertyType: options.subjectPropertyType ?? null,
-      yearBuilt: options.subjectYearBuilt ?? null,
-    })
-  );
-  const excludedForFit = [...duplicates, ...eligibility.filter((e) => !e.eligible)];
-  const eligibleIds = new Set(
-    eligibility.filter((e) => e.eligible).map((e) => e.compId)
-  );
-  const comparable = unique.filter((c) => eligibleIds.has(c.id));
-
-  if (comparable.length === 0) {
-    const result = emptyResult(subjectSqft, rate, [
-      `None of the ${included.length} comp${included.length === 1 ? "" : "s"} here are the same kind of house — ` +
-        `${summariseReasons(excludedForFit)}. Add a sold comp of a similar size from your agent to get an ARV.`,
-    ]);
-    result.excludedForFit = excludedForFit;
+    result.compNotes = notesWithNothingCounted();
+    result.stillToReview = stillToReview;
     return result;
   }
+
+  // One house, one vote. Approving both copies of the same listing would
+  // otherwise weight it twice; the card says so rather than silently
+  // dropping one.
+  const { unique, duplicates } = dropDuplicateListings(approved);
+  const countedTwice = duplicates
+    .map((d) => approved.find((c) => c.id === d.compId)?.formattedAddress)
+    .filter((address): address is string => Boolean(address));
 
   const usable: ArvCompBreakdown[] = [];
   let skipped = 0;
 
-  for (const comp of comparable) {
+  for (const comp of unique) {
     if (comp.price === null || comp.price <= 0 || comp.sqft === null || comp.sqft <= 0) {
       skipped++;
       continue;
@@ -536,7 +667,8 @@ export function calculateArv(
         : "No usable comps.",
     ]);
     result.skippedForMissingData = skipped;
-    result.excludedForFit = excludedForFit;
+    result.compNotes = notesWithNothingCounted();
+    result.stillToReview = stillToReview;
     return result;
   }
 
@@ -555,9 +687,19 @@ export function calculateArv(
 
   // The sanity check reads the unadjusted prices, because that is the number
   // someone can verify by looking at the street.
-  const rawPrices = basis.map((c) => c.price);
-  const nearbyLow = Math.min(...rawPrices);
-  const nearbyHigh = Math.max(...rawPrices);
+  //
+  // Paperwork transfers are left out even when ticked. "Similar homes nearby:
+  // $1,000–$462,000" describes no street that exists, and it is the line
+  // someone uses to sanity-check the ARV by eye.
+  const rawPrices = basis
+    .filter((c) => !verdicts.get(c.compId)?.nominalTransfer)
+    .map((c) => c.price);
+  const nearbyPrices = rawPrices.length > 0 ? rawPrices : basis.map((c) => c.price);
+  const nearbyLow = Math.min(...nearbyPrices);
+  const nearbyHigh = Math.max(...nearbyPrices);
+
+  // What a counted sale is measured against for the fixer-upper note.
+  const countedMedianPrice = median(basis.map((c) => c.price));
 
   let sanityWarning: string | null = null;
   const overBy = value - nearbyHigh * (1 + SANITY_TOLERANCE_PCT / 100);
@@ -573,9 +715,9 @@ export function calculateArv(
   }
 
   const confidence: ArvConfidence =
-    basis.length >= MIN_COMPS_FOR_GOOD
+    basis.length >= MIN_APPROVED_FOR_GOOD
       ? "good"
-      : basis.length >= MIN_COMPS_FOR_MODERATE
+      : basis.length >= MIN_APPROVED_FOR_MODERATE
         ? "moderate"
         : "low";
 
@@ -593,7 +735,7 @@ export function calculateArv(
     );
   }
 
-  if (basis.length < MIN_COMPS_FOR_MODERATE) {
+  if (basis.length < MIN_APPROVED_FOR_MODERATE) {
     warnings.push(
       `Only ${basis.length} comp${basis.length === 1 ? "" : "s"} behind this. A median this thin moves a lot on one more sale.`
     );
@@ -613,6 +755,8 @@ export function calculateArv(
     `${soldOnly ? " that sold" : ""}` +
     `, adjusted for size, point to about ${money(value)}.`;
 
+  const countedIds = new Set(basis.map((c) => c.compId));
+
   return {
     value,
     valueLow: low,
@@ -630,8 +774,62 @@ export function calculateArv(
     sanityWarning,
     confidence,
     warnings,
-    basisLabel: buildBasisLabel(soldCount, removedCount, activeCount),
+    basisLabel: buildApprovedLabel(basis.length, stillToReview),
     plainSummary,
-    excludedForFit,
+    // Every per-comp reason now lives in compNotes. Kept empty so the shape
+    // does not change for anything still reading it.
+    excludedForFit: [],
+    compNotes: buildCompNotes(comps, verdicts, countedIds, countedMedianPrice),
+    stillToReview,
+    reviewPrompt: null,
+    countedTwice,
   };
+}
+
+/**
+ * What the screen says beside each comp.
+ *
+ * Built here rather than in the component because three of the four answers
+ * depend on the whole set — whether it counted, what the counted median is,
+ * and whether a twin exists — and a component recomputing that from a single
+ * comp gets it wrong.
+ */
+function buildCompNotes(
+  comps: Comp[],
+  verdicts: ReturnType<typeof assessComps>,
+  countedIds: Set<string>,
+  countedMedianPrice: number | null
+): CompNote[] {
+  return comps.map((comp) => {
+    const verdict = verdicts.get(comp.id);
+    const counted = countedIds.has(comp.id);
+    return {
+      compId: comp.id,
+      counted,
+      reasons: verdict?.reasons ?? [],
+      countedByOverride: counted && verdict !== undefined && !verdict.passes,
+      nominalTransfer: verdict?.nominalTransfer ?? false,
+      // Never on a comp that is not in the number. A warning about a comp
+      // nobody is counting is noise about a decision already made.
+      fixerUpper: counted && isPossibleFixer(comp, countedMedianPrice),
+    };
+  });
+}
+
+/**
+ * Whether a counted sale might be a fixer rather than a finished house.
+ *
+ * Narrowed after the first live pull. The old rule flagged anything bought by
+ * a company at any price, which put a warning on 1740 Langston Ave at
+ * $462,000 — the most expensive sale in the set and obviously not a fixer.
+ *
+ * A sale at or above what the counted comps fetched is never flagged,
+ * whatever bought it. Below that: cheap enough outright, or bought by a
+ * company.
+ */
+export function isPossibleFixer(comp: Comp, countedMedianPrice: number | null): boolean {
+  if (comp.price === null || comp.price <= 0) return false;
+  if (countedMedianPrice !== null && comp.price >= countedMedianPrice) return false;
+
+  return comp.price < FIXER_PRICE_CEILING || comp.buyerType === ORGANIZATION_BUYER;
 }

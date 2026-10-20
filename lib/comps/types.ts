@@ -25,6 +25,41 @@ export type CompStatus = "active" | "removed" | "sold";
  */
 export type CompSource = "rentcast" | "manual" | "public_record";
 
+/**
+ * Whether this comp counts, and why not.
+ *
+ * Only `renovated_use` counts. The app never sets anything but the
+ * `needs_review` default — the whole point is that the number stops moving
+ * unless a person moves it.
+ *
+ * The two skips are arithmetically identical and deliberately separate: they
+ * record different judgements, and "why isn't this one in?" has two different
+ * answers.
+ */
+export type CompReview =
+  | "needs_review"
+  | "renovated_use"
+  | "not_renovated_skip"
+  | "not_comparable_skip";
+
+export const COMP_REVIEW_LABELS: Record<CompReview, string> = {
+  needs_review: "Needs review",
+  renovated_use: "Renovated: use it",
+  not_renovated_skip: "Not renovated: skip",
+  not_comparable_skip: "Not comparable: skip",
+};
+
+/** The order they appear in the dropdown. */
+export const COMP_REVIEW_ORDER: CompReview[] = [
+  "needs_review",
+  "renovated_use",
+  "not_renovated_skip",
+  "not_comparable_skip",
+];
+
+/** The one state that puts a comp in the number. */
+export const COMP_REVIEW_COUNTS: CompReview = "renovated_use";
+
 export interface Comp {
   id: string;
   propertyId: string;
@@ -65,8 +100,16 @@ export interface Comp {
   buyerName: string | null;
   county: string | null;
 
-  /** The include checkbox on the Comps tab. */
+  /**
+   * Dead. The ARV reads `review` instead. Kept on the row so the old tick
+   * state is not lost, and read here only so nothing that still references
+   * it breaks.
+   */
   included: boolean;
+
+  /** The owner's judgement. The only thing the ARV reads. */
+  review: CompReview;
+  reviewSetAt: string | null;
   notes: string | null;
 
   updatedAt: string;

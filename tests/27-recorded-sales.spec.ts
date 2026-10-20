@@ -107,6 +107,8 @@ function recordedSaleComps(): Comp[] {
     buyerName: sale.buyer_name,
     county: sale.county,
     included: true,
+    review: "renovated_use",
+    reviewSetAt: null,
     notes: null,
     updatedAt: sale.removed_date ?? "",
   }));
@@ -128,7 +130,7 @@ function listingComp(): Comp {
     listingType: "Standard", listedDate: "2026-03-01", removedDate: "2026-06-01",
     lastSeenDate: "2026-06-01", daysOnMarket: 92, distanceMiles: 0.32, daysOld: 40,
     correlation: 0.9, buyerType: null, buyerName: null, county: null,
-    included: true, notes: null, updatedAt: "",
+    included: true, review: "renovated_use", reviewSetAt: null, notes: null, updatedAt: "",
   };
 }
 
@@ -276,18 +278,21 @@ test("a possible fixer-upper is flagged, says why, and stays ticked", async ({ p
   await expect(flag).toContainText("$145,000");
   await expect(flag).toContainText("Untick it to leave it out");
 
-  // Flagged is not excluded. It is still counted.
-  await expect(page.getByTestId("comp-include-1842-Lisbon-Dr-SW")).toBeChecked();
+  // Flagged is not skipped. It is still counted.
+  await expect(page.getByTestId("comp-review-1842-Lisbon-Dr-SW")).toContainText(
+    "Renovated: use it"
+  );
 });
 
-test("unticking the flagged sale moves the ARV", async ({ page }) => {
+test("skipping the flagged sale moves the ARV", async ({ page }) => {
   await stubRecordedSales(page, recordedSaleComps());
   await openArvTab(page);
 
   await expect(page.getByTestId("arv-value")).toHaveText("$274,140");
 
   // $145,000 adjusted to $151,080 is the bottom of the five-comp median.
-  await page.getByTestId("comp-include-1842-Lisbon-Dr-SW").click();
+  await page.getByTestId("comp-review-1842-Lisbon-Dr-SW").click();
+  await page.getByTestId("comp-review-1842-Lisbon-Dr-SW-option-not_renovated_skip").click();
 
   await expect(page.getByTestId("arv-value")).not.toHaveText("$274,140");
   await expect(page.getByTestId("arv-basis")).toContainText("4 sold");

@@ -56,6 +56,8 @@ function fixtureComps(): Comp[] {
     buyerName: null,
     county: null,
     included: true,
+    review: "renovated_use",
+    reviewSetAt: null,
     notes: null,
     updatedAt: new Date().toISOString(),
   }));
@@ -208,6 +210,8 @@ async function stubComps(page: Page, options: StubOptions = {}) {
         correlation: null,
         distanceMiles: null,
         included: true,
+    review: "renovated_use",
+    reviewSetAt: null,
         // Spreading a fixture comp carried its RentCast dates onto a manual
         // comp, which the real service never does — addManualComp writes only
         // the sale date it was given. Nulled explicitly so the stub cannot
@@ -407,33 +411,36 @@ test("a comp missing its size is skipped and declared", async ({ page }) => {
 
 // ─── Checking comps off ───────────────────────────────────────────────────────
 
-test("unticking a comp moves the ARV", async ({ page }) => {
+test("skipping a comp moves the ARV", async ({ page }) => {
   await stubComps(page);
   await openCompsTab(page);
 
   await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
 
   // comp-4 is the $455,000 / 2,140 sqft house at $212.62/sqft — the top of the
-  // range, so dropping it should pull the median down.
-  await page.getByTestId("comp-include-comp-4").click();
+  // range, so skipping it should pull the median down.
+  await page.getByTestId("comp-review-comp-4").click();
+  await page.getByTestId("comp-review-comp-4-option-not_comparable_skip").click();
 
   await expect(page.getByTestId("arv-value")).not.toHaveText("$359,375");
   const lowered = await page.getByTestId("arv-value").textContent();
   expect(lowered).toBe("$358,981");
 
-  await expect(page.getByTestId("panel-comps")).toContainText("5 of 6 included");
+  await expect(page.getByTestId("panel-comps")).toContainText("5 of 6 approved");
 });
 
-test("reticking a comp restores the ARV", async ({ page }) => {
+test("approving a comp again restores the ARV", async ({ page }) => {
   await stubComps(page);
   await openCompsTab(page);
 
-  await page.getByTestId("comp-include-comp-4").click();
+  await page.getByTestId("comp-review-comp-4").click();
+  await page.getByTestId("comp-review-comp-4-option-not_comparable_skip").click();
   await expect(page.getByTestId("arv-value")).toHaveText("$358,981");
 
-  await page.getByTestId("comp-include-comp-4").click();
+  await page.getByTestId("comp-review-comp-4").click();
+  await page.getByTestId("comp-review-comp-4-option-renovated_use").click();
   await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
-  await expect(page.getByTestId("panel-comps")).toContainText("6 of 6 included");
+  await expect(page.getByTestId("panel-comps")).toContainText("6 of 6 approved");
 });
 
 test("comps show Removed rather than Sold", async ({ page }) => {

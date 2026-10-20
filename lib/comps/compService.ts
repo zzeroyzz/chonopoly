@@ -1,7 +1,12 @@
 import { createClient } from "@supabase/supabase-js";
 import { type Database } from "../supabase/database.types";
 import { type RequestContext } from "../context";
-import { type Comp, type CompStatus, type ManualCompInput } from "./types";
+import {
+  type Comp,
+  type CompStatus,
+  type CompReview,
+  type ManualCompInput,
+} from "./types";
 import { assertNotMockMode } from "../rentcast/client";
 import { type MappedComp, type MappedSubjectFacts } from "./fromRentCast";
 import { type MappedRecordedSale } from "./fromPropertyRecords";
@@ -54,6 +59,8 @@ interface CompRow {
   distance_miles: number | null;
   days_old: number | null;
   correlation: number | null;
+  review: string;
+  review_set_at: string | null;
   buyer_type: string | null;
   buyer_name: string | null;
   county: string | null;
@@ -96,6 +103,8 @@ const COMP_FIELDS: CompColumn[] = [
   "distance_miles",
   "days_old",
   "correlation",
+  "review",
+  "review_set_at",
   "buyer_type",
   "buyer_name",
   "county",
@@ -137,6 +146,8 @@ function toComp(row: CompRow): Comp {
     distanceMiles: row.distance_miles === null ? null : Number(row.distance_miles),
     daysOld: row.days_old,
     correlation: row.correlation === null ? null : Number(row.correlation),
+    review: row.review as CompReview,
+    reviewSetAt: row.review_set_at,
     buyerType: row.buyer_type,
     buyerName: row.buyer_name,
     county: row.county,
@@ -399,6 +410,11 @@ export async function addManualComp(
       removed_date: input.saleDate,
       notes: input.notes,
       included: true,
+      // Typing a comp in IS the review. Asking the owner to approve a comp
+      // they just entered by hand would be asking the same question twice.
+      review: "renovated_use",
+      review_set_by: userId,
+      review_set_at: new Date().toISOString(),
       created_by: userId,
     })
     .select(COMP_COLUMNS)
@@ -408,7 +424,35 @@ export async function addManualComp(
   return toComp(data as unknown as CompRow);
 }
 
-/** Tick or untick a comp. The only field the Comps tab edits in place. */
+/**
+ * Record the owner's judgement on one comp.
+ *
+ * The only thing that moves the ARV. `review_set_by` comes from the session,
+ * never from the request body — a claim needs an author, and the database
+ * CHECK enforces that anything other than the default has one.
+ */
+export async function setCompReview(
+  compId: string,
+  review: CompReview,
+  ctx: RequestContext,
+  userId: string
+): Promise<void> {
+  const { error } = await db()
+    .from("property_comps")
+    .update({
+      review,
+      review_set_by: review === "needs_review" ? null : userId,
+      review_set_at: review === "needs_review" ? null : new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", compId)
+    .eq("owner_type", ctx.type)
+    .eq("owner_id", ctx.id);
+
+  if (error) throw new Error(`Failed to save your review: ${error.message}`);
+}
+
+/** Tick or untick a comp. Dead: the ARV reads `review`. Kept for the old API. */
 export async function setCompIncluded(
   compId: string,
   included: boolean,

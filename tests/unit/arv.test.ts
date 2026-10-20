@@ -1,4 +1,4 @@
-import { calculateArv } from "@/lib/comps/arv";
+import { calculateArv, assessComps } from "@/lib/comps/arv";
 import { mapCompStatus, mapComparables, mapSubjectFacts } from "@/lib/comps/fromRentCast";
 import { type Comp, type CompStatus } from "@/lib/comps/types";
 
@@ -40,6 +40,8 @@ function comp(overrides: Partial<Comp> = {}): Comp {
     buyerName: null,
     county: null,
     included: true,
+    review: "renovated_use",
+    reviewSetAt: null,
     notes: null,
     updatedAt: "2026-10-18T00:00:00.000Z",
     ...overrides,
@@ -86,12 +88,13 @@ describe("calculateArv", () => {
     expect(result.sanityWarning).toBeNull();
   });
 
-  it("ignores comps that are not included", () => {
-    // The whole point of the checkbox. The outlier below would drag a mean to
-    // 260 and the median to 210; excluded, it changes nothing.
+  it("ignores comps the owner skipped", () => {
+    // The whole point of the review. The outlier below would drag a mean to
+    // 260 and the median to 210; skipped, it changes nothing.
     const comps = [
       ...compsAtPricePerSqft([180, 190, 200, 210, 220]),
-      comp({ id: "outlier", externalId: "rc-outlier", sqft: 1_000, price: 500_000, included: false }),
+      comp({ id: "outlier", externalId: "rc-outlier", sqft: 1_000, price: 500_000,
+             review: "not_comparable_skip" }),
     ];
 
     const result = calculateArv(comps, 1_100);
@@ -101,12 +104,12 @@ describe("calculateArv", () => {
     expect(result.usedComps.map((c) => c.compId)).not.toContain("outlier");
   });
 
-  it("recomputes when a comp is unchecked", () => {
+  it("recomputes when a comp is skipped", () => {
     const comps = compsAtPricePerSqft([180, 190, 200, 210, 220]);
     const before = calculateArv(comps, 1_000);
 
     const after = calculateArv(
-      comps.map((c) => (c.id === "c-4" ? { ...c, included: false } : c)),
+      comps.map((c) => (c.id === "c-4" ? { ...c, review: "not_renovated_skip" as const } : c)),
       1_000
     );
 
@@ -139,7 +142,7 @@ describe("calculateArv", () => {
     expect(result.soldCount).toBe(3);
     expect(result.removedCount).toBe(0);
     expect(result.activeCount).toBe(0);
-    expect(result.basisLabel).toBe("3 sold");
+    expect(result.basisLabel).toBe("Based on 3 comps you approved");
   });
 
   it("keeps the listing in the mix when only one comp has sold", () => {
@@ -148,7 +151,7 @@ describe("calculateArv", () => {
       comp({ id: "r-1", externalId: "rc-r1", sqft: 1_000, price: 190_000, status: "removed" }),
     ];
 
-    expect(calculateArv(comps, 1_000).basisLabel).toBe("1 sold · 1 removed listing");
+    expect(calculateArv(comps, 1_000).basisLabel).toBe("Based on 2 comps you approved");
   });
 
   it("says a set with no sales is not confirmed, and what to do about it", () => {
@@ -202,17 +205,20 @@ describe("calculateArv", () => {
     expect(listings.plainSummary).not.toMatch(/sold|asked/);
   });
 
-  it("returns null rather than zero when no comps are included", () => {
+  it("asks for a review rather than showing a number, when nothing is approved", () => {
     const result = calculateArv(
-      compsAtPricePerSqft([180, 200]).map((c) => ({ ...c, included: false })),
+      compsAtPricePerSqft([180, 200]).map((c) => ({ ...c, review: "needs_review" as const })),
       1_500
     );
 
-    // A zero posing as a value would read as "this house is worth nothing".
+    // A zero posing as a value would read as "this house is worth nothing",
+    // and a warning would say something is wrong. Nothing is wrong — the
+    // work simply has not been done.
     expect(result.value).toBeNull();
     expect(result.confidence).toBe("none");
-    expect(result.basisLabel).toBe("no comps");
-    expect(result.warnings.join(" ")).toMatch(/No comps are included/);
+    expect(result.warnings).toEqual([]);
+    expect(result.reviewPrompt).toBe("Review comps to get an ARV. 2 to go.");
+    expect(result.stillToReview).toBe(2);
   });
 
   it("asks for the square footage when the subject has none", () => {
@@ -282,37 +288,60 @@ describe("calculateArv", () => {
     expect(result.value).toBeCloseTo(392_000, 6);
   });
 
-  it("refuses an ARV when no comp is the same kind of house", () => {
+  it("starts none of a set of bigger houses ticked", () => {
     // White Bird: fourteen comps between 1,938 and 2,505 sqft pulled for a
-    // 1,357 sqft house. Every one is a bigger house, so none is evidence.
+    // 1,357 sqft house. Every one is a bigger house, so none starts counted.
     const comps = [
       comp({ id: "w-1", externalId: "rc-w1", sqft: 1_938, price: 315_000 }),
       comp({ id: "w-2", externalId: "rc-w2", sqft: 2_250, price: 400_000 }),
       comp({ id: "w-3", externalId: "rc-w3", sqft: 2_505, price: 482_144 }),
     ];
 
-    const result = calculateArv(comps, 1_357);
+    const verdicts = assessComps(comps, 1_357);
 
-    expect(result.value).toBeNull();
-    expect(result.excludedForFit).toHaveLength(3);
-    expect(result.excludedForFit.every((e) => e.reasons.includes("much bigger"))).toBe(true);
-    expect(result.warnings.join(" ")).toMatch(/none of the 3 comps here are the same kind of house/i);
+    expect([...verdicts.values()].every((v) => v.reasons.includes("much bigger"))).toBe(true);
+    expect([...verdicts.values()].every((v) => !v.passes)).toBe(true);
   });
 
-  it("will not count a townhouse as a comp for a detached house", () => {
+  it("counts a failing comp anyway once it is ticked, and says why", () => {
+    // The tick is the answer. A comp the owner ticked on purpose counts, and
+    // the card says it counted despite the reason rather than hiding either.
+    const comps = [
+      comp({ id: "w-1", externalId: "rc-w1", sqft: 1_938, price: 315_000, included: true }),
+      comp({ id: "w-2", externalId: "rc-w2", sqft: 2_250, price: 400_000, included: true }),
+    ];
+
+    const result = calculateArv(comps, 1_357);
+
+    expect(result.value).not.toBeNull();
+    expect(result.usedComps).toHaveLength(2);
+    const note = result.compNotes.find((n) => n.compId === "w-1")!;
+    expect(note.counted).toBe(true);
+    expect(note.countedByOverride).toBe(true);
+    expect(note.reasons).toContain("much bigger");
+  });
+
+  it("never counts an unreviewed comp, however well it fits", () => {
+    const comps = [comp({ id: "u-1", review: "needs_review" })];
+
+    const result = calculateArv(comps, 1_500);
+
+    expect(result.value).toBeNull();
+    expect(result.compNotes[0].counted).toBe(false);
+  });
+
+  it("will not start a townhouse ticked for a detached house", () => {
     const comps = [
       comp({ id: "t-1", externalId: "rc-t1", propertyType: "Townhouse" }),
       comp({ id: "t-2", externalId: "rc-t2", propertyType: "Condo" }),
       comp({ id: "t-3", externalId: "rc-t3", propertyType: "Single Family" }),
     ];
 
-    const result = calculateArv(comps, 1_500, { subjectPropertyType: "single_family" });
+    const verdicts = assessComps(comps, 1_500, { subjectPropertyType: "single_family" });
 
-    expect(result.usedComps.map((c) => c.compId)).toEqual(["t-3"]);
-    expect(result.excludedForFit.map((e) => e.reasons[0])).toEqual([
-      "a townhouse, not a single-family home",
-      "a condo, not a single-family home",
-    ]);
+    expect(verdicts.get("t-1")!.reasons).toEqual(["a townhouse, not a single-family home"]);
+    expect(verdicts.get("t-2")!.reasons).toEqual(["a condo, not a single-family home"]);
+    expect(verdicts.get("t-3")!.passes).toBe(true);
   });
 
   it("treats Single Family and single_family as the same type", () => {
@@ -333,16 +362,17 @@ describe("calculateArv", () => {
       comp({ id: "b-3", externalId: "rc-b3", baths: 1 }),
     ];
 
-    const result = calculateArv(comps, 1_500, { subjectBaths: 2 });
+    const verdicts = assessComps(comps, 1_500, { subjectBaths: 2 });
 
-    expect(result.usedComps.map((c) => c.compId)).toEqual(["b-1", "b-3"]);
-    expect(result.excludedForFit[0].reasons).toEqual(["2 more bathrooms"]);
+    expect(verdicts.get("b-1")!.passes).toBe(true);
+    expect(verdicts.get("b-3")!.passes).toBe(true);
+    expect(verdicts.get("b-2")!.reasons).toEqual(["2 more bathrooms"]);
   });
 
   it("says a half bathroom as a half, not as a rounded whole", () => {
-    const result = calculateArv([comp({ baths: 4.5 })], 1_500, { subjectBaths: 2 });
+    const verdicts = assessComps([comp({ baths: 4.5 })], 1_500, { subjectBaths: 2 });
 
-    expect(result.excludedForFit[0].reasons).toEqual(["2.5 more bathrooms"]);
+    expect(verdicts.get("c-1")!.reasons).toEqual(["2.5 more bathrooms"]);
   });
 
   it("rejects a new build as a comp for an old house", () => {
@@ -353,18 +383,18 @@ describe("calculateArv", () => {
       comp({ id: "y-2", externalId: "rc-y2", yearBuilt: 1970 }),
     ];
 
-    const result = calculateArv(comps, 1_500, { subjectYearBuilt: 1965 });
+    const verdicts = assessComps(comps, 1_500, { subjectYearBuilt: 1965 });
 
-    expect(result.usedComps.map((c) => c.compId)).toEqual(["y-2"]);
-    expect(result.excludedForFit[0].reasons).toEqual(["built 2026, 61 years newer"]);
+    expect(verdicts.get("y-1")!.reasons).toEqual(["built 2026, 61 years newer"]);
+    expect(verdicts.get("y-2")!.passes).toBe(true);
   });
 
   it("names an older comp as older, not newer", () => {
     // The subject is the modern one here, so the rule fires on the gap and
     // the wording has to follow the comp, not the newer of the two.
-    const result = calculateArv([comp({ yearBuilt: 1960 })], 1_500, { subjectYearBuilt: 2020 });
+    const verdicts = assessComps([comp({ yearBuilt: 1960 })], 1_500, { subjectYearBuilt: 2020 });
 
-    expect(result.excludedForFit[0].reasons).toEqual(["built 1960, 60 years older"]);
+    expect(verdicts.get("c-1")!.reasons).toEqual(["built 1960, 60 years older"]);
   });
 
   it("keeps two old houses a generation apart", () => {
@@ -392,13 +422,13 @@ describe("calculateArv", () => {
   });
 
   it("excludes exactly at the boundary, and keeps one year inside it", () => {
-    const atBoundary = calculateArv([comp({ yearBuilt: 2000 })], 1_500, { subjectYearBuilt: 1970 });
-    const justInside = calculateArv([comp({ yearBuilt: 1999 })], 1_500, { subjectYearBuilt: 1970 });
+    const atBoundary = assessComps([comp({ yearBuilt: 2000 })], 1_500, { subjectYearBuilt: 1970 });
+    const justInside = assessComps([comp({ yearBuilt: 1999 })], 1_500, { subjectYearBuilt: 1970 });
 
     // 2000 is modern and the gap is exactly 30.
-    expect(atBoundary.excludedForFit[0].reasons).toEqual(["built 2000, 30 years newer"]);
+    expect(atBoundary.get("c-1")!.reasons).toEqual(["built 2000, 30 years newer"]);
     // 1999 is not modern, so the same 29-year gap says nothing.
-    expect(justInside.excludedForFit).toHaveLength(0);
+    expect(justInside.get("c-1")!.passes).toBe(true);
   });
 
   it("skips a check the subject has no fact for, rather than failing it", () => {
@@ -420,19 +450,17 @@ describe("calculateArv", () => {
     expect(result.excludedForFit).toHaveLength(0);
   });
 
-  it("groups the varied reasons when it summarises why nothing counted", () => {
-    // Each comp carries a different year, so the summary has to group them
-    // rather than report one comp's wording as the common complaint.
+  it("keeps each unreviewed comp's own hint", () => {
     const comps = [
-      comp({ id: "g-1", externalId: "rc-g1", yearBuilt: 2020 }),
-      comp({ id: "g-2", externalId: "rc-g2", yearBuilt: 2024 }),
-      comp({ id: "g-3", externalId: "rc-g3", yearBuilt: 2026 }),
+      comp({ id: "g-1", externalId: "rc-g1", yearBuilt: 2020, review: "needs_review" }),
+      comp({ id: "g-2", externalId: "rc-g2", yearBuilt: 2024, review: "needs_review" }),
     ];
 
     const result = calculateArv(comps, 1_500, { subjectYearBuilt: 1950 });
 
     expect(result.value).toBeNull();
-    expect(result.warnings.join(" ")).toMatch(/most are a different age/);
+    expect(result.compNotes[0].reasons[0]).toMatch(/^built 2020/);
+    expect(result.compNotes[0].counted).toBe(false);
   });
 
   it("counts one house once, however many times it was listed", () => {
@@ -457,12 +485,11 @@ describe("calculateArv", () => {
       }),
     ];
 
-    const result = calculateArv(comps, 1_312);
+    const verdicts = assessComps(comps, 1_312);
 
-    expect(result.usedComps.map((c) => c.compId)).toEqual(["d-1"]);
-    expect(result.excludedForFit).toEqual([
-      { compId: "d-2", eligible: false, reasons: ["same house listed twice"] },
-    ]);
+    // The newer copy stays tickable; the older one starts unticked.
+    expect(verdicts.get("d-1")!.passes).toBe(true);
+    expect(verdicts.get("d-2")!.reasons).toEqual(["same house listed twice"]);
   });
 
   it("ignores the unit number when deciding it is the same house", () => {
@@ -474,14 +501,12 @@ describe("calculateArv", () => {
       comp({ id: "h-4", externalId: "rc-h4", formattedAddress: "6721 Homer Ln, Atlanta, GA 30213", sqft: 2_013, daysOld: 70 }),
     ];
 
-    const result = calculateArv(comps, 2_013);
+    const verdicts = assessComps(comps, 2_013);
 
-    expect(result.usedComps.map((c) => c.compId)).toEqual(["h-1"]);
-    expect(result.excludedForFit.map((e) => e.reasons[0])).toEqual([
-      "same house listed 4 times",
-      "same house listed 4 times",
-      "same house listed 4 times",
-    ]);
+    expect(verdicts.get("h-1")!.passes).toBe(true);
+    for (const id of ["h-2", "h-3", "h-4"]) {
+      expect(verdicts.get(id)!.reasons).toEqual(["same house listed 4 times"]);
+    }
   });
 
   it("keeps the most recent copy, whatever order they arrive in", () => {
@@ -490,7 +515,9 @@ describe("calculateArv", () => {
       comp({ id: "o-2", externalId: "rc-o2", formattedAddress: "5 Elm St, Atlanta, GA 30310", sqft: 1_200, daysOld: 10 }),
     ];
 
-    expect(calculateArv(comps, 1_200).usedComps.map((c) => c.compId)).toEqual(["o-2"]);
+    const verdicts = assessComps(comps, 1_200);
+    expect(verdicts.get("o-2")!.passes).toBe(true);
+    expect(verdicts.get("o-1")!.reasons).toEqual(["same house listed twice"]);
   });
 
   it("falls back to the last date seen when neither copy knows its age", () => {
@@ -499,7 +526,9 @@ describe("calculateArv", () => {
       comp({ id: "n-2", externalId: "rc-n2", formattedAddress: "7 Oak St, Atlanta, GA 30310", sqft: 1_200, daysOld: null, lastSeenDate: "2026-09-30" }),
     ];
 
-    expect(calculateArv(comps, 1_200).usedComps.map((c) => c.compId)).toEqual(["n-2"]);
+    const verdicts = assessComps(comps, 1_200);
+    expect(verdicts.get("n-2")!.passes).toBe(true);
+    expect(verdicts.get("n-1")!.reasons).toEqual(["same house listed twice"]);
   });
 
   it("keeps both when the same street address has two different sizes", () => {
@@ -526,12 +555,11 @@ describe("calculateArv", () => {
 
     // Subject is far smaller, so the surviving copy is excluded for size and
     // nothing is left — which is what makes the summary sentence show.
-    const result = calculateArv(comps, 1_200);
+    const verdicts = assessComps(comps, 1_200);
 
-    expect(result.value).toBeNull();
-    expect(result.warnings.join(" ")).toMatch(/most are the same house listed more than once/);
-    expect(result.warnings.join(" ")).not.toMatch(/most are same house/);
-    expect(result.excludedForFit.map((e) => e.reasons[0])).toContain("same house listed twice");
+    // Both fail: one for size, the other as the older copy of the same house.
+    expect(verdicts.get("q-1")!.reasons).toContain("much bigger");
+    expect(verdicts.get("q-2")!.reasons).toContain("same house listed twice");
   });
 
   it("never dedupes a comp with no size, because it cannot be sure", () => {
@@ -541,6 +569,105 @@ describe("calculateArv", () => {
     ];
 
     expect(calculateArv(comps, 1_200).excludedForFit).toHaveLength(0);
+  });
+
+  // ── Nominal transfers ─────────────────────────────────────────────────────
+
+  it("treats a $1,000 recorded sale as paperwork, not a sale", () => {
+    // 1794 Melrose Dr came back at $1,000 beside houses fetching $280,000.
+    const comps = [
+      comp({ id: "n-1", externalId: "rc-n1", status: "sold", price: 1_000, sqft: 1_200 }),
+      ...["a", "b", "c"].map((k, i) =>
+        comp({ id: `s-${k}`, externalId: `rc-${k}`, status: "sold", price: 280_000 + i, sqft: 1_200 })
+      ),
+    ];
+
+    const verdicts = assessComps(comps, 1_200);
+
+    expect(verdicts.get("n-1")!.nominalTransfer).toBe(true);
+    expect(verdicts.get("n-1")!.reasons[0]).toBe(
+      "likely a paperwork transfer, not a real sale ($1,000)"
+    );
+    expect(verdicts.get("s-a")!.nominalTransfer).toBe(false);
+  });
+
+  it("catches a transfer that is large but still a fraction of the street", () => {
+    // $40,000 clears the flat floor, but it is a tenth of what sold nearby.
+    const comps = [
+      comp({ id: "n-1", externalId: "rc-n1", status: "sold", price: 40_000, sqft: 1_200 }),
+      ...["a", "b", "c"].map((k, i) =>
+        comp({ id: `s-${k}`, externalId: `rc-${k}`, status: "sold", price: 400_000 + i, sqft: 1_200 })
+      ),
+    ];
+
+    expect(assessComps(comps, 1_200).get("n-1")!.nominalTransfer).toBe(true);
+  });
+
+  it("does not call an ordinary cheap sale a transfer", () => {
+    const comps = ["a", "b", "c"].map((k, i) =>
+      comp({ id: `s-${k}`, externalId: `rc-${k}`, status: "sold", price: 200_000 + i * 10_000, sqft: 1_200 })
+    );
+
+    expect([...assessComps(comps, 1_200).values()].every((v) => !v.nominalTransfer)).toBe(true);
+  });
+
+  it("keeps a ticked transfer in the number but out of the nearby range", () => {
+    // The owner's tick wins. "Similar homes nearby: $1,000-$280,002" would
+    // describe no street that exists, so the range still leaves it out.
+    const comps = [
+      comp({ id: "n-1", externalId: "rc-n1", status: "sold", price: 1_000, sqft: 1_200, included: true }),
+      ...["a", "b", "c"].map((k, i) =>
+        comp({ id: `s-${k}`, externalId: `rc-${k}`, status: "sold", price: 280_000 + i, sqft: 1_200, included: true })
+      ),
+    ];
+
+    const result = calculateArv(comps, 1_200);
+
+    expect(result.usedComps.map((c) => c.compId)).toContain("n-1");
+    expect(result.nearbyLow).toBe(280_000);
+  });
+
+  // ── The fixer-upper flag ──────────────────────────────────────────────────
+
+  it("never flags a sale at or above what the counted comps fetched", () => {
+    // 1740 Langston Ave at $462,000, bought by a company, is the most
+    // expensive sale in the set and obviously not a fixer.
+    const comps = [
+      comp({ id: "f-1", externalId: "rc-f1", status: "sold", price: 462_000, sqft: 1_200,
+             buyerType: "Organization", buyerName: "SOME LLC", included: true }),
+      comp({ id: "f-2", externalId: "rc-f2", status: "sold", price: 280_000, sqft: 1_200, included: true }),
+      comp({ id: "f-3", externalId: "rc-f3", status: "sold", price: 270_000, sqft: 1_200, included: true }),
+    ];
+
+    const result = calculateArv(comps, 1_200);
+
+    expect(result.compNotes.find((n) => n.compId === "f-1")!.fixerUpper).toBe(false);
+  });
+
+  it("flags a company purchase below the counted median", () => {
+    const comps = [
+      comp({ id: "f-1", externalId: "rc-f1", status: "sold", price: 240_000, sqft: 1_200,
+             buyerType: "Organization", buyerName: "SOME LLC", included: true }),
+      comp({ id: "f-2", externalId: "rc-f2", status: "sold", price: 280_000, sqft: 1_200, included: true }),
+      comp({ id: "f-3", externalId: "rc-f3", status: "sold", price: 300_000, sqft: 1_200, included: true }),
+    ];
+
+    const result = calculateArv(comps, 1_200);
+
+    expect(result.compNotes.find((n) => n.compId === "f-1")!.fixerUpper).toBe(true);
+  });
+
+  it("does not flag a comp that is not counted", () => {
+    const comps = [
+      comp({ id: "f-1", externalId: "rc-f1", status: "sold", price: 90_000, sqft: 1_200,
+             buyerType: "Organization", review: "not_renovated_skip" }),
+      comp({ id: "f-2", externalId: "rc-f2", status: "sold", price: 280_000, sqft: 1_200, included: true }),
+      comp({ id: "f-3", externalId: "rc-f3", status: "sold", price: 300_000, sqft: 1_200, included: true }),
+    ];
+
+    const result = calculateArv(comps, 1_200);
+
+    expect(result.compNotes.find((n) => n.compId === "f-1")!.fixerUpper).toBe(false);
   });
 
   it("flags an ARV that lands outside what the street actually fetched", () => {

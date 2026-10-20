@@ -2,8 +2,6 @@ import {
   mapPropertyRecord,
   mapPropertyRecords,
   latestSale,
-  isPossibleFixer,
-  FIXER_PRICE_CEILING,
 } from "@/lib/comps/fromPropertyRecords";
 import { type RentCastPropertyRecord } from "@/lib/rentcast/types";
 
@@ -127,29 +125,8 @@ describe("latestSale", () => {
   });
 });
 
-describe("isPossibleFixer", () => {
-  it("flags a sale under the ceiling", () => {
-    expect(isPossibleFixer(FIXER_PRICE_CEILING - 1, "Individual")).toBe(true);
-  });
-
-  it("flags any price bought by a company", () => {
-    // 948 Byron Dr sold at $334,000 to ELMWOOD HOMES LLC — well over the
-    // ceiling, still worth a second look.
-    expect(isPossibleFixer(334_000, "Organization")).toBe(true);
-  });
-
-  it("leaves an ordinary sale alone", () => {
-    expect(isPossibleFixer(298_342, "Individual")).toBe(false);
-  });
-
-  it("does not flag on the ceiling itself", () => {
-    expect(isPossibleFixer(FIXER_PRICE_CEILING, "Individual")).toBe(false);
-  });
-
-  it("does not guess when the buyer is unknown", () => {
-    expect(isPossibleFixer(298_342, null)).toBe(false);
-  });
-});
+// The fixer-upper test moved to arv.ts, which is the only place that knows
+// the median of the counted comps. Its tests moved to arv.test.ts with it.
 
 describe("mapPropertyRecords", () => {
   it("handles an undefined array", () => {
