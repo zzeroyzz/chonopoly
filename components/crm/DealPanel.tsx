@@ -5,6 +5,12 @@ import { type MortgageInputs } from "@/lib/mortgage/types";
 import { resolveInputs } from "@/lib/mortgage/resolveInputs";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { buildDeal } from "@/lib/deal/buildDeal";
+import { explainDeal } from "@/lib/deal/explainDeal";
+import { offerCeiling } from "@/lib/offers/offerCeiling";
+import { calculateDti } from "@/lib/mortgage/dti";
+import { calculate203kCap } from "@/lib/mortgage/renovationCap";
+import { VERDICT_THRESHOLDS } from "@/lib/mortgage/defaults";
+import { WhyPanel } from "./WhyPanel";
 import { resolveRehab } from "@/lib/rehab/resolveRehab";
 import { calculateRehab, budgetCheck } from "@/lib/rehab/calculateRehab";
 import { type RehabEstimate } from "@/lib/rehab/types";
@@ -32,6 +38,8 @@ interface Props {
   onPrimaryChanged?: () => void;
   /** Opens Run the numbers prefilled at the estimate. */
   onRerunAtEstimate?: (rehabBudget: number) => void;
+  /** Moves to the ARV step, for the Why checks that send you there. */
+  onOpenArv?: () => void;
 }
 
 export function DealPanel({
@@ -40,9 +48,16 @@ export function DealPanel({
   state = null,
   onPrimaryChanged,
   onRerunAtEstimate,
+  onOpenArv,
 }: Props) {
   const [profile, setProfile] = useState<BuyerProfile | null>(null);
   const [arv, setArv] = useState<number | null>(null);
+  /**
+   * Whether anyone has made a call on the comps: one excluded, or one entered
+   * by hand. Same rule the Properties list screens on, so the Why section
+   * cannot call an ARV reviewed that the card calls provisional.
+   */
+  const [compsReviewed, setCompsReviewed] = useState(false);
   const [primaryInputs, setPrimaryInputs] = useState<MortgageInputs | null>(null);
   const [primaryLabel, setPrimaryLabel] = useState<string | null>(null);
   const [options, setOptions] = useState<
@@ -74,8 +89,15 @@ export function DealPanel({
       setProfile(body.profile);
     }
     if (compsRes?.ok) {
-      const body = (await compsRes.json()) as { arv?: { value: number | null } | null };
+      const body = (await compsRes.json()) as {
+        arv?: { value: number | null } | null;
+        comps?: { included: boolean; source: string }[];
+      };
       setArv(body.arv?.value ?? null);
+      const comps = body.comps ?? [];
+      setCompsReviewed(
+        comps.length > 0 && comps.some((c) => !c.included || c.source === "manual")
+      );
     }
 
     // The deal is worked back from the primary financing analysis — the one
@@ -124,7 +146,7 @@ export function DealPanel({
       inputs.renovationBudget
     );
 
-    return buildDeal(
+    const deal = buildDeal(
       {
         inputs,
         result,
@@ -136,7 +158,71 @@ export function DealPanel({
       },
       edits
     );
+
+    // Appended to what this memo already returns, rather than computed again
+    // in a second one: the Why checks are measured against the financing
+    // figures worked out directly above, and resolving the inputs and the
+    // mortgage twice per render would be the same arithmetic twice.
+    const dti = calculateDti(inputs, result);
+    const renovationCap =
+      inputs.renovationProgram === "none"
+        ? null
+        : calculate203kCap(inputs, {
+            countyLoanLimit: profile?.defaults.countyLoanLimit ?? null,
+            asIsValue: null,
+          });
+
+    return {
+      ...deal,
+      financing: {
+        monthlyPayment: result.totalMonthlyWithMortgageInsurance,
+        cashAfterClosing:
+          (profile?.cashAvailable ?? 0) -
+          (result.cashToClose + (renovationCap?.outOfPocketGap ?? 0)),
+        // No guideline means the loan has no income test — hard money is
+        // judged on the house. Passed on as "doesn't apply" rather than as a
+        // limit of zero, which no borrower could ever clear.
+        backDti: dti.applicable && dti.backGuideline !== null ? dti.backEnd : null,
+        dtiLimit: dti.backGuideline ?? 0,
+      },
+      inputs,
+      rehab,
+    };
   }, [primaryInputs, profile, arv, edits, state, rehabEstimate]);
+
+  /**
+   * The verdict, one check at a time: what was measured, what it came to,
+   * what it needed to be, and the thing that would fix it.
+   *
+   * The offer ceiling only runs when the deal falls short, because "offer
+   * this instead" is only an answer then — and it costs a few dozen deal
+   * builds. Same guard the Properties list uses.
+   */
+  const checks = useMemo(() => {
+    if (!built) return [];
+
+    const shortOfWorking =
+      arv !== null && (built.result.trueProfit ?? 0) < VERDICT_THRESHOLDS.dealMinProfitWorks;
+    const ceilingFor = (profitFloor: number) =>
+      shortOfWorking
+        ? offerCeiling({
+            house: { arv, rehab: built.rehab, sellerClosingPct: profile?.defaults.sellingPct ?? 8 },
+            inputs: built.inputs,
+            profitFloor,
+          }).price
+        : null;
+
+    return explainDeal({
+      deal: built.result,
+      cashAfterClosing: built.financing.cashAfterClosing,
+      monthlyPayment: built.financing.monthlyPayment,
+      backDti: built.financing.backDti,
+      dtiLimit: built.financing.dtiLimit,
+      arvUnreviewed: arv !== null && !compsReviewed,
+      priceForWorks: ceilingFor(VERDICT_THRESHOLDS.dealMinProfitWorks),
+      priceForThin: ceilingFor(VERDICT_THRESHOLDS.dealMinProfitThin),
+    });
+  }, [built, arv, compsReviewed, profile]);
 
   if (loaded && !primaryInputs) {
     return (
@@ -196,6 +282,18 @@ export function DealPanel({
   }
 
   async function makePrimary(id: string) {
+    const picked = options.find((o) => o.id === id);
+    // One tap changes what the card, the header and both verdicts read, so it
+    // asks first. Silently re-pointing every number in the app off a dropdown
+    // is how the card and this tab came to disagree in the first place.
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Use "${picked?.label ?? "this one"}" for this house's profit everywhere?\n\nIts numbers will show on the house, the Properties list and the verdicts.`
+      )
+    ) {
+      return;
+    }
     setSwitching(true);
     try {
       await fetch(`/api/mortgage/scenarios/${id}?${ctxParams}`, {
@@ -211,7 +309,11 @@ export function DealPanel({
   }
 
   return (
-    <div className="mt-4">
+    <div className="mt-4 grid gap-4">
+      {/* The reasons first. This is the question people arrive on the tab
+          with, and a verdict tag now taps straight through to it. */}
+      <WhyPanel checks={checks} onOpenArv={onOpenArv} />
+
       <ProfitCard
         built={built}
         edits={edits}

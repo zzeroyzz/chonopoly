@@ -41,9 +41,86 @@ interface Props {
   profileState: ProfileState;
   /** Opens the first-run modal. Only reachable while there is no profile. */
   onSetIncome: () => void;
+  /**
+   * What the house itself knows. Null in the standalone tool, which is not
+   * bound to a house and so has no source to name.
+   */
+  houseFacts?: { listPrice: number | null; arv: number | null } | null;
+  onUseHouseArv?: () => void;
+  onUseHousePrice?: () => void;
 }
 
-export function InputPanel({ inputs, onChange, profileState, onSetIncome }: Props) {
+/**
+ * Where a figure came from, and how to get back to it.
+ *
+ * Every house fact the calculator needs already exists somewhere in the app;
+ * the form used to open on a default and never say so. This says which number
+ * is the house's, marks it when it has been changed, and offers one tap back.
+ */
+function SourceNote({
+  houseValue,
+  current,
+  stepLabel,
+  stepHref,
+  missing,
+  onUseHouse,
+  fallback,
+}: {
+  houseValue: number | null;
+  current: number | null;
+  stepLabel: string;
+  stepHref: string;
+  missing: string;
+  onUseHouse?: () => void;
+  fallback: string;
+}) {
+  if (houseValue === null) {
+    return (
+      <span>
+        {missing}{" "}
+        <a href={stepHref} className="text-(--color-accent) hover:underline">
+          Open the {stepLabel} →
+        </a>
+      </span>
+    );
+  }
+
+  const changed = current !== null && Math.round(current) !== Math.round(houseValue);
+
+  if (!changed) {
+    return (
+      <span data-testid="source-from-house">
+        From your {stepLabel} · {dollars(houseValue, 0)}
+      </span>
+    );
+  }
+
+  return (
+    <span data-testid="source-changed" className="text-amber-400">
+      Changed from {dollars(houseValue, 0)}.{" "}
+      {onUseHouse && (
+        <button
+          type="button"
+          onClick={onUseHouse}
+          className="text-(--color-accent) hover:underline"
+        >
+          Use the {stepLabel} figure
+        </button>
+      )}
+      <span className="sr-only">{fallback}</span>
+    </span>
+  );
+}
+
+export function InputPanel({
+  inputs,
+  onChange,
+  profileState,
+  onSetIncome,
+  houseFacts = null,
+  onUseHouseArv,
+  onUseHousePrice,
+}: Props) {
   const config = LOAN_TYPE_CONFIG[inputs.loanType];
   const [downMode, setDownMode] = useState<"currency" | "percent">("currency");
 
@@ -107,6 +184,19 @@ export function InputPanel({ inputs, onChange, profileState, onSetIncome }: Prop
               onChange({ homeValue, downPayment: Math.round(nextBasis * ratio) });
             }}
             prefix="$"
+            note={
+              houseFacts ? (
+                <SourceNote
+                  houseValue={houseFacts.listPrice}
+                  current={inputs.homeValue}
+                  stepLabel="house"
+                  stepHref="?edit=1"
+                  missing="No price on the house yet."
+                  onUseHouse={onUseHousePrice}
+                  fallback="The asking price."
+                />
+              ) : undefined
+            }
             min={0}
           />
 
@@ -271,7 +361,17 @@ export function InputPanel({ inputs, onChange, profileState, onSetIncome }: Prop
                 onChange={(n) => onChange({ afterRepairValue: n > 0 ? n : null })}
                 prefix="$"
                 hint="as completed"
-                note="Your number, from comps or an as-completed appraisal. Left blank, the price is used instead — which overstates mortgage insurance rather than understating it."
+                note={
+                  <SourceNote
+                    houseValue={houseFacts?.arv ?? null}
+                    current={inputs.afterRepairValue}
+                    stepLabel="ARV step"
+                    stepHref="?step=arv"
+                    missing="No ARV yet. Get one in the ARV step first."
+                    onUseHouse={onUseHouseArv}
+                    fallback="Your number, from comps or an as-completed appraisal. Left blank, the price is used instead — which overstates mortgage insurance rather than understating it."
+                  />
+                }
                 min={0}
               />
             </>

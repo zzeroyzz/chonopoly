@@ -735,6 +735,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     openNumbers("new");
                     setTab("Numbers");
                   }}
+                  onOpenArv={() => setTab("ARV")}
                 />
 
                 {primaryInputsForOffer && (

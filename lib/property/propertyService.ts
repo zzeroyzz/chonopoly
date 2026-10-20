@@ -1,5 +1,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { type Database } from "../supabase/database.types";
+
+type PropertyInsert = Database["public"]["Tables"]["properties"]["Insert"];
 import { RequestContext } from "../context";
 import { addressHash } from "./address";
 import {
@@ -45,6 +47,40 @@ function mergeDefined<T extends object>(existing: T, incoming: Partial<T>): Part
  * worse than a duplicate, which is why address_hash carries no unique
  * constraint in the schema.
  */
+
+/** Postgres: column does not exist. */
+const UNDEFINED_COLUMN = "42703";
+
+function mentionsMissingColumn(message: string, column: string): boolean {
+  return message.includes(UNDEFINED_COLUMN) || message.includes(column);
+}
+
+/**
+ * Write a row, dropping a column the database has not got yet.
+ *
+ * `list_price` ships ahead of its migration, and a house that will not save
+ * is a worse failure than a price that is not stored until the migration is
+ * run. The retry is narrow on purpose: one named column, one retry.
+ */
+interface WriteOutcome {
+  data: unknown;
+  error: { message: string } | null;
+}
+
+async function writeTolerating<T>(
+  column: string,
+  attempt: (withColumn: boolean) => PromiseLike<WriteOutcome>
+): Promise<T> {
+  const first = await attempt(true);
+  if (!first.error) return first.data as T;
+  if (!mentionsMissingColumn(first.error.message, column)) {
+    throw new Error(first.error.message);
+  }
+  const second = await attempt(false);
+  if (second.error) throw new Error(second.error.message);
+  return second.data as T;
+}
+
 export async function upsertProperty(
   input: PropertyInput,
   ctx: RequestContext,
@@ -80,9 +116,11 @@ export async function upsertProperty(
   }
 
   // 3. New property.
-  const { data, error } = await client
-    .from("properties")
-    .insert({
+  // `list_price` is not in the generated types until its migration runs, so
+  // the row is assembled and cast once here rather than widening the table's
+  // typing everywhere. Regenerating types after the migration removes this.
+  const insertRow = (withPrice: boolean) =>
+    ({
       owner_type: ctx.type,
       owner_id: ctx.id,
       address_line1: input.address_line1,
@@ -106,12 +144,16 @@ export async function upsertProperty(
       photo_url: input.photo_url ?? null,
       listing_url: input.listing_url ?? null,
       created_by: userId,
-    })
-    .select("*")
-    .single();
+      ...(withPrice && input.list_price !== undefined
+        ? { list_price: input.list_price }
+        : {}),
+    }) as unknown as PropertyInsert;
 
-  if (error) throw new Error(`Failed to create property: ${error.message}`);
-  return { property: data as Property, matchedOn: "created" };
+  const created = await writeTolerating<Property>("list_price", (withPrice) =>
+    client.from("properties").insert(insertRow(withPrice)).select("*").single()
+  );
+
+  return { property: created, matchedOn: "created" };
 }
 
 async function applyPatch(
@@ -130,15 +172,16 @@ async function applyPatch(
 
   if (Object.keys(patch).length === 0) return existing;
 
-  const { data, error } = await client
-    .from("properties")
-    .update(patch)
-    .eq("id", existing.id)
-    .select("*")
-    .single();
-
-  if (error) throw new Error(`Failed to update property: ${error.message}`);
-  return data as Property;
+  return writeTolerating<Property>("list_price", (withPrice) => {
+    const body: Record<string, unknown> = { ...patch };
+    if (!withPrice) delete body.list_price;
+    return client
+      .from("properties")
+      .update(body as never)
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+  });
 }
 
 export async function listProperties(ctx: RequestContext): Promise<Property[]> {
@@ -218,6 +261,8 @@ export interface PropertyFactsPatch {
   lotSqft?: number | null;
   yearBuilt?: number | null;
   annualTaxes?: number | null;
+  /** What the house is on the market for. Correctable, like sqft. */
+  listPrice?: number | null;
   listingUrl?: string | null;
 }
 
@@ -291,6 +336,16 @@ export async function updatePropertyFacts(
       Object.assign(update, { [column]: value });
       touchedFacts = true;
     }
+  }
+
+  // Assigned past the typed loop above because `list_price` is not in the
+  // generated types until they are regenerated against the migration — the
+  // same accommodation upsertProperty makes. Not wrapped in
+  // writeTolerating: a price edit that silently does not save is the exact
+  // bug this column was added to fix, so a missing column should say so.
+  if (patch.listPrice !== undefined) {
+    Object.assign(update, { list_price: patch.listPrice });
+    touchedFacts = true;
   }
 
   if (touchedFacts) {

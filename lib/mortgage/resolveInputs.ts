@@ -45,6 +45,10 @@ export type HouseInputs = Partial<
 /** The house's own recorded facts, as the property API returns them. */
 export interface HouseFacts {
   annual_taxes?: number | null;
+  /** What the house is on the market for, as entered on Add or Edit. */
+  list_price?: number | null;
+  /** The ARV from the house's own comps, worked out on the ARV step. */
+  arv?: number | null;
 }
 
 /**
@@ -54,10 +58,12 @@ export interface HouseFacts {
  * complete object. This runs once, when a bound calculator opens with no draft
  * of its own, and supplies only the figures the house actually knows.
  *
- * Price and the reno budget come from the primary financing analysis, because
- * `properties` has no price column — a price is a term of a scenario, not a
- * fact about a building. Annual taxes are a fact about the building, so the
- * house's own figure is applied last and wins over a scenario's older copy.
+ * Facts about the building win over a scenario's older copy of them. The
+ * asking price is one of those now: it used to live only on an analysis, so a
+ * house nobody had run the numbers on opened at the calculator's $350,000
+ * default and presented it as the house's price. The ARV is the same story —
+ * it belongs to the comps on the ARV step, not to whatever was typed into a
+ * scenario once.
  */
 export function housePrefill(
   facts: HouseFacts | null,
@@ -72,8 +78,14 @@ export function housePrefill(
     if (typeof propertyTaxYearly === "number") out.propertyTaxYearly = propertyTaxYearly;
   }
 
-  if (facts && typeof facts.annual_taxes === "number") {
-    out.propertyTaxYearly = facts.annual_taxes;
+  if (facts) {
+    if (typeof facts.annual_taxes === "number") out.propertyTaxYearly = facts.annual_taxes;
+    if (typeof facts.list_price === "number" && facts.list_price > 0) {
+      out.homeValue = facts.list_price;
+    }
+    if (typeof facts.arv === "number" && facts.arv > 0) {
+      out.afterRepairValue = facts.arv;
+    }
   }
 
   return out;

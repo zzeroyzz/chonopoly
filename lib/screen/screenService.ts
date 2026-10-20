@@ -34,6 +34,7 @@ const PROPERTY_FIELDS: PropertyColumn[] = [
   "state",
   "zip",
   "sqft",
+  "beds",
   "annual_taxes",
   "listing_url",
   "photo_url",
@@ -66,6 +67,8 @@ export async function loadScreenRows(
     state: string | null;
     zip: string | null;
     sqft: number | null;
+    beds: number | null;
+    list_price?: number | null;
     annual_taxes: number | null;
     listing_url: string | null;
     photo_url: string | null;
@@ -176,6 +179,8 @@ export async function loadScreenRows(
       state: row.state,
       zip: row.zip,
       sqft: row.sqft,
+      beds: row.beds,
+      listPrice: row.list_price ?? null,
       annualTaxes: row.annual_taxes,
       listingUrl: row.listing_url,
       photoUrl: row.photo_url,

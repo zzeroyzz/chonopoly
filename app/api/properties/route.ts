@@ -77,13 +77,16 @@ export async function POST(request: Request) {
         sqft: numberOrNull(body.sqft),
         listing_url: urlOrNull(body.listing_url),
         photo_url: urlOrNull(body.photo_url),
+        // The asking price was collected, echoed back and never stored, so
+        // every screen fell through to the calculator's default instead.
+        list_price: numberOrNull(body.sales_price),
       },
       ctx,
       user.id,
       "manual"
     );
 
-    return NextResponse.json({ property, matchedOn, salesPrice: numberOrNull(body.sales_price) });
+    return NextResponse.json({ property, matchedOn });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to add the house";
     return NextResponse.json({ error: message }, { status: 500 });
