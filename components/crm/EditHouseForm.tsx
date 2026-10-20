@@ -28,6 +28,7 @@ export interface EditableHouse {
   sqft: number | null;
   year_built: number | null;
   annual_taxes: number | null;
+  list_price: number | null;
   listing_url: string | null;
 }
 
@@ -62,6 +63,7 @@ export function EditHouseForm({
   const [sqft, setSqft] = useState(asText(house.sqft));
   const [yearBuilt, setYearBuilt] = useState(asText(house.year_built));
   const [annualTaxes, setAnnualTaxes] = useState(asText(house.annual_taxes));
+  const [listPrice, setListPrice] = useState(asText(house.list_price));
   const [listingUrl, setListingUrl] = useState(asText(house.listing_url));
 
   const [saving, setSaving] = useState(false);
@@ -91,6 +93,7 @@ export function EditHouseForm({
           sqft: numberField(sqft),
           yearBuilt: numberField(yearBuilt),
           annualTaxes: numberField(annualTaxes),
+          listPrice: numberField(listPrice),
           listingUrl: listingUrl.trim() || null,
         }),
       });
@@ -220,6 +223,25 @@ export function EditHouseForm({
           />
         </label>
       </div>
+
+      {/* The asking price. Its own row above the other money fields because
+          it is the figure every later step is measured against — and until
+          it was editable, a price typed once on Add could never be fixed. */}
+      <label className="flex flex-col gap-1">
+        <span className={label}>Asking price</span>
+        <input
+          value={listPrice}
+          onChange={(e) => setListPrice(e.target.value)}
+          inputMode="numeric"
+          placeholder="What it is on the market for today"
+          data-testid="edit-house-price"
+          className={field}
+        />
+        <span className="text-[11px] text-(--color-text-tertiary)">
+          Run the numbers opens on this. Leave it blank if you do not know it
+          yet — blank is better than a guess standing in for a fact.
+        </span>
+      </label>
 
       <div className="flex gap-2">
         <label className="flex flex-col gap-1 flex-1 min-w-0">

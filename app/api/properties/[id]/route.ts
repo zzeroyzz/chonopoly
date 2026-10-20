@@ -168,6 +168,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         ["lotSqft", "lotSqft"],
         ["yearBuilt", "yearBuilt"],
         ["annualTaxes", "annualTaxes"],
+        ["listPrice", "listPrice"],
       ] as const) {
         const parsed = numberOrNullOrSkip(payload[key], field);
         if (!parsed.skip) {

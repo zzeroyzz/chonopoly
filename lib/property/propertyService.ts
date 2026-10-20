@@ -261,6 +261,8 @@ export interface PropertyFactsPatch {
   lotSqft?: number | null;
   yearBuilt?: number | null;
   annualTaxes?: number | null;
+  /** What the house is on the market for. Correctable, like sqft. */
+  listPrice?: number | null;
   listingUrl?: string | null;
 }
 
@@ -334,6 +336,16 @@ export async function updatePropertyFacts(
       Object.assign(update, { [column]: value });
       touchedFacts = true;
     }
+  }
+
+  // Assigned past the typed loop above because `list_price` is not in the
+  // generated types until they are regenerated against the migration — the
+  // same accommodation upsertProperty makes. Not wrapped in
+  // writeTolerating: a price edit that silently does not save is the exact
+  // bug this column was added to fix, so a missing column should say so.
+  if (patch.listPrice !== undefined) {
+    Object.assign(update, { list_price: patch.listPrice });
+    touchedFacts = true;
   }
 
   if (touchedFacts) {
