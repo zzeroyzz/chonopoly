@@ -256,9 +256,11 @@ export function assessDeal(input: DealInput): DealAssessment {
 
   if (margin >= t.dealMarginWorksPct && profit >= t.dealMinProfitWorks) {
     verdict = "works";
+    // "15% margin" is a figure only the person who wrote it understands, so
+    // every one of these says what the percentage is a percentage of.
     reasons.push({
       kind: "caution",
-      text: `${money(profit)} true profit at ${margin.toFixed(0)}% margin`,
+      text: `${money(profit)} true profit, ${margin.toFixed(0)}% of the resale price`,
     });
   } else if (margin >= t.dealMarginThinPct && profit >= t.dealMinProfitThin) {
     verdict = "thin";
@@ -268,7 +270,7 @@ export function assessDeal(input: DealInput): DealAssessment {
       kind: "caution",
       text:
         margin < t.dealMarginWorksPct
-          ? `${margin.toFixed(0)}% margin is under the ${t.dealMarginWorksPct}% target`
+          ? `${margin.toFixed(0)}% of the resale price is under the ${t.dealMarginWorksPct}% target`
           : `${money(profit)} true profit is under the ${money(t.dealMinProfitWorks)} target`,
     });
   } else {
@@ -279,7 +281,7 @@ export function assessDeal(input: DealInput): DealAssessment {
         profit < 0
           ? `Loses ${money(Math.abs(profit))} at this price`
           : margin < t.dealMarginThinPct
-            ? `${margin.toFixed(0)}% margin is under the ${t.dealMarginThinPct}% floor`
+            ? `${margin.toFixed(0)}% of the resale price is under the ${t.dealMarginThinPct}% floor`
             : `${money(profit)} true profit is under the ${money(t.dealMinProfitThin)} floor`,
     });
   }

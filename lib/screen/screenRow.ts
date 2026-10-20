@@ -13,6 +13,9 @@ import {
 } from "../mortgage/verdicts";
 import { calculateArv } from "../comps/arv";
 import { type Comp } from "../comps/types";
+import { explainVerdicts, type VerdictExplanations } from "../deal/explainDeal";
+import { offerCeiling } from "../offers/offerCeiling";
+import { VERDICT_THRESHOLDS } from "../mortgage/defaults";
 
 /**
  * One row of the screen table: every number needed to decide on a house,
@@ -117,6 +120,15 @@ export interface ScreenRow {
   /** The rehab figure actually in use — the estimate, or the budget. */
   rehabTotal: number;
   listingUrl: string | null;
+  /**
+   * What each verdict tag says when it is tapped.
+   *
+   * Built here rather than on the card because the explanations need the
+   * whole deal, the lender's limits and the offer-ceiling search, none of
+   * which survive into a row. Building them once also means the list and the
+   * house's own header cannot word the same verdict differently.
+   */
+  explanations: VerdictExplanations;
 }
 
 export interface ScreenContext {
@@ -183,6 +195,34 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
 
   const dealVerdict = assessDeal({ deal, provisionalArv });
 
+  // What the tags say when tapped. The ceiling search only runs when the deal
+  // falls short, since that is the only time "offer this instead" is an
+  // answer — it costs a few dozen deal builds, so it is not run otherwise.
+  const needsOffer = dealVerdict.verdict !== "works" && arv !== null;
+  const ceilingFor = (floor: number) =>
+    needsOffer
+      ? offerCeiling({
+          house: { arv, rehab, sellerClosingPct: profile?.defaults.sellingPct ?? 8 },
+          inputs,
+          profitFloor: floor,
+        }).price
+      : null;
+
+  const explanations = explainVerdicts({
+    deal,
+    cashAfterClosing:
+      (profile?.cashAvailable ?? 0) - (result.cashToClose + (renovationCap?.outOfPocketGap ?? 0)),
+    monthlyPayment: result.totalMonthlyWithMortgageInsurance,
+    combinedLtv: result.combinedLtv,
+    affordReasons: affordability.reasons,
+    affordVerdict: affordability.verdict,
+    dealVerdict: dealVerdict.verdict,
+    needsProfile: affordability.needsProfile,
+    arvUnreviewed: provisionalArv,
+    priceForWorks: ceilingFor(VERDICT_THRESHOLDS.dealMinProfitWorks),
+    priceForThin: ceilingFor(VERDICT_THRESHOLDS.dealMinProfitThin),
+  });
+
   const checklist: ScreenChecklist = {
     numbers: house.analysisInputs !== null,
     comps: house.comps.length > 0,
@@ -231,6 +271,7 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     rehabBudget: inputs.renovationBudget,
     rehabTotal: rehab.total,
     listingUrl: house.listingUrl,
+    explanations,
   };
 }
 

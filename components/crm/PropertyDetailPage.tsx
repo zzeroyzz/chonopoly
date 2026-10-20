@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Plus, Pencil } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
+import { VerdictTag } from "@/components/mortgage/VerdictTag";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
 import { dollars } from "@/components/mortgage/format";
 import { type ScreenRow } from "@/lib/screen/screenRow";
@@ -448,20 +449,37 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                       )}
                     </p>
                   )}
-                  {headline && (
+                  {/* The same tags as the card, reading the same
+                      explanations, so a verdict cannot be worded one way in
+                      the list and another on the house's own page. */}
+                  {headline && row && (
                     <div className="flex flex-wrap gap-1.5 mt-1.5">
-                      <span
-                        data-testid="header-verdict-afford"
-                        className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-(--color-base) text-(--color-text-secondary)"
-                      >
-                        {headline.affordability}
-                      </span>
-                      <span
-                        data-testid="header-verdict-deal"
-                        className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-(--color-base) text-(--color-text-secondary)"
-                      >
-                        {headline.deal}
-                      </span>
+                      <VerdictTag
+                        label={headline.affordability}
+                        toneClassName="bg-(--color-base) text-(--color-text-secondary)"
+                        explanation={row.explanations.afford}
+                        breakdownHref=""
+                        action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
+                        testId="header-verdict-afford"
+                      />
+                      <VerdictTag
+                        label={headline.deal}
+                        toneClassName="bg-(--color-base) text-(--color-text-secondary)"
+                        explanation={row.explanations.deal}
+                        breakdownHref=""
+                        action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
+                        testId="header-verdict-deal"
+                      />
+                      {row.provisionalArv && row.explanations.arv && (
+                        <VerdictTag
+                          label="ARV not checked"
+                          toneClassName="bg-(--color-base) text-(--color-text-tertiary)"
+                          explanation={row.explanations.arv}
+                          breakdownHref=""
+                          action={{ label: "Check the comps →", onClick: () => setTab("ARV") }}
+                          testId="header-verdict-provisional"
+                        />
+                      )}
                     </div>
                   )}
                 </div>

@@ -253,7 +253,7 @@ describe("deal", () => {
 
     expect(d.verdict).toBe("works");
     expect(d.hasArv).toBe(true);
-    expect(d.summary).toMatch(/true profit at \d+% margin/);
+    expect(d.summary).toMatch(/true profit, \d+% of the resale price/);
   });
 
   it("does not work when the deal loses money, and says so plainly", () => {
@@ -298,7 +298,7 @@ describe("deal", () => {
     expect(result.trueProfit).toBeGreaterThanOrEqual(VERDICT_THRESHOLDS.dealMinProfitThin);
     expect(result.marginPct).toBeLessThan(VERDICT_THRESHOLDS.dealMarginWorksPct);
     expect(d.verdict).toBe("thin");
-    expect(d.summary).toMatch(/margin is under the/);
+    expect(d.summary).toMatch(/\d+% of the resale price is under the/);
   });
 
   it("judges true profit, not walk-away", () => {
@@ -318,7 +318,7 @@ describe("deal", () => {
 
     expect(d.verdict).toBe("works");
     expect(d.reasons.some((r) => /70% rule/.test(r.text))).toBe(true);
-    expect(d.summary).toMatch(/true profit at \d+% margin/);
+    expect(d.summary).toMatch(/true profit, \d+% of the resale price/);
   });
 
   it("carries the provisional flag through", () => {
