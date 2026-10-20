@@ -11,7 +11,7 @@ import {
   type AffordabilityAssessment,
   type DealAssessment,
 } from "../mortgage/verdicts";
-import { calculateArv } from "../comps/arv";
+import { calculateArv, subjectOptions } from "../comps/arv";
 import { type Comp } from "../comps/types";
 import { explainVerdicts, type VerdictExplanations } from "../deal/explainDeal";
 import { offerCeiling } from "../offers/offerCeiling";
@@ -77,7 +77,9 @@ export interface ScreenHouse {
   rehabEstimate?: RehabEstimateInput | null;
   comps: Comp[];
   /** True until the comps have been reviewed on the Comps tab. */
-  compsReviewed: boolean;
+  baths: number | null;
+  propertyType: string | null;
+  yearBuilt: number | null;
 }
 
 export interface ScreenRow {
@@ -104,7 +106,9 @@ export interface ScreenRow {
   checklist: ScreenChecklist;
 
   /** True when the ARV came from unreviewed comps. */
-  provisionalArv: boolean;
+  /** How many comps the owner approved, and how many are still waiting. */
+  approvedComps: number;
+  compsToReview: number;
   isFinalist: boolean;
   /** The house's picture, for the card thumbnail. */
   photoUrl: string | null;
@@ -171,7 +175,20 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
   const dti = calculateDti(inputs, result);
 
   // ARV from the comps actually included.
-  const arvResult = calculateArv(house.comps, house.sqft, { subjectBeds: house.beds ?? null });
+  // The SAME call the ARV tab makes, with the same inputs. These used to
+  // differ — this passed only subjectBeds while the tab passed beds, baths,
+  // property type and year built — so the two screens could disagree about
+  // the same house.
+  const arvResult = calculateArv(
+    house.comps,
+    house.sqft,
+    subjectOptions({
+      beds: house.beds ?? null,
+      baths: house.baths ?? null,
+      property_type: house.propertyType,
+      year_built: house.yearBuilt,
+    })
+  );
   const arv = arvResult.value;
 
   const renovationCap =
@@ -210,9 +227,15 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
   // Provisional until someone has reviewed the comps. Every comp RentCast
   // returned is included by default, which is a real ARV but an unreviewed
   // one, and any verdict resting on it has to say so.
-  const provisionalArv = arv !== null && !house.compsReviewed;
+  // Was: arv !== null && !house.compsReviewed, where compsReviewed GUESSED at
+  // review state from "is anything unticked or hand-entered". Every house
+  // whose comps were all ticked read as unreviewed forever, so a card showed
+  // an ARV and "ARV not checked" side by side. There is a real review state
+  // now, so there is nothing left to guess.
+  const approvedComps = arvResult.usedComps.length;
+  const compsToReview = arvResult.stillToReview;
 
-  const dealVerdict = assessDeal({ deal, provisionalArv });
+  const dealVerdict = assessDeal({ deal, provisionalArv: false });
 
   // What the tags say when tapped. The ceiling search only runs when the deal
   // falls short, since that is the only time "offer this instead" is an
@@ -237,7 +260,7 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     affordVerdict: affordability.verdict,
     dealVerdict: dealVerdict.verdict,
     needsProfile: affordability.needsProfile,
-    arvUnreviewed: provisionalArv,
+    arvUnreviewed: false,
     priceForWorks: ceilingFor(VERDICT_THRESHOLDS.dealMinProfitWorks),
     priceForThin: ceilingFor(VERDICT_THRESHOLDS.dealMinProfitThin),
   });
@@ -275,7 +298,8 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     affordability,
     deal: dealVerdict,
     checklist,
-    provisionalArv,
+    approvedComps,
+    compsToReview,
     isFinalist: house.isFinalist ?? false,
     photoUrl: house.photoUrl ?? null,
     loanType: inputs.loanType,

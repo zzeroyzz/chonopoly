@@ -35,6 +35,9 @@ const PROPERTY_FIELDS: PropertyColumn[] = [
   "zip",
   "sqft",
   "beds",
+  "baths",
+  "property_type",
+  "year_built",
   "annual_taxes",
   "listing_url",
   "photo_url",
@@ -68,6 +71,9 @@ export async function loadScreenRows(
     zip: string | null;
     sqft: number | null;
     beds: number | null;
+    baths: number | null;
+    property_type: string | null;
+    year_built: number | null;
     list_price?: number | null;
     annual_taxes: number | null;
     listing_url: string | null;
@@ -161,12 +167,6 @@ export async function loadScreenRows(
     const primary = primaryByProperty.get(row.id);
     const comps = compsByProperty.get(row.id) ?? [];
 
-    // Reviewed means someone has actually made a call on the comps: at least
-    // one is excluded, or one was entered by hand. An untouched RentCast set
-    // is unreviewed by definition.
-    const compsReviewed =
-      comps.length > 0 && comps.some((c) => !c.included || c.source === "manual");
-
     const analysisInputs: HouseInputs | null = primary
       ? (readInputs(primary.inputs, primary.inputs_version ?? 1) as HouseInputs)
       : null;
@@ -180,6 +180,9 @@ export async function loadScreenRows(
       zip: row.zip,
       sqft: row.sqft,
       beds: row.beds,
+      baths: row.baths,
+      propertyType: row.property_type,
+      yearBuilt: row.year_built,
       listPrice: row.list_price ?? null,
       annualTaxes: row.annual_taxes,
       listingUrl: row.listing_url,
@@ -194,7 +197,6 @@ export async function loadScreenRows(
       // and every card, verdict and profit figure picks it up at once.
       rehabEstimate: rehabTotals.get(row.id) ?? null,
       comps,
-      compsReviewed,
     };
   });
 
@@ -220,7 +222,12 @@ async function loadCompsByProperty(
 
   const { data, error } = await db()
     .from("property_comps")
-    .select("id, property_id, source, external_id, formatted_address, price, sqft, status, included, correlation")
+    // Everything the shared ARV calculation reads. It used to fetch a subset
+    // and null the rest, so this screen and the ARV tab were computing from
+    // different comps — and without `review` nothing would count at all.
+    .select(
+      "id, property_id, source, external_id, formatted_address, price, sqft, status, included, correlation, review, beds, baths, property_type, year_built, distance_miles, removed_date, buyer_type, buyer_name"
+    )
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
     .in("property_id", propertyIds);
@@ -239,23 +246,38 @@ async function loadCompsByProperty(
       status: string;
       included: boolean;
       correlation: number | null;
+      review: string;
+      beds: number | null;
+      baths: number | null;
+      property_type: string | null;
+      year_built: number | null;
+      distance_miles: number | null;
+      removed_date: string | null;
+      buyer_type: string | null;
+      buyer_name: string | null;
     };
 
-    // Only the fields the ARV needs. The Comps tab loads the full rows when
+    // Only the fields the ARV needs. The comps list loads the full rows when
     // someone opens one house; the table does not need a comp's lot size.
+    const num = (v: number | null) => (v === null ? null : Number(v));
     const comp = {
       id: row.id,
       propertyId: row.property_id,
-      source: row.source === "manual" ? "manual" : "rentcast",
+      source: row.source,
       externalId: row.external_id,
       formattedAddress: row.formatted_address,
       city: null, state: null, zip: null, latitude: null, longitude: null,
-      propertyType: null, beds: null, baths: null,
-      sqft: row.sqft, lotSqft: null, yearBuilt: null,
-      price: row.price === null ? null : Number(row.price),
-      status: row.status, listingType: null, listedDate: null, removedDate: null,
-      lastSeenDate: null, daysOnMarket: null, distanceMiles: null, daysOld: null,
-      correlation: row.correlation === null ? null : Number(row.correlation),
+      propertyType: row.property_type, beds: num(row.beds), baths: num(row.baths),
+      sqft: row.sqft, lotSqft: null, yearBuilt: row.year_built,
+      price: num(row.price),
+      status: row.status, listingType: null, listedDate: null,
+      removedDate: row.removed_date,
+      lastSeenDate: null, daysOnMarket: null,
+      distanceMiles: num(row.distance_miles), daysOld: null,
+      correlation: num(row.correlation),
+      review: row.review,
+      reviewSetAt: null,
+      buyerType: row.buyer_type, buyerName: row.buyer_name, county: null,
       included: row.included, notes: null, updatedAt: "",
     } as unknown as Comp;
 

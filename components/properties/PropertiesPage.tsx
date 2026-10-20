@@ -48,10 +48,10 @@ const DEAL_STYLE: Record<DealVerdict, string> = {
  */
 const FLOW_STEPS = [
   // A house exists the moment it is added, so this one is always done.
-  { label: "Details", done: () => true },
-  { label: "ARV", done: (r: ScreenRow) => r.arv !== null },
-  { label: "Numbers", done: (r: ScreenRow) => r.checklist.numbers },
-  { label: "Deal", done: (r: ScreenRow) => r.walkAwayCash !== null },
+  { label: "Details", tab: "details", done: () => true },
+  { label: "ARV", tab: "arv", done: (r: ScreenRow) => r.arv !== null },
+  { label: "Numbers", tab: "numbers", done: (r: ScreenRow) => r.checklist.numbers },
+  { label: "Deal", tab: "deal", done: (r: ScreenRow) => r.walkAwayCash !== null },
 ] as const;
 
 export function PropertiesPage() {
@@ -483,18 +483,40 @@ function ScreenCard({
           testId={`verdict-deal-${row.propertyId}`}
         />
 
-        {row.provisionalArv && row.explanations.arv && (
-          <VerdictTag
-            label="ARV not checked"
-            toneClassName="bg-(--color-base) text-(--color-text-tertiary)"
-            explanation={row.explanations.arv}
-            breakdownHref={`${href}?step=arv`}
-            // This one sends you to the comps rather than the breakdown,
-            // because checking them is the thing that resolves it.
-            action={{ label: "Check the comps →", href: `${href}?step=arv` }}
-            testId={`verdict-provisional-${row.propertyId}`}
-          />
-        )}
+        {/* What the comps actually say, from the same calculation the ARV
+            tab runs. This used to read "ARV not checked" on every house whose
+            comps had never been hand-edited — including houses showing an ARV
+            right beside it — because review state was guessed at rather than
+            recorded. */}
+        <VerdictTag
+          label={
+            row.arv === null
+              ? "Review comps"
+              : `ARV ${dollars(row.arv)} · ${row.approvedComps} approved`
+          }
+          toneClassName={
+            row.arv === null
+              ? "bg-(--color-base) text-(--color-text-tertiary)"
+              : "bg-(--color-accent-glow) text-(--color-accent)"
+          }
+          explanation={{
+            whatsWrong:
+              row.arv === null
+                ? `No comps approved yet${row.compsToReview > 0 ? `, and ${row.compsToReview} are waiting` : ""}.`
+                : `Built from ${row.approvedComps} comp${row.approvedComps === 1 ? "" : "s"} you approved.`,
+            target:
+              row.compsToReview > 0
+                ? `${row.compsToReview} comp${row.compsToReview === 1 ? "" : "s"} still to review.`
+                : "Every comp has been reviewed.",
+            fix:
+              row.arv === null
+                ? "Open the ARV tab and mark the comps you would use."
+                : undefined,
+          }}
+          breakdownHref={`${href}?tab=arv`}
+          action={{ label: "Review the comps →", href: `${href}?tab=arv` }}
+          testId={`verdict-arv-${row.propertyId}`}
+        />
       </div>
 
       {/* Why, not just what. A bare verdict on a screen of fifteen houses is
@@ -561,18 +583,21 @@ function ScreenCard({
           const done = step.done(row);
           const label = step.label;
           return (
-            <span
+            // A link, not a label. These name the four things to do on a
+            // house, so each one opens that house on the tab that does it.
+            <Link
               key={step.label}
+              href={`${href}?tab=${step.tab}`}
               data-testid={`checklist-${step.label.toLowerCase()}-${row.propertyId}`}
               data-done={done ? "yes" : "no"}
-              className={`text-[10px] px-1.5 py-0.5 rounded border ${
+              className={`min-h-11 inline-flex items-center text-[10px] px-2 rounded border ${
                 done
                   ? "border-(--color-accent) text-(--color-accent)"
                   : "border-(--color-border-default) text-(--color-text-tertiary)"
               }`}
             >
               {label}
-            </span>
+            </Link>
           );
         })}
         <span className="text-[10px] text-(--color-text-tertiary)">
