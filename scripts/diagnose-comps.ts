@@ -15,10 +15,15 @@
  *   node_modules/.bin/jiti scripts/diagnose-comps.ts
  *   node_modules/.bin/jiti scripts/diagnose-comps.ts "1653 Sylvan Rd SW"
  *   node_modules/.bin/jiti scripts/diagnose-comps.ts "1653 Sylvan Rd SW=389000"
+ *   node_modules/.bin/jiti scripts/diagnose-comps.ts --sales "1653 Sylvan Rd SW"
  *
  * With no arguments it lists every house that has a stored response, so you can
  * pick the benchmarks. With arguments it diagnoses only those addresses; the
  * `=389000` suffix is the number you trust, printed beside the computed ARV.
+ *
+ * `--sales` replays the stored GET /properties body instead — the recorded
+ * county sales — and prints the ARV they produce beside the listing one. Also
+ * free: it reads the response already paid for.
  */
 
 import { readFileSync } from "fs";
@@ -54,8 +59,11 @@ import { normalizeAddress } from "../lib/property/address";
 import { type Comp } from "../lib/comps/types";
 import {
   type RentCastValueResponse,
+  type RentCastPropertyRecord,
   VALUE_ESTIMATE_ENDPOINT,
+  PROPERTY_RECORDS_ENDPOINT,
 } from "../lib/rentcast/types";
+import { mapPropertyRecords, isPossibleFixer } from "../lib/comps/fromPropertyRecords";
 
 interface PropertyRow {
   id: string;
@@ -78,6 +86,19 @@ interface RequestRow {
   requested_address: string | null;
   requested_at: string;
   billable: boolean | null;
+  response_body: unknown;
+}
+
+/** The service-role client's concrete type, for passing it to a helper. */
+function makeDb(url: string, key: string) {
+  return createClient(url, key);
+}
+type Db = ReturnType<typeof makeDb>;
+
+interface SalesRow {
+  normalized_address: string | null;
+  requested_address: string | null;
+  requested_at: string;
   response_body: unknown;
 }
 
@@ -257,6 +278,175 @@ function diagnose(property: PropertyRow, request: RequestRow, trustedValue: numb
   for (const warning of arv.warnings) console.log(`  warning: ${warning}`);
 }
 
+/** Great-circle miles. Property rows do not store their own coordinates. */
+function milesBetween(aLat: number, aLon: number, bLat: number, bLon: number): number {
+  const EARTH_RADIUS_MILES = 3958.7613;
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const dLat = toRadians(bLat - aLat);
+  const dLon = toRadians(bLon - aLon);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(aLat)) * Math.cos(toRadians(bLat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * EARTH_RADIUS_MILES * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Replay the stored GET /properties body as sold comps.
+ *
+ * The recorded sales never reach `property_comps` here — this maps them in
+ * memory and runs the real `calculateArv`, so the number can be checked
+ * before the migration that would let them be stored has been run.
+ */
+async function diagnoseRecordedSales(db: Db, query: string): Promise<void> {
+  const normalizedQuery = normalizeAddress({ addressLine1: query });
+
+  const { data: rows, error } = await db
+    .from("rentcast_requests")
+    .select("normalized_address, requested_address, requested_at, response_body")
+    .eq("state", "succeeded")
+    .eq("endpoint", PROPERTY_RECORDS_ENDPOINT)
+    .not("response_body", "is", null)
+    .order("requested_at", { ascending: false });
+
+  if (error) {
+    console.error(`Could not read the stored sales: ${error.message}`);
+    process.exit(1);
+  }
+
+  const match = ((rows ?? []) as unknown as SalesRow[]).find(
+    (r) =>
+      r.normalized_address === normalizedQuery ||
+      (r.normalized_address ?? "").startsWith(normalizedQuery)
+  );
+
+  if (!match) {
+    console.log(`No stored /properties response for "${query}".`);
+    return;
+  }
+
+  const records = match.response_body as unknown as RentCastPropertyRecord[];
+  const sales = mapPropertyRecords(records);
+
+  const { data: propertyRows } = await db
+    .from("properties")
+    .select("id, address_line1, city, state, zip, sqft, beds, baths, property_type, year_built");
+
+  const property = ((propertyRows ?? []) as unknown as PropertyRow[]).find(
+    (row) =>
+      normalizeAddress({
+        addressLine1: row.address_line1,
+        city: row.city,
+        state: row.state,
+        zip: row.zip,
+      }) === match.normalized_address
+  );
+
+  if (!property) {
+    console.log(`A /properties response is stored for "${query}" but no house row matches it.`);
+    return;
+  }
+
+  // The subject's coordinates come from the /avm/value body already paid for;
+  // the properties table does not store them.
+  const { data: avm } = await db
+    .from("rentcast_requests")
+    .select("response_body")
+    .eq("state", "succeeded")
+    .eq("endpoint", VALUE_ESTIMATE_ENDPOINT)
+    .eq("normalized_address", match.normalized_address)
+    .order("requested_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const avmBody = (avm as unknown as { response_body?: unknown } | null)?.response_body;
+  const subjectPoint = (avmBody as RentCastValueResponse | undefined)?.subjectProperty;
+  const subjectLat = subjectPoint?.latitude ?? null;
+  const subjectLon = subjectPoint?.longitude ?? null;
+
+  const comps: Comp[] = sales.map((sale, index) => ({
+    id: sale.external_id ?? `sale-${index}`,
+    propertyId: property.id,
+    source: "manual",
+    externalId: sale.external_id,
+    formattedAddress: sale.formatted_address,
+    city: sale.city,
+    state: sale.state,
+    zip: sale.zip,
+    latitude: sale.latitude,
+    longitude: sale.longitude,
+    propertyType: sale.property_type,
+    beds: sale.beds,
+    baths: sale.baths,
+    sqft: sale.sqft,
+    lotSqft: sale.lot_sqft,
+    yearBuilt: sale.year_built,
+    price: sale.price,
+    status: sale.status,
+    listingType: null,
+    listedDate: null,
+    removedDate: sale.removed_date,
+    lastSeenDate: sale.removed_date,
+    daysOnMarket: null,
+    distanceMiles:
+      subjectLat !== null && subjectLon !== null && sale.latitude !== null && sale.longitude !== null
+        ? milesBetween(subjectLat, subjectLon, sale.latitude, sale.longitude)
+        : null,
+    daysOld: null,
+    correlation: null,
+    included: true,
+    notes: null,
+    updatedAt: sale.removed_date ?? "",
+  }));
+
+  const arv = calculateArv(comps, property.sqft, subjectOptions(property));
+  const usedIds = new Set(arv.usedComps.map((c) => c.compId));
+  const decided = new Map(arv.excludedForFit.map((e) => [e.compId, e.reasons]));
+
+  console.log("");
+  console.log("─".repeat(140));
+  console.log(
+    `RECORDED SALES — ${property.address_line1}, ${property.city ?? "?"} ${property.state ?? "?"}`
+  );
+  console.log(
+    `  subject: ${property.sqft ?? "no sqft"} sqft · ${property.beds ?? "?"} bd · ` +
+      `${property.baths ?? "?"} ba · built ${property.year_built ?? "?"}`
+  );
+  console.log(
+    `  stored ${match.requested_at.slice(0, 10)} · ${records.length} records · ${sales.length} with a sale price`
+  );
+  console.log("");
+  console.log("  used  address                        sale price  sold on      sqft  bd  ba  built  dist   flag / why not");
+
+  for (const comp of comps) {
+    const sale = sales.find((s) => (s.external_id ?? "") === (comp.externalId ?? ""));
+    const used = usedIds.has(comp.id);
+    const flag = isPossibleFixer(comp.price, sale?.buyer_type ?? null)
+      ? `possible fixer-upper (${sale?.buyer_name ?? "?"})`
+      : "";
+    const why = used ? flag : (decided.get(comp.id) ?? []).join(", ");
+    console.log(
+      "  " +
+        pad(used ? "YES " : "no  ", 6) +
+        pad(comp.formattedAddress, 31) +
+        padLeft(money(comp.price), 11) +
+        padLeft(comp.removedDate ?? "—", 12) +
+        padLeft(comp.sqft === null ? "—" : String(comp.sqft), 6) +
+        padLeft(comp.beds === null ? "—" : String(comp.beds), 4) +
+        padLeft(comp.baths === null ? "—" : String(comp.baths), 4) +
+        padLeft(comp.yearBuilt === null ? "—" : String(comp.yearBuilt), 7) +
+        padLeft(comp.distanceMiles === null ? "—" : comp.distanceMiles.toFixed(2), 7) +
+        "   " +
+        why
+    );
+  }
+
+  console.log("");
+  console.log(`  ARV from recorded sales: ${money(arv.value)}   (${arv.basisLabel}, ${arv.confidence})`);
+  console.log(`  sold-only: ${arv.soldOnly}`);
+  for (const warning of arv.warnings) console.log(`  warning: ${warning}`);
+  if (arv.sanityWarning) console.log(`  sanity:  ${arv.sanityWarning}`);
+}
+
 async function run() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -267,8 +457,16 @@ async function run() {
     process.exit(1);
   }
 
-  const db = createClient(url, key);
-  const benchmarks = parseArgs(process.argv.slice(2));
+  const db = makeDb(url, key);
+  const argv = process.argv.slice(2);
+
+  if (argv[0] === "--sales") {
+    for (const query of argv.slice(1)) await diagnoseRecordedSales(db, query);
+    console.log("");
+    return;
+  }
+
+  const benchmarks = parseArgs(argv);
 
   const { data: requestRows, error: requestError } = await db
     .from("rentcast_requests")
