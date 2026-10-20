@@ -48,6 +48,8 @@ export interface ScreenHouse {
   state: string | null;
   zip: string | null;
   sqft: number | null;
+  /** For the comp-fit check: a four-bed is not a comp for a two-bed. */
+  beds?: number | null;
   annualTaxes: number | null;
   listingUrl: string | null;
   photoUrl?: string | null;
@@ -152,7 +154,7 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
   const dti = calculateDti(inputs, result);
 
   // ARV from the comps actually included.
-  const arvResult = calculateArv(house.comps, house.sqft);
+  const arvResult = calculateArv(house.comps, house.sqft, { subjectBeds: house.beds ?? null });
   const arv = arvResult.value;
 
   const renovationCap =

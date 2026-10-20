@@ -29,6 +29,8 @@ interface CompsResponse {
   degraded?: string | null;
   message?: string | null;
   source?: "live" | "cached" | "rebuilt" | "mock" | null;
+  /** The subject's bed count, for the per-comp fit reason. */
+  subjectBeds?: number | null;
   fetchedAt?: string | null;
   nextRefreshAt?: string | null;
   usage?: RefreshUsage | null;
@@ -163,6 +165,7 @@ export function CompsPanel({
   const [adding, setAdding] = useState(false);
   const [status, setStatus] = useState<RefreshStatus | null>(null);
   const [source, setSource] = useState<string | null>(null);
+  const [subjectBeds, setSubjectBeds] = useState<number | null>(null);
   const [confirmingForce, setConfirmingForce] = useState(false);
 
   const apply = useCallback((data: CompsResponse) => {
@@ -170,6 +173,7 @@ export function CompsPanel({
     setArv(data.arv ?? null);
     setDegraded(data.message ?? null);
     setSource(data.source ?? null);
+    setSubjectBeds(data.subjectBeds ?? null);
 
     // Fold the refresh metadata back into the status so the lock message
     // updates without a second round trip.
@@ -508,6 +512,16 @@ export function CompsPanel({
           </p>
         )}
 
+        {/* Ticked comps that did not count, and why. A comp that was included
+            and ignored is the first thing someone will ask about. */}
+        {arv && arv.excludedForFit.length > 0 && (
+          <p data-testid="arv-excluded" className="text-[11px] text-(--color-text-tertiary) mt-1.5 leading-relaxed">
+            {arv.excludedForFit.length} comp
+            {arv.excludedForFit.length === 1 ? " was" : "s were"} left out as not the
+            same kind of house.
+          </p>
+        )}
+
         {arv?.warnings.map((warning) => (
           <p
             key={warning}
@@ -577,7 +591,14 @@ export function CompsPanel({
       ) : (
         <ul className="flex flex-col gap-2">
           {comps.map((comp) => (
-            <CompRow key={comp.id} comp={comp} onToggle={toggle} onRemove={remove} />
+            <CompRow
+              key={comp.id}
+              comp={comp}
+              onToggle={toggle}
+              onRemove={remove}
+              subjectSqft={arv?.subjectSqft ?? null}
+              subjectBeds={subjectBeds}
+            />
           ))}
         </ul>
       )}
@@ -594,13 +615,20 @@ function CompRow({
   comp,
   onToggle,
   onRemove,
+  subjectSqft,
+  subjectBeds,
 }: {
   comp: Comp;
   onToggle: (comp: Comp) => void;
   onRemove: (comp: Comp) => void;
+  subjectSqft: number | null;
+  subjectBeds: number | null;
 }) {
   const ppsf = perSqft(comp);
   const date = compDate(comp);
+  const fitReasons = comp.included
+    ? compEligibility(comp, subjectSqft, subjectBeds).reasons
+    : [];
 
   return (
     <li
@@ -664,6 +692,15 @@ function CompRow({
 
           {comp.notes && (
             <p className="text-[11px] text-(--color-text-secondary) mt-1 italic">{comp.notes}</p>
+          )}
+
+          {fitReasons.length > 0 && (
+            <p
+              data-testid={`comp-unfit-${comp.id}`}
+              className="text-[11px] text-amber-400 mt-1"
+            >
+              Not counted — {fitReasons.join(", ")}
+            </p>
           )}
 
           {/* Somewhere to go and check whether this one was renovated. */}

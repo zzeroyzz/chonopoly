@@ -99,6 +99,13 @@ export interface ArvResult {
   /** Set when the ARV sits outside that range by more than the tolerance. */
   sanityWarning: string | null;
 
+  /**
+   * Ticked comps left out because they are not the same kind of house, with
+   * the reason for each. Shown rather than silently dropped — a comp that was
+   * ticked and did not count is a question the screen should answer first.
+   */
+  excludedForFit: CompEligibility[];
+
   confidence: ArvConfidence;
   warnings: string[];
   /** e.g. "3 sold · 2 removed listings" */
@@ -170,6 +177,20 @@ export function compEligibility(
   return { compId: comp.id, eligible: reasons.length === 0, reasons };
 }
 
+/** "most are much bigger" — the reason in the fewest words that are true. */
+function summariseReasons(excluded: CompEligibility[]): string {
+  const counts = new Map<string, number>();
+  for (const e of excluded) {
+    for (const reason of e.reasons) {
+      // "1.4 mi away" and "2.1 mi away" are the same complaint.
+      const key = /mi away$/.test(reason) ? "too far away" : reason;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return ranked.length > 0 ? `most are ${ranked[0][0]}` : "they are too different";
+}
+
 function emptyResult(
   subjectSqft: number | null,
   adjustmentPerSqft: number,
@@ -190,6 +211,7 @@ function emptyResult(
     nearbyLow: null,
     nearbyHigh: null,
     sanityWarning: null,
+    excludedForFit: [],
     confidence: "none",
     warnings,
     basisLabel: "no comps",
@@ -227,10 +249,33 @@ export function calculateArv(
     ]);
   }
 
+  // Size, distance and bed count decide whether a comp is a comparison at
+  // all. White Bird pulled fourteen comps between 1,938 and 2,505 sqft for a
+  // 1,357 sqft house: every one of them a bigger house, and an ARV built on
+  // them said the deal worked. A comp that is not the same kind of house is
+  // not evidence, however many of them there are.
+  const eligibility = included.map((c) =>
+    compEligibility(c, subjectSqft, options.subjectBeds ?? null)
+  );
+  const excludedForFit = eligibility.filter((e) => !e.eligible);
+  const eligibleIds = new Set(
+    eligibility.filter((e) => e.eligible).map((e) => e.compId)
+  );
+  const comparable = included.filter((c) => eligibleIds.has(c.id));
+
+  if (comparable.length === 0) {
+    const result = emptyResult(subjectSqft, rate, [
+      `None of the ${included.length} comp${included.length === 1 ? "" : "s"} here are the same kind of house — ` +
+        `${summariseReasons(excludedForFit)}. Add a sold comp of a similar size from your agent to get an ARV.`,
+    ]);
+    result.excludedForFit = excludedForFit;
+    return result;
+  }
+
   const usable: ArvCompBreakdown[] = [];
   let skipped = 0;
 
-  for (const comp of included) {
+  for (const comp of comparable) {
     if (comp.price === null || comp.price <= 0 || comp.sqft === null || comp.sqft <= 0) {
       skipped++;
       continue;
@@ -256,6 +301,7 @@ export function calculateArv(
         : "No usable comps.",
     ]);
     result.skippedForMissingData = skipped;
+    result.excludedForFit = excludedForFit;
     return result;
   }
 
@@ -341,5 +387,6 @@ export function calculateArv(
     warnings,
     basisLabel: buildBasisLabel(soldCount, removedCount, activeCount),
     plainSummary,
+    excludedForFit,
   };
 }
