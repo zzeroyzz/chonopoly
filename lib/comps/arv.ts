@@ -128,11 +128,6 @@ function money(n: number): string {
   return `$${Math.round(n).toLocaleString("en-US")}`;
 }
 
-/** Rounded to the nearest thousand, for the ranges people say out loud. */
-function roughMoney(n: number): string {
-  return `$${Math.round(n / 1000)}k`;
-}
-
 function buildBasisLabel(sold: number, removed: number, active: number): string {
   const parts: string[] = [];
   if (sold > 0) parts.push(`${sold} sold`);
