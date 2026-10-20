@@ -458,9 +458,18 @@ export function calculateArv(
 
   const warnings: string[] = [];
 
+  // Say which direction the number is likely to be wrong in. An asking price
+  // is what someone hoped for, and no discount is applied anywhere in this
+  // file to allow for that — so the screen has to carry the caveat instead of
+  // the arithmetic quietly carrying a guess.
+  const listingCount = removedCount + activeCount;
   if (soldCount === 0) {
     warnings.push(
-      "None of these are confirmed sales. RentCast only knows they left the market. Add a sold comp from your agent to firm it up."
+      "These are asking prices, not sale prices. RentCast only knows a listing left the market, not what it closed at. Houses usually sell for less than they ask, and nothing here has been discounted for that, so treat this as a ceiling. Add a sold comp from your agent to firm it up."
+    );
+  } else if (listingCount > 0) {
+    warnings.push(
+      `${listingCount} of these ${listingCount === 1 ? "is an asking price" : "are asking prices"} rather than a sale. Houses usually sell for less than they ask, and nothing here has been discounted for that.`
     );
   }
 
@@ -476,9 +485,13 @@ export function calculateArv(
     );
   }
 
+  // The one sentence most people will read, so it has to say what kind of
+  // evidence this is. "15 similar homes point to about $290,560" sounds like
+  // fifteen sales when not one of them closed.
   const plainSummary =
     `${basis.length} similar home${basis.length === 1 ? "" : "s"}` +
-    `${soldOnly ? " that sold" : ""}, adjusted for size, point to about ${money(value)}.`;
+    `${soldOnly ? " that sold" : ", by what they asked"}` +
+    `, adjusted for size, point to about ${money(value)}.`;
 
   return {
     value,

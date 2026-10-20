@@ -142,18 +142,55 @@ describe("calculateArv", () => {
     expect(calculateArv(comps, 1_000).basisLabel).toBe("1 sold · 1 removed listing");
   });
 
-  it("warns when nothing in the set is a confirmed sale", () => {
+  it("calls a set of listings asking prices, and names the direction", () => {
     const result = calculateArv(compsAtPricePerSqft([180, 190, 200, 210, 220], "removed"), 1_000);
 
     expect(result.soldCount).toBe(0);
-    expect(result.warnings.join(" ")).toMatch(/None of these are confirmed sales/);
+    expect(result.warnings.join(" ")).toMatch(/asking prices, not sale prices/);
+    // The bias has a direction, and no discount is applied for it anywhere.
+    expect(result.warnings.join(" ")).toMatch(/usually sell for less than they ask/);
+    expect(result.warnings.join(" ")).toMatch(/nothing here has been discounted/);
     expect(result.warnings.join(" ")).toMatch(/Add a sold comp from your agent/);
   });
 
-  it("does not warn about sales when the comps are sold", () => {
+  it("says how many are asking prices when the set is mixed", () => {
+    const comps = [
+      ...compsAtPricePerSqft([180, 190], "sold"),
+      comp({ id: "r-1", externalId: "rc-r1", sqft: 1_000, price: 200_000, status: "removed" }),
+    ];
+
+    // Two sales means sold-only takes over and the listing drops out, so the
+    // mixed warning must not claim a listing is still in the number.
+    const result = calculateArv(comps, 1_000);
+
+    expect(result.soldOnly).toBe(true);
+    expect(result.warnings.join(" ")).not.toMatch(/asking price/);
+  });
+
+  it("warns about the one listing propping up a single sale", () => {
+    const comps = [
+      ...compsAtPricePerSqft([180], "sold"),
+      comp({ id: "r-1", externalId: "rc-r1", sqft: 1_000, price: 200_000, status: "removed" }),
+    ];
+
+    const result = calculateArv(comps, 1_000);
+
+    expect(result.soldOnly).toBe(false);
+    expect(result.warnings.join(" ")).toMatch(/1 of these is an asking price rather than a sale/);
+  });
+
+  it("does not call a sold set asking prices", () => {
     const result = calculateArv(compsAtPricePerSqft([180, 190, 200, 210, 220], "sold"), 1_000);
 
-    expect(result.warnings.join(" ")).not.toMatch(/No confirmed sales/);
+    expect(result.warnings.join(" ")).not.toMatch(/asking/);
+  });
+
+  it("says what kind of evidence the headline sentence rests on", () => {
+    const listings = calculateArv(compsAtPricePerSqft([180, 190, 200], "removed"), 1_000);
+    const sales = calculateArv(compsAtPricePerSqft([180, 190, 200], "sold"), 1_000);
+
+    expect(listings.plainSummary).toMatch(/by what they asked/);
+    expect(sales.plainSummary).toMatch(/that sold/);
   });
 
   it("returns null rather than zero when no comps are included", () => {

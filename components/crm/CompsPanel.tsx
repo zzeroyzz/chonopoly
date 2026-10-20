@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Plus, Trash2, AlertTriangle, Lock } from "lucide-react";
 import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
-import { type Comp, COMP_STATUS_LABELS } from "@/lib/comps/types";
+import { type Comp, type CompStatus, COMP_STATUS_LABELS } from "@/lib/comps/types";
 import { type ArvResult, type SubjectFit, compEligibility } from "@/lib/comps/arv";
 import { CompLinks } from "./CompLinks";
 
@@ -94,6 +94,20 @@ function perSqft(comp: Comp): string | null {
   if (comp.price === null || comp.sqft === null || comp.sqft <= 0) return null;
   return `$${Math.round(comp.price / comp.sqft)}/sqft`;
 }
+
+/**
+ * What this comp's price actually is.
+ *
+ * Only a sold comp's price is a sale. The other two are what someone hoped
+ * for, and "$345,000" beside the word "Removed" reads as a sale to anyone who
+ * has not been told otherwise — which is the single easiest way to believe an
+ * ARV that is too high.
+ */
+const PRICE_MEANING: Record<CompStatus, string> = {
+  sold: "sold for",
+  removed: "was asking",
+  active: "asking",
+};
 
 function monthYear(iso: string): string {
   // Day-level precision is noise here; what matters is how stale the comp is.
@@ -715,6 +729,14 @@ function CompRow({
           </p>
 
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
+            {comp.price !== null && (
+              <span
+                data-testid={`comp-price-meaning-${comp.id}`}
+                className="text-[11px] text-(--color-text-secondary)"
+              >
+                {PRICE_MEANING[comp.status]}
+              </span>
+            )}
             <span className="text-[14px] font-semibold">
               {comp.price !== null ? dollars(comp.price) : "No price"}
             </span>
