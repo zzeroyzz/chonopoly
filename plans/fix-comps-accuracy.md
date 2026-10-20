@@ -92,20 +92,25 @@ needs.
 - Recorded sales outrank listings in `arv.ts`, the same way manual sales
   already do.
 
-**Request budget (50/month plan, cap 45):**
+**Request budget (50/month plan, cap 45) — settled 2026-10-20:**
 
-| Option | Requests per house | Houses per month |
+**1 request per house, about 45 houses a month.** `/properties` only.
+
+The options table that used to sit here assumed `/avm/value` was still
+needed alongside `/properties` for the subject's own facts. It is not: the
+owner enters sqft, beds, baths and year built when adding the house, so
+there is nothing left for `/avm/value` to supply. New lookups call
+`/properties` and nothing else.
+
+| | Requests per house | Houses per month |
 |---|---|---|
-| A. Call `/properties` first, and `/avm/value` only if fewer than 3 good sales come back | 1–2 | ~25–45 |
-| B. Always call both | 2 | ~22 |
-| C. `/properties` only | 1 | ~45 |
+| `/properties` only | **1** | **~45** |
 
-Recommended: **A**.
-
-Before building Phase 2, **one** deliberate live `/properties` call on a
-benchmark house, run only with owner approval, confirms the exact
-sale-price field names and that Gwinnett/Fulton sales come back with
-prices. Cost: 1 request.
+The confirming live call was made on 2026-10-20 against 1653 Sylvan Rd SW,
+with owner approval, and cost 1 request. It returned 10 county records,
+`lastSalePrice` and `lastSaleDate` on all 10, and **no overlap at all** with
+the 15 comps already stored for that house. That result is what moved the
+project to recorded sales only — see `plans/feat-recorded-sales.md`.
 
 ### Phase 1 item 6 (added at approval): drop duplicate listings
 RentCast returns the same listing several times under different unit
