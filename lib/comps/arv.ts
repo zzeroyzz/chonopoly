@@ -1,4 +1,5 @@
 import { type Comp, type CompStatus } from "./types";
+import { normalizeStreet } from "../property/address";
 
 /**
  * After-repair value from comparable sales.
@@ -36,6 +37,8 @@ export const COMP_ELIGIBILITY = {
   sqftTolerancePct: 20,
   maxDistanceMiles: 1,
   bedsTolerance: 1,
+  bathsTolerance: 1,
+  yearBuiltTolerance: 20,
 } as const;
 
 /** At least this many sold comps and the listings stop being used at all. */
@@ -144,6 +147,43 @@ function buildBasisLabel(sold: number, removed: number, active: number): string 
 }
 
 /**
+ * The subject's remaining facts, for the checks added after beds and size.
+ *
+ * A fourth parameter rather than a reshaped signature: `compEligibility` has
+ * three call sites and all of them keep working unchanged, which is the point.
+ * Every field is optional because a house often knows its size before it knows
+ * what it is, and a missing fact must skip its check rather than fail it.
+ */
+export interface SubjectFit {
+  baths?: number | null;
+  propertyType?: string | null;
+  yearBuilt?: number | null;
+}
+
+/**
+ * "Single Family", "single_family" and "SINGLE-FAMILY" are one type.
+ *
+ * RentCast writes comp types in title case with spaces while our own column
+ * holds snake_case, so a literal comparison would mark every comp a mismatch.
+ */
+function normalizeType(value: string): string {
+  return value.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+/** "single_family" -> "single-family home", for a reason someone can read. */
+function typeLabel(value: string): string {
+  const spaced = value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  if (normalizeType(spaced) === "singlefamily") return "single-family home";
+  if (normalizeType(spaced) === "multifamily") return "multi-family building";
+  return spaced;
+}
+
+/** 2 -> "2", 2.5 -> "2.5". A bathroom count is genuinely fractional. */
+function countLabel(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(1)));
+}
+
+/**
  * Whether a comp is close enough to compare, and why not when it isn't.
  *
  * Exported so the comps list can show the reason beside each one rather than
@@ -152,7 +192,8 @@ function buildBasisLabel(sold: number, removed: number, active: number): string 
 export function compEligibility(
   comp: Comp,
   subjectSqft: number | null,
-  subjectBeds: number | null
+  subjectBeds: number | null,
+  subject: SubjectFit = {}
 ): CompEligibility {
   const reasons: string[] = [];
 
@@ -174,7 +215,132 @@ export function compEligibility(
     }
   }
 
+  // A townhouse is not a comp for a detached house however close it is, and
+  // RentCast was never asked to exclude them.
+  const subjectType = subject.propertyType;
+  if (subjectType && comp.propertyType) {
+    if (normalizeType(comp.propertyType) !== normalizeType(subjectType)) {
+      reasons.push(`a ${typeLabel(comp.propertyType)}, not a ${typeLabel(subjectType)}`);
+    }
+  }
+
+  const subjectBaths = subject.baths;
+  if (subjectBaths !== null && subjectBaths !== undefined && comp.baths !== null) {
+    const diff = comp.baths - subjectBaths;
+    if (Math.abs(diff) > COMP_ELIGIBILITY.bathsTolerance) {
+      const n = Math.abs(diff);
+      reasons.push(
+        `${countLabel(n)} ${diff > 0 ? "more" : "fewer"} bathroom${n === 1 ? "" : "s"}`
+      );
+    }
+  }
+
+  // Age stands in for everything we cannot see: wiring, windows, layout, the
+  // roof. A 2026 build next door to a 1965 house is a different product.
+  const subjectYear = subject.yearBuilt;
+  if (subjectYear !== null && subjectYear !== undefined && comp.yearBuilt !== null) {
+    const diff = comp.yearBuilt - subjectYear;
+    if (Math.abs(diff) > COMP_ELIGIBILITY.yearBuiltTolerance) {
+      reasons.push(
+        `built ${comp.yearBuilt}, ${Math.abs(diff)} years ${diff > 0 ? "newer" : "older"}`
+      );
+    }
+  }
+
   return { compId: comp.id, eligible: reasons.length === 0, reasons };
+}
+
+/**
+ * The street part of a comp's address, as a key.
+ *
+ * Takes the segment before the first comma, so the city never participates:
+ * RentCast returned 2469 Romain Way under both "Atlanta" and "East Point".
+ * The unit is dropped too, because 6721 Homer Ln came back four times — bare,
+ * as "Unit 73", and under two different cities — all at the same 2,013 sqft.
+ */
+function streetKey(formattedAddress: string): string {
+  const street = normalizeStreet(formattedAddress.split(",")[0] ?? "");
+  return street.replace(/\s*\bUNIT\b.*$/, "").trim();
+}
+
+/**
+ * Null when we cannot be sure, which means the comp is never deduped.
+ *
+ * Size is half the key on purpose. Two genuinely different houses can share a
+ * street address in the data — a rebuild, a subdivided lot — and dropping a
+ * real comp is worse than keeping a duplicate.
+ */
+function duplicateKey(comp: Comp): string | null {
+  if (comp.sqft === null || comp.sqft <= 0) return null;
+  const street = streetKey(comp.formattedAddress);
+  return street ? `${street}|${comp.sqft}` : null;
+}
+
+/** Most recent first. Lower daysOld wins; failing that, the later date. */
+function compareRecency(a: Comp, b: Comp): number {
+  if (a.daysOld !== null && b.daysOld !== null) return a.daysOld - b.daysOld;
+  if (a.daysOld !== null) return -1;
+  if (b.daysOld !== null) return 1;
+
+  const dateA = a.lastSeenDate ?? a.removedDate ?? a.listedDate ?? "";
+  const dateB = b.lastSeenDate ?? b.removedDate ?? b.listedDate ?? "";
+  if (dateA !== dateB) return dateA < dateB ? 1 : -1;
+  return 0;
+}
+
+/**
+ * One house, one comp.
+ *
+ * The same listing arrives several times under different unit numbers and
+ * different cities, and every copy was counted — 2469 Romain Way sat in the
+ * median twice at $225,000, weighting one house as though it were two. The
+ * most recent copy is kept and the rest are reported with a reason, never
+ * dropped silently.
+ */
+function dropDuplicateListings(comps: Comp[]): {
+  unique: Comp[];
+  duplicates: CompEligibility[];
+} {
+  const groups = new Map<string, Comp[]>();
+  const unkeyed: Comp[] = [];
+
+  for (const comp of comps) {
+    const key = duplicateKey(comp);
+    if (key === null) {
+      unkeyed.push(comp);
+      continue;
+    }
+    const group = groups.get(key);
+    if (group) group.push(comp);
+    else groups.set(key, [comp]);
+  }
+
+  const kept = new Set<string>(unkeyed.map((c) => c.id));
+  const duplicates: CompEligibility[] = [];
+
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      kept.add(group[0].id);
+      continue;
+    }
+    const [newest, ...rest] = [...group].sort(compareRecency);
+    kept.add(newest.id);
+    for (const copy of rest) {
+      duplicates.push({
+        compId: copy.id,
+        eligible: false,
+        reasons: [
+          group.length === 2
+            ? "same house listed twice"
+            : `same house listed ${group.length} times`,
+        ],
+      });
+    }
+  }
+
+  // Input order is meaningful — the list arrives sorted by correlation — so
+  // the survivors are filtered out of the original rather than regrouped.
+  return { unique: comps.filter((c) => kept.has(c.id)), duplicates };
 }
 
 /** "most are much bigger" — the reason in the fewest words that are true. */
@@ -182,8 +348,16 @@ function summariseReasons(excluded: CompEligibility[]): string {
   const counts = new Map<string, number>();
   for (const e of excluded) {
     for (const reason of e.reasons) {
-      // "1.4 mi away" and "2.1 mi away" are the same complaint.
-      const key = /mi away$/.test(reason) ? "too far away" : reason;
+      // "1.4 mi away" and "2.1 mi away" are the same complaint. So are
+      // "built 2004, 39 years newer" and "built 2026, 61 years newer", and
+      // every variant of the wrong kind of house.
+      let key = reason;
+      if (/mi away$/.test(reason)) key = "too far away";
+      else if (/^same house listed/.test(reason)) key = "the same house listed more than once";
+      else if (/^built /.test(reason)) key = "a different age";
+      else if (/^a .+, not a /.test(reason)) key = "a different kind of house";
+      else if (/bathrooms?$/.test(reason)) key = "a different number of bathrooms";
+      else if (/bedrooms?$/.test(reason)) key = "a different number of bedrooms";
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
@@ -224,6 +398,35 @@ export interface ArvOptions {
   adjustmentPerSqft?: number;
   /** The subject's bed count, for the eligibility reasons. */
   subjectBeds?: number | null;
+  /** The subject's bath count, property type and age. Each check is skipped
+   *  when the fact is missing, so an unknown subject loses no comps. */
+  subjectBaths?: number | null;
+  subjectPropertyType?: string | null;
+  subjectYearBuilt?: number | null;
+}
+
+/** The subject columns the ARV reads, exactly as they sit on the row. */
+export interface SubjectFactsRow {
+  beds: number | null;
+  baths: number | null;
+  property_type: string | null;
+  year_built: number | null;
+}
+
+/**
+ * The subject facts every ARV caller needs, assembled once.
+ *
+ * Four call sites each built this argument by hand and one of them left out
+ * `subjectBeds`, which is how the same house came to show two different ARVs.
+ * Adding a sixth fact should not be an invitation to make that mistake again.
+ */
+export function subjectOptions(row: SubjectFactsRow): ArvOptions {
+  return {
+    subjectBeds: row.beds,
+    subjectBaths: row.baths,
+    subjectPropertyType: row.property_type,
+    subjectYearBuilt: row.year_built,
+  };
 }
 
 export function calculateArv(
@@ -254,14 +457,22 @@ export function calculateArv(
   // 1,357 sqft house: every one of them a bigger house, and an ARV built on
   // them said the deal worked. A comp that is not the same kind of house is
   // not evidence, however many of them there are.
-  const eligibility = included.map((c) =>
-    compEligibility(c, subjectSqft, options.subjectBeds ?? null)
+  // Duplicates go first: the same listing arriving four times under different
+  // unit numbers would otherwise be weighted four times in the median.
+  const { unique, duplicates } = dropDuplicateListings(included);
+
+  const eligibility = unique.map((c) =>
+    compEligibility(c, subjectSqft, options.subjectBeds ?? null, {
+      baths: options.subjectBaths ?? null,
+      propertyType: options.subjectPropertyType ?? null,
+      yearBuilt: options.subjectYearBuilt ?? null,
+    })
   );
-  const excludedForFit = eligibility.filter((e) => !e.eligible);
+  const excludedForFit = [...duplicates, ...eligibility.filter((e) => !e.eligible)];
   const eligibleIds = new Set(
     eligibility.filter((e) => e.eligible).map((e) => e.compId)
   );
-  const comparable = included.filter((c) => eligibleIds.has(c.id));
+  const comparable = unique.filter((c) => eligibleIds.has(c.id));
 
   if (comparable.length === 0) {
     const result = emptyResult(subjectSqft, rate, [
@@ -346,9 +557,15 @@ export function calculateArv(
 
   const warnings: string[] = [];
 
+  // Say plainly what the number does and does not rest on. No discount is
+  // applied anywhere in this file for a listing being a listing, so the
+  // screen carries the caveat rather than the arithmetic carrying a guess.
+  const listingCount = removedCount + activeCount;
   if (soldCount === 0) {
+    warnings.push("None of these are confirmed sales yet. Add sold comps to firm it up.");
+  } else if (listingCount > 0) {
     warnings.push(
-      "None of these are confirmed sales. RentCast only knows they left the market. Add a sold comp from your agent to firm it up."
+      `${listingCount} of these ${listingCount === 1 ? "is a listing" : "are listings"}, not a confirmed sale.`
     );
   }
 
@@ -364,9 +581,13 @@ export function calculateArv(
     );
   }
 
+  // A sold set says so. A set of listings says nothing extra here — the
+  // warning below already states what they are, and saying it twice in two
+  // different ways reads as two different claims.
   const plainSummary =
     `${basis.length} similar home${basis.length === 1 ? "" : "s"}` +
-    `${soldOnly ? " that sold" : ""}, adjusted for size, point to about ${money(value)}.`;
+    `${soldOnly ? " that sold" : ""}` +
+    `, adjusted for size, point to about ${money(value)}.`;
 
   return {
     value,

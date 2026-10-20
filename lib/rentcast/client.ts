@@ -4,6 +4,7 @@ import {
   type RentCastValueResponse,
   type ValueEstimateParams,
 } from "./types";
+import { COMP_ELIGIBILITY } from "../comps/arv";
 import fixture from "./fixtures/valueEstimate.json";
 
 /**
@@ -46,10 +47,33 @@ export const QUOTA_WARNING_FRACTION = 0.8;
 /** RentCast's own bounds on compCount. Sending 30 is a 400, not 25 comps. */
 export const COMP_COUNT_MIN = 5;
 export const COMP_COUNT_MAX = 25;
-export const COMP_COUNT_DEFAULT = 15;
 
-export const DEFAULT_MAX_RADIUS_MILES = 2;
-export const DEFAULT_DAYS_OLD = 270;
+/**
+ * Ask for the maximum.
+ *
+ * A request costs the same whatever the comp count, and the ARV then throws
+ * away everything that is not the same kind of house — so the binding limit is
+ * how many survive the filter, not how many arrive. Every stored response had
+ * exactly 15 comps and White Bird kept none of them.
+ */
+export const COMP_COUNT_DEFAULT = COMP_COUNT_MAX;
+
+/**
+ * Search the same area the ARV is willing to count.
+ *
+ * This was 2 while `COMP_ELIGIBILITY.maxDistanceMiles` was 1, so we paid for
+ * comps the filter then discarded on arrival — at 1900 Windsor Dr, three of
+ * fifteen, rejected for nothing but distance. Deriving it from the filter means
+ * the two cannot drift apart again: move the filter and the search follows.
+ */
+export const DEFAULT_MAX_RADIUS_MILES = COMP_ELIGIBILITY.maxDistanceMiles;
+
+/**
+ * Six months. Was 270 days, and a comp from nine months ago is priced by a
+ * market that no longer exists — there is no time adjustment anywhere in the
+ * ARV to correct for it.
+ */
+export const DEFAULT_DAYS_OLD = 180;
 
 /**
  * Why a lookup produced nothing.

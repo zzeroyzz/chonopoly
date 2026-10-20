@@ -235,7 +235,8 @@ test("the property page has five tabs and they switch", async ({ page }) => {
 
   await expect(page.getByTestId("panel-overview")).toBeVisible();
 
-  await page.getByTestId("tab-comps").click();
+  // The tab was renamed Comps -> ARV and this spec was never updated.
+  await page.getByTestId("tab-arv").click();
   await expect(page.getByTestId("panel-comps")).toBeVisible();
   await expect(page.getByTestId("panel-overview")).toHaveCount(0);
 

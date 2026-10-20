@@ -354,7 +354,9 @@ async function stubComps(page: Page, options: StubOptions = {}) {
 
 async function openCompsTab(page: Page) {
   await page.goto("/properties/e1");
-  await page.getByTestId("tab-comps").click();
+  // The tab was renamed Comps -> ARV and these specs were never updated, so
+  // every test here spent 30s waiting for a testid the app stopped rendering.
+  await page.getByTestId("tab-arv").click();
   await expect(page.getByTestId("panel-comps")).toBeVisible();
 }
 

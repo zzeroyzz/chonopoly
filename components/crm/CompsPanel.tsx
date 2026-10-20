@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { RefreshCw, Plus, Trash2, AlertTriangle, Lock } from "lucide-react";
 import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
-import { type Comp, COMP_STATUS_LABELS } from "@/lib/comps/types";
-import { type ArvResult, compEligibility } from "@/lib/comps/arv";
+import { type Comp, type CompStatus, COMP_STATUS_LABELS } from "@/lib/comps/types";
+import { type ArvResult, type SubjectFit, compEligibility } from "@/lib/comps/arv";
 import { CompLinks } from "./CompLinks";
 
 /** "$380k" — the way a price range gets said out loud. */
@@ -28,9 +28,15 @@ interface CompsResponse {
   arv: ArvResult;
   degraded?: string | null;
   message?: string | null;
+  /** Which specs are missing, when the lookup stopped rather than go out blind. */
+  missingFacts?: string[] | null;
   source?: "live" | "cached" | "rebuilt" | "mock" | null;
-  /** The subject's bed count, for the per-comp fit reason. */
+  /** The subject's own facts, for the per-comp fit reason. Each one the panel
+   *  does not have is a check it cannot explain on screen. */
   subjectBeds?: number | null;
+  subjectBaths?: number | null;
+  subjectPropertyType?: string | null;
+  subjectYearBuilt?: number | null;
   fetchedAt?: string | null;
   nextRefreshAt?: string | null;
   usage?: RefreshUsage | null;
@@ -88,6 +94,17 @@ function perSqft(comp: Comp): string | null {
   if (comp.price === null || comp.sqft === null || comp.sqft <= 0) return null;
   return `$${Math.round(comp.price / comp.sqft)}/sqft`;
 }
+
+/**
+ * What this comp's price actually is.
+ *
+ * Only a sale gets a qualifier, because only a sale's price is a fact about
+ * what someone paid. Active and Removed carry their own label beside the
+ * price and say enough on their own.
+ */
+const PRICE_MEANING: Partial<Record<CompStatus, string>> = {
+  sold: "sold for",
+};
 
 function monthYear(iso: string): string {
   // Day-level precision is noise here; what matters is how stale the comp is.
@@ -166,14 +183,28 @@ export function CompsPanel({
   const [status, setStatus] = useState<RefreshStatus | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [subjectBeds, setSubjectBeds] = useState<number | null>(null);
+  const [subjectFit, setSubjectFit] = useState<SubjectFit>({});
   const [confirmingForce, setConfirmingForce] = useState(false);
+  /** Set when a lookup stopped because the house has no size or bed count. */
+  const [blindLookup, setBlindLookup] = useState<{ message: string; facts: string[] } | null>(null);
 
   const apply = useCallback((data: CompsResponse) => {
     setComps(data.comps ?? []);
     setArv(data.arv ?? null);
-    setDegraded(data.message ?? null);
+    // A blind-lookup stop gets its own panel with a way past it, so it must not
+    // also appear as a plain amber notice with no button attached.
+    const stoppedForFacts = data.degraded === "missing_facts";
+    setBlindLookup(
+      stoppedForFacts ? { message: data.message ?? "", facts: data.missingFacts ?? [] } : null
+    );
+    setDegraded(stoppedForFacts ? null : (data.message ?? null));
     setSource(data.source ?? null);
     setSubjectBeds(data.subjectBeds ?? null);
+    setSubjectFit({
+      baths: data.subjectBaths ?? null,
+      propertyType: data.subjectPropertyType ?? null,
+      yearBuilt: data.subjectYearBuilt ?? null,
+    });
 
     // Fold the refresh metadata back into the status so the lock message
     // updates without a second round trip.
@@ -229,7 +260,9 @@ export function CompsPanel({
     })();
   }, [load, loadStatus]);
 
-  async function refresh(options: { force?: boolean; rebuild?: boolean } = {}) {
+  async function refresh(
+    options: { force?: boolean; rebuild?: boolean; acknowledgeMissingFacts?: boolean } = {}
+  ) {
     if (!ctx) return;
     setRefreshing(true);
     setError(null);
@@ -242,6 +275,7 @@ export function CompsPanel({
           context_id: ctx.id,
           ...(options.force ? { force: true } : {}),
           ...(options.rebuild ? { rebuild: true } : {}),
+          ...(options.acknowledgeMissingFacts ? { acknowledgeMissingFacts: true } : {}),
         }),
       });
       // A degraded lookup is a 200 carrying a reason, not an error — the comps
@@ -307,6 +341,17 @@ export function CompsPanel({
   }
 
   const includedCount = comps.filter((c) => c.included).length;
+
+  /**
+   * What the ARV actually decided about each comp it left out.
+   *
+   * The card used to recompute this locally, which cannot see the reasons that
+   * depend on the whole set — a duplicate listing is only a duplicate next to
+   * its twin. Where the server has a verdict, it wins.
+   */
+  const excludedReasons = new Map<string, string[]>(
+    (arv?.excludedForFit ?? []).map((e) => [e.compId, e.reasons])
+  );
 
   return (
     <div data-testid="panel-comps" className="flex flex-col gap-4">
@@ -410,6 +455,40 @@ export function CompsPanel({
                 className="h-9 px-3 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Stopped before the request was spent, because RentCast matches on
+            specs this house does not have yet. Says what is missing, what it
+            costs to go ahead anyway, and leaves the choice open. */}
+        {blindLookup && (
+          <div
+            data-testid="missing-facts-warning"
+            className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3"
+          >
+            <p className="flex gap-1.5 text-[12px] text-amber-300 leading-relaxed">
+              <AlertTriangle size={13} className="shrink-0 mt-0.5" />
+              <span>{blindLookup.message}</span>
+            </p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <button
+                type="button"
+                onClick={() => void refresh({ acknowledgeMissingFacts: true })}
+                disabled={refreshing || !ctx}
+                data-testid="missing-facts-proceed"
+                className="h-9 px-3 rounded-(--radius-pill) border border-(--color-border-default) text-[12px] font-medium disabled:opacity-50"
+              >
+                {refreshing ? "Pulling…" : "Look up anyway"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBlindLookup(null)}
+                data-testid="missing-facts-dismiss"
+                className="h-9 px-3 rounded-(--radius-pill) text-[12px] font-medium text-(--color-text-secondary)"
+              >
+                Not yet
               </button>
             </div>
           </div>
@@ -598,6 +677,8 @@ export function CompsPanel({
               onRemove={remove}
               subjectSqft={arv?.subjectSqft ?? null}
               subjectBeds={subjectBeds}
+              subjectFit={subjectFit}
+              decidedReasons={excludedReasons.get(comp.id)}
             />
           ))}
         </ul>
@@ -617,18 +698,25 @@ function CompRow({
   onRemove,
   subjectSqft,
   subjectBeds,
+  subjectFit,
+  decidedReasons,
 }: {
   comp: Comp;
   onToggle: (comp: Comp) => void;
   onRemove: (comp: Comp) => void;
   subjectSqft: number | null;
   subjectBeds: number | null;
+  subjectFit: SubjectFit;
+  /** The ARV's own verdict, where it has one. Outranks the local check. */
+  decidedReasons: string[] | undefined;
 }) {
   const ppsf = perSqft(comp);
   const date = compDate(comp);
-  const fitReasons = comp.included
-    ? compEligibility(comp, subjectSqft, subjectBeds).reasons
-    : [];
+  // Falls back to the local check so an optimistic tick shows a reason
+  // immediately, before the server's recomputed ARV lands.
+  const fitReasons = !comp.included
+    ? []
+    : (decidedReasons ?? compEligibility(comp, subjectSqft, subjectBeds, subjectFit).reasons);
 
   return (
     <li
@@ -655,6 +743,14 @@ function CompRow({
           </p>
 
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
+            {comp.price !== null && PRICE_MEANING[comp.status] && (
+              <span
+                data-testid={`comp-price-meaning-${comp.id}`}
+                className="text-[11px] text-(--color-text-secondary)"
+              >
+                {PRICE_MEANING[comp.status]}
+              </span>
+            )}
             <span className="text-[14px] font-semibold">
               {comp.price !== null ? dollars(comp.price) : "No price"}
             </span>

@@ -8,7 +8,7 @@ import {
   saveRentCastComps,
   applySubjectFacts,
 } from "@/lib/comps/compService";
-import { calculateArv } from "@/lib/comps/arv";
+import { calculateArv, subjectOptions } from "@/lib/comps/arv";
 import { mapComparables, mapSubjectFacts } from "@/lib/comps/fromRentCast";
 import {
   fetchValueEstimate,
@@ -75,6 +75,8 @@ interface PropertyRow {
   sqft: number | null;
   beds: number | null;
   baths: number | null;
+  property_type: string | null;
+  year_built: number | null;
 }
 
 function addressFor(property: PropertyRow): string {
@@ -90,6 +92,25 @@ function normalizedFor(row: PropertyRow): string {
     state: row.state,
     zip: row.zip,
   });
+}
+
+/**
+ * The specs RentCast matches on that this house does not have yet.
+ *
+ * Only sqft and beds: those two are what the comp search is actually built
+ * around, and demanding baths or year built as well would stop a lookup that
+ * would have been fine.
+ */
+function describeMissingFacts(row: PropertyRow): string[] {
+  const missing: string[] = [];
+  if (!row.sqft) missing.push("square footage");
+  if (!row.beds) missing.push("bedroom count");
+  return missing;
+}
+
+/** ["a", "b"] -> "a and b". Two items at most here, so no serial comma. */
+function joinPlainly(parts: string[]): string {
+  return parts.length <= 1 ? (parts[0] ?? "") : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }
 
 function nextRefreshIn(days: number): string {
@@ -211,6 +232,31 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
     }
   }
 
+  // ── Gate 2b: don't spend a request on a house we can't describe ────────────
+  //
+  // RentCast picks the comps from the specs we send. With no sqft and no bed
+  // count it returns whatever is nearby, and that answer is then cached for 30
+  // days — so a blind lookup is not just wasted, it is locked in. 674 White
+  // Bird Way went out this way and came back with fifteen comps between 1,938
+  // and 2,505 sqft for a 1,357 sqft house, none of them usable.
+  //
+  // The facts arrive in the very same response, which is what makes this worth
+  // stopping for: wait, fill them in, and the next lookup is aimed.
+  const missingFacts = describeMissingFacts(row);
+  if (missingFacts.length > 0 && payload.acknowledgeMissingFacts !== true) {
+    return NextResponse.json({
+      ...(await currentState(id, ctx, row)),
+      degraded: "missing_facts",
+      missingFacts,
+      message:
+        `This house has no ${joinPlainly(missingFacts)} yet, and RentCast picks the comps using ` +
+        `${missingFacts.length === 1 ? "it" : "them"}. A lookup now comes back with whatever is ` +
+        `nearby, and that answer is saved for ${CACHE_WINDOW_DAYS} days. Add the ` +
+        `${joinPlainly(missingFacts)} on the House tab first, or look up anyway.`,
+      usage,
+    });
+  }
+
   // ── Gate 3: the in-flight lock ─────────────────────────────────────────────
   await clearStaleClaims(normalized, ctx);
 
@@ -238,6 +284,9 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
       ...(row.sqft ? { squareFootage: row.sqft } : {}),
       ...(row.beds ? { bedrooms: row.beds } : {}),
       ...(row.baths ? { bathrooms: row.baths } : {}),
+      // Never sent before, and never checked either, so a townhouse could be a
+      // comp for a detached house.
+      ...(row.property_type ? { propertyType: row.property_type } : {}),
     });
   } catch (e) {
     // The claim must not outlive the attempt, or this address stays locked.
@@ -281,7 +330,11 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
 /** What the tab should show when nothing new could be fetched. */
 async function currentState(propertyId: string, ctx: RequestContext, row: PropertyRow) {
   const comps = await listComps(propertyId, ctx);
-  return { comps, arv: calculateArv(comps, row.sqft ?? null, { subjectBeds: row.beds ?? null }) };
+  return {
+    comps,
+    arv: calculateArv(comps, row.sqft ?? null, subjectOptions(row)),
+    subjectBeds: row.beds ?? null,
+  };
 }
 
 interface ApplyMeta {
@@ -313,8 +366,9 @@ async function applyResponse(
 
   // Re-read: the subject's sqft may have just been filled in, and the ARV
   // depends on it.
-  const refreshed = await getProperty(propertyId, ctx);
-  const subjectSqft = (refreshed as unknown as PropertyRow | null)?.sqft ?? null;
+  const refreshed = (await getProperty(propertyId, ctx)) as unknown as PropertyRow | null;
+  const subjectSqft = refreshed?.sqft ?? null;
+  const subjectBeds = refreshed?.beds ?? null;
 
   return {
     degraded: mapped.length === 0 ? "no_comps" : null,
@@ -323,7 +377,15 @@ async function applyResponse(
         ? "RentCast found no comparable sales near this address. Enter comps by hand."
         : null,
     comps,
-    arv: calculateArv(comps, subjectSqft),
+    // Was calculateArv(comps, subjectSqft) with no subjectBeds, so the bedroom
+    // filter was skipped right after a refresh and applied again on reload —
+    // the same house showing two different ARVs depending on how you got there.
+    arv: refreshed
+      ? calculateArv(comps, subjectSqft, subjectOptions(refreshed))
+      : calculateArv(comps, subjectSqft),
+    // The panel reads this to show each comp's fit reason. Omitting it blanked
+    // the bedroom reason after every refresh.
+    subjectBeds,
     estimate: {
       price: response.price ?? null,
       priceRangeLow: response.priceRangeLow ?? null,

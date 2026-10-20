@@ -2,13 +2,19 @@ import { calculateArv } from "@/lib/comps/arv";
 import { mapCompStatus, mapComparables, mapSubjectFacts } from "@/lib/comps/fromRentCast";
 import { type Comp, type CompStatus } from "@/lib/comps/types";
 
+/**
+ * The address is derived from the id so that every comp is a different house.
+ * Sharing one address made the whole set look like one listing repeated, which
+ * is exactly what the duplicate check is for.
+ */
 function comp(overrides: Partial<Comp> = {}): Comp {
+  const id = overrides.id ?? "c-1";
   return {
-    id: "c-1",
+    id,
     propertyId: "p-1",
     source: "rentcast",
     externalId: "rc-1",
-    formattedAddress: "1 Test St, Duluth, GA 30096",
+    formattedAddress: `${id} Test St, Duluth, GA 30096`,
     city: "Duluth",
     state: "GA",
     zip: "30096",
@@ -142,18 +148,55 @@ describe("calculateArv", () => {
     expect(calculateArv(comps, 1_000).basisLabel).toBe("1 sold · 1 removed listing");
   });
 
-  it("warns when nothing in the set is a confirmed sale", () => {
+  it("says a set with no sales is not confirmed, and what to do about it", () => {
     const result = calculateArv(compsAtPricePerSqft([180, 190, 200, 210, 220], "removed"), 1_000);
 
     expect(result.soldCount).toBe(0);
-    expect(result.warnings.join(" ")).toMatch(/None of these are confirmed sales/);
-    expect(result.warnings.join(" ")).toMatch(/Add a sold comp from your agent/);
+    expect(result.warnings).toContain(
+      "None of these are confirmed sales yet. Add sold comps to firm it up."
+    );
   });
 
-  it("does not warn about sales when the comps are sold", () => {
+  it("says how many are asking prices when the set is mixed", () => {
+    const comps = [
+      ...compsAtPricePerSqft([180, 190], "sold"),
+      comp({ id: "r-1", externalId: "rc-r1", sqft: 1_000, price: 200_000, status: "removed" }),
+    ];
+
+    // Two sales means sold-only takes over and the listing drops out, so the
+    // mixed warning must not claim a listing is still in the number.
+    const result = calculateArv(comps, 1_000);
+
+    expect(result.soldOnly).toBe(true);
+    expect(result.warnings.join(" ")).not.toMatch(/asking price/);
+  });
+
+  it("warns about the one listing propping up a single sale", () => {
+    const comps = [
+      ...compsAtPricePerSqft([180], "sold"),
+      comp({ id: "r-1", externalId: "rc-r1", sqft: 1_000, price: 200_000, status: "removed" }),
+    ];
+
+    const result = calculateArv(comps, 1_000);
+
+    expect(result.soldOnly).toBe(false);
+    expect(result.warnings.join(" ")).toMatch(/1 of these is a listing, not a confirmed sale/);
+  });
+
+  it("does not call a sold set asking prices", () => {
     const result = calculateArv(compsAtPricePerSqft([180, 190, 200, 210, 220], "sold"), 1_000);
 
-    expect(result.warnings.join(" ")).not.toMatch(/No confirmed sales/);
+    expect(result.warnings.join(" ")).not.toMatch(/asking/);
+  });
+
+  it("says a sold set sold, and claims nothing extra for listings", () => {
+    const listings = calculateArv(compsAtPricePerSqft([180, 190, 200], "removed"), 1_000);
+    const sales = calculateArv(compsAtPricePerSqft([180, 190, 200], "sold"), 1_000);
+
+    expect(sales.plainSummary).toMatch(/that sold/);
+    // The listing warning carries that point; the headline must not also make
+    // a second, differently worded claim about the same thing.
+    expect(listings.plainSummary).not.toMatch(/sold|asked/);
   });
 
   it("returns null rather than zero when no comps are included", () => {
@@ -251,6 +294,214 @@ describe("calculateArv", () => {
     expect(result.excludedForFit).toHaveLength(3);
     expect(result.excludedForFit.every((e) => e.reasons.includes("much bigger"))).toBe(true);
     expect(result.warnings.join(" ")).toMatch(/none of the 3 comps here are the same kind of house/i);
+  });
+
+  it("will not count a townhouse as a comp for a detached house", () => {
+    const comps = [
+      comp({ id: "t-1", externalId: "rc-t1", propertyType: "Townhouse" }),
+      comp({ id: "t-2", externalId: "rc-t2", propertyType: "Condo" }),
+      comp({ id: "t-3", externalId: "rc-t3", propertyType: "Single Family" }),
+    ];
+
+    const result = calculateArv(comps, 1_500, { subjectPropertyType: "single_family" });
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["t-3"]);
+    expect(result.excludedForFit.map((e) => e.reasons[0])).toEqual([
+      "a townhouse, not a single-family home",
+      "a condo, not a single-family home",
+    ]);
+  });
+
+  it("treats Single Family and single_family as the same type", () => {
+    // Our column is snake_case and RentCast's is title case. A literal
+    // comparison would reject every comp as the wrong kind of house.
+    const result = calculateArv([comp({ propertyType: "Single Family" })], 1_500, {
+      subjectPropertyType: "single_family",
+    });
+
+    expect(result.excludedForFit).toHaveLength(0);
+    expect(result.usedComps).toHaveLength(1);
+  });
+
+  it("allows a bathroom either way and rejects the second one", () => {
+    const comps = [
+      comp({ id: "b-1", externalId: "rc-b1", baths: 3 }),
+      comp({ id: "b-2", externalId: "rc-b2", baths: 4 }),
+      comp({ id: "b-3", externalId: "rc-b3", baths: 1 }),
+    ];
+
+    const result = calculateArv(comps, 1_500, { subjectBaths: 2 });
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["b-1", "b-3"]);
+    expect(result.excludedForFit[0].reasons).toEqual(["2 more bathrooms"]);
+  });
+
+  it("says a half bathroom as a half, not as a rounded whole", () => {
+    const result = calculateArv([comp({ baths: 4.5 })], 1_500, { subjectBaths: 2 });
+
+    expect(result.excludedForFit[0].reasons).toEqual(["2.5 more bathrooms"]);
+  });
+
+  it("rejects a new build as a comp for an old house", () => {
+    // 674 White Bird Way: a 1965 house against a 2004-2026 subdivision. Size
+    // caught these too, but age catches them on its own.
+    const comps = [
+      comp({ id: "y-1", externalId: "rc-y1", yearBuilt: 2026 }),
+      comp({ id: "y-2", externalId: "rc-y2", yearBuilt: 1970 }),
+    ];
+
+    const result = calculateArv(comps, 1_500, { subjectYearBuilt: 1965 });
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["y-2"]);
+    expect(result.excludedForFit[0].reasons).toEqual(["built 2026, 61 years newer"]);
+  });
+
+  it("names an older comp as older, not newer", () => {
+    const result = calculateArv([comp({ yearBuilt: 1920 })], 1_500, { subjectYearBuilt: 1990 });
+
+    expect(result.excludedForFit[0].reasons).toEqual(["built 1920, 70 years older"]);
+  });
+
+  it("skips a check the subject has no fact for, rather than failing it", () => {
+    // A house often knows its size before it knows its type or its age, and a
+    // blank column must not throw away every comp.
+    const result = calculateArv([comp({ propertyType: "Townhouse", baths: 9, yearBuilt: 1800 })], 1_500);
+
+    expect(result.excludedForFit).toHaveLength(0);
+    expect(result.value).not.toBeNull();
+  });
+
+  it("skips a check the comp has no fact for", () => {
+    const result = calculateArv(
+      [comp({ propertyType: null, baths: null, yearBuilt: null })],
+      1_500,
+      { subjectPropertyType: "single_family", subjectBaths: 2, subjectYearBuilt: 1965 }
+    );
+
+    expect(result.excludedForFit).toHaveLength(0);
+  });
+
+  it("groups the varied reasons when it summarises why nothing counted", () => {
+    // Each comp carries a different year, so the summary has to group them
+    // rather than report one comp's wording as the common complaint.
+    const comps = [
+      comp({ id: "g-1", externalId: "rc-g1", yearBuilt: 2020 }),
+      comp({ id: "g-2", externalId: "rc-g2", yearBuilt: 2024 }),
+      comp({ id: "g-3", externalId: "rc-g3", yearBuilt: 2026 }),
+    ];
+
+    const result = calculateArv(comps, 1_500, { subjectYearBuilt: 1950 });
+
+    expect(result.value).toBeNull();
+    expect(result.warnings.join(" ")).toMatch(/most are a different age/);
+  });
+
+  it("counts one house once, however many times it was listed", () => {
+    // 2469 Romain Way came back as Atlanta and as East Point, same price and
+    // same size, and both sat in the median.
+    const comps = [
+      comp({
+        id: "d-1",
+        externalId: "rc-d1",
+        formattedAddress: "2469 Romain Way, Atlanta, GA 30311",
+        sqft: 1_312,
+        price: 225_000,
+        daysOld: 30,
+      }),
+      comp({
+        id: "d-2",
+        externalId: "rc-d2",
+        formattedAddress: "2469 Romain Way, East Point, GA 30344",
+        sqft: 1_312,
+        price: 225_000,
+        daysOld: 90,
+      }),
+    ];
+
+    const result = calculateArv(comps, 1_312);
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["d-1"]);
+    expect(result.excludedForFit).toEqual([
+      { compId: "d-2", eligible: false, reasons: ["same house listed twice"] },
+    ]);
+  });
+
+  it("ignores the unit number when deciding it is the same house", () => {
+    // 6721 Homer Ln arrived four times: bare, as Unit 73, and under two cities.
+    const comps = [
+      comp({ id: "h-1", externalId: "rc-h1", formattedAddress: "6721 Homer Ln, Fairburn, GA 30213", sqft: 2_013, daysOld: 40 }),
+      comp({ id: "h-2", externalId: "rc-h2", formattedAddress: "6721 Homer Ln, Unit 73, Fairburn, GA 30213", sqft: 2_013, daysOld: 50 }),
+      comp({ id: "h-3", externalId: "rc-h3", formattedAddress: "6721 Homer Ln, Unit 73, Atlanta, GA 30213", sqft: 2_013, daysOld: 60 }),
+      comp({ id: "h-4", externalId: "rc-h4", formattedAddress: "6721 Homer Ln, Atlanta, GA 30213", sqft: 2_013, daysOld: 70 }),
+    ];
+
+    const result = calculateArv(comps, 2_013);
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["h-1"]);
+    expect(result.excludedForFit.map((e) => e.reasons[0])).toEqual([
+      "same house listed 4 times",
+      "same house listed 4 times",
+      "same house listed 4 times",
+    ]);
+  });
+
+  it("keeps the most recent copy, whatever order they arrive in", () => {
+    const comps = [
+      comp({ id: "o-1", externalId: "rc-o1", formattedAddress: "5 Elm St, Atlanta, GA 30310", sqft: 1_200, daysOld: 200 }),
+      comp({ id: "o-2", externalId: "rc-o2", formattedAddress: "5 Elm St, Atlanta, GA 30310", sqft: 1_200, daysOld: 10 }),
+    ];
+
+    expect(calculateArv(comps, 1_200).usedComps.map((c) => c.compId)).toEqual(["o-2"]);
+  });
+
+  it("falls back to the last date seen when neither copy knows its age", () => {
+    const comps = [
+      comp({ id: "n-1", externalId: "rc-n1", formattedAddress: "7 Oak St, Atlanta, GA 30310", sqft: 1_200, daysOld: null, lastSeenDate: "2026-01-05" }),
+      comp({ id: "n-2", externalId: "rc-n2", formattedAddress: "7 Oak St, Atlanta, GA 30310", sqft: 1_200, daysOld: null, lastSeenDate: "2026-09-30" }),
+    ];
+
+    expect(calculateArv(comps, 1_200).usedComps.map((c) => c.compId)).toEqual(["n-2"]);
+  });
+
+  it("keeps both when the same street address has two different sizes", () => {
+    // A rebuild or a subdivided lot. Dropping a real comp is worse than
+    // keeping a duplicate, so size has to match too.
+    const comps = [
+      comp({ id: "s-1", externalId: "rc-s1", formattedAddress: "9 Pine St, Atlanta, GA 30310", sqft: 1_200, price: 250_000 }),
+      comp({ id: "s-2", externalId: "rc-s2", formattedAddress: "9 Pine St, Atlanta, GA 30310", sqft: 1_400, price: 300_000 }),
+    ];
+
+    const result = calculateArv(comps, 1_300);
+
+    expect(result.usedComps).toHaveLength(2);
+    expect(result.excludedForFit).toHaveLength(0);
+  });
+
+  it("reads as a sentence when every comp was the same house", () => {
+    // "most are same house listed twice" is not English. The summary groups
+    // the varied reasons, so this one needs a grouped form too.
+    const comps = [
+      comp({ id: "q-1", externalId: "rc-q1", formattedAddress: "3 Fir St, Atlanta, GA 30310", sqft: 9_000, daysOld: 10 }),
+      comp({ id: "q-2", externalId: "rc-q2", formattedAddress: "3 Fir St, Unit 2, Atlanta, GA 30310", sqft: 9_000, daysOld: 20 }),
+    ];
+
+    // Subject is far smaller, so the surviving copy is excluded for size and
+    // nothing is left — which is what makes the summary sentence show.
+    const result = calculateArv(comps, 1_200);
+
+    expect(result.value).toBeNull();
+    expect(result.warnings.join(" ")).toMatch(/most are the same house listed more than once/);
+    expect(result.warnings.join(" ")).not.toMatch(/most are same house/);
+    expect(result.excludedForFit.map((e) => e.reasons[0])).toContain("same house listed twice");
+  });
+
+  it("never dedupes a comp with no size, because it cannot be sure", () => {
+    const comps = [
+      comp({ id: "u-1", externalId: "rc-u1", formattedAddress: "11 Ash St, Atlanta, GA 30310", sqft: null }),
+      comp({ id: "u-2", externalId: "rc-u2", formattedAddress: "11 Ash St, Atlanta, GA 30310", sqft: null }),
+    ];
+
+    expect(calculateArv(comps, 1_200).excludedForFit).toHaveLength(0);
   });
 
   it("flags an ARV that lands outside what the street actually fetched", () => {

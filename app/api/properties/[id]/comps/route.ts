@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveContext } from "@/lib/context";
 import { getProperty } from "@/lib/property/propertyService";
 import { listComps, addManualComp } from "@/lib/comps/compService";
-import { calculateArv } from "@/lib/comps/arv";
+import { calculateArv, subjectOptions } from "@/lib/comps/arv";
 import { type CompStatus, type ManualCompInput } from "@/lib/comps/types";
 
 /**
@@ -57,9 +57,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const comps = await listComps(id, ctx);
     return NextResponse.json({
       comps,
-      arv: calculateArv(comps, property.sqft ?? null, { subjectBeds: property.beds ?? null }),
+      arv: calculateArv(comps, property.sqft ?? null, subjectOptions(property)),
       subjectBeds: property.beds ?? null,
       subjectSqft: property.sqft ?? null,
+      subjectBaths: property.baths ?? null,
+      subjectPropertyType: property.property_type ?? null,
+      subjectYearBuilt: property.year_built ?? null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to load comps";
@@ -124,7 +127,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const comps = await listComps(id, ctx);
 
     return NextResponse.json(
-      { comp, comps, arv: calculateArv(comps, property.sqft ?? null, { subjectBeds: property.beds ?? null }) },
+      { comp, comps, arv: calculateArv(comps, property.sqft ?? null, subjectOptions(property)) },
       { status: 201 }
     );
   } catch (e) {
