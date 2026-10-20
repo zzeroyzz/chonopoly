@@ -16,7 +16,14 @@
  */
 export type CompStatus = "active" | "removed" | "sold";
 
-export type CompSource = "rentcast" | "manual";
+/**
+ * Where a comp came from, which decides whether it may claim a sale.
+ *
+ * `public_record` is a county deed: somebody paid this, on this date. It can
+ * assert `sold` for the same reason `manual` can — it is evidence rather than
+ * an opinion — and the database CHECK enforces that `rentcast` never can.
+ */
+export type CompSource = "rentcast" | "manual" | "public_record";
 
 export interface Comp {
   id: string;
@@ -49,6 +56,14 @@ export interface Comp {
   distanceMiles: number | null;
   daysOld: number | null;
   correlation: number | null;
+
+  /**
+   * Who bought it, per public records, and which county said so. Only a
+   * `public_record` comp has these; they drive the fixer-upper note.
+   */
+  buyerType: string | null;
+  buyerName: string | null;
+  county: string | null;
 
   /** The include checkbox on the Comps tab. */
   included: boolean;

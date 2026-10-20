@@ -3,13 +3,24 @@ import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { type Database, type Json } from "../supabase/database.types";
 import { type RequestContext } from "../context";
-import { type RentCastValueResponse } from "./types";
+import {
+  type RentCastValueResponse,
+  type RentCastPropertyRecord,
+} from "./types";
+
 import {
   MONTHLY_REQUEST_CAP,
   CACHE_WINDOW_DAYS,
   FREE_PLAN_MONTHLY_REQUESTS,
   assertNotMockMode,
 } from "./client";
+
+/**
+ * What a stored response body can be, which now depends on the endpoint:
+ * an object from /avm/value, an array of records from /properties. Callers
+ * narrow by the endpoint they asked for.
+ */
+export type RentCastResponseBody = RentCastValueResponse | RentCastPropertyRecord[];
 
 /**
  * Everything that stands between a button press and a billable request.
@@ -41,7 +52,16 @@ function db() {
   );
 }
 
-const ENDPOINT = "/avm/value";
+/**
+ * Every key in this file is (owner, endpoint, address), never (owner, address).
+ *
+ * The endpoint used to be a module constant here, from when /avm/value was the
+ * only one. That made the 30-day cache and the in-flight lock blind to which
+ * endpoint a response came from: a house with a week-old listing response
+ * would have that response handed back as the cache hit for its first
+ * recorded-sales pull, and the lock would refuse to hold both at once. A house
+ * could not make its first /properties call until the old window expired.
+ */
 
 /** Postgres unique-violation. The second caller losing the lock race. */
 const UNIQUE_VIOLATION = "23505";
@@ -93,7 +113,7 @@ export async function getUsage(
 
 export interface CachedResponse {
   requestId: string;
-  response: RentCastValueResponse;
+  response: RentCastResponseBody;
   requestedAt: string;
   /** When this address may be looked up again. */
   nextRefreshAt: string;
@@ -116,6 +136,7 @@ function nextRefreshFrom(requestedAt: string): string {
  */
 export async function findCachedResponse(
   normalizedAddress: string,
+  endpoint: string,
   ctx: RequestContext,
   now: Date = new Date()
 ): Promise<CachedResponse | null> {
@@ -127,6 +148,7 @@ export async function findCachedResponse(
     .select("id, response_body, requested_at, property_id")
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
+    .eq("endpoint", endpoint)
     .eq("normalized_address", normalizedAddress)
     .eq("state", "succeeded")
     .not("response_body", "is", null)
@@ -140,7 +162,7 @@ export async function findCachedResponse(
 
   return {
     requestId: data.id,
-    response: data.response_body as unknown as RentCastValueResponse,
+    response: data.response_body as unknown as RentCastResponseBody,
     requestedAt: data.requested_at,
     nextRefreshAt: nextRefreshFrom(data.requested_at),
     propertyId: data.property_id,
@@ -150,6 +172,7 @@ export async function findCachedResponse(
 /** The newest stored response for an address regardless of age — for rebuilds. */
 export async function findLatestResponse(
   normalizedAddress: string,
+  endpoint: string,
   ctx: RequestContext
 ): Promise<CachedResponse | null> {
   const { data, error } = await db()
@@ -157,6 +180,7 @@ export async function findLatestResponse(
     .select("id, response_body, requested_at, property_id")
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
+    .eq("endpoint", endpoint)
     .eq("normalized_address", normalizedAddress)
     .eq("state", "succeeded")
     .not("response_body", "is", null)
@@ -169,7 +193,7 @@ export async function findLatestResponse(
 
   return {
     requestId: data.id,
-    response: data.response_body as unknown as RentCastValueResponse,
+    response: data.response_body as unknown as RentCastResponseBody,
     requestedAt: data.requested_at,
     nextRefreshAt: nextRefreshFrom(data.requested_at),
     propertyId: data.property_id,
@@ -193,6 +217,7 @@ export type ClaimResult =
  */
 export async function claimRequest(
   normalizedAddress: string,
+  endpoint: string,
   requestedAddress: string,
   propertyId: string | null,
   ctx: RequestContext
@@ -207,7 +232,7 @@ export async function claimRequest(
       owner_type: ctx.type,
       owner_id: ctx.id,
       property_id: propertyId,
-      endpoint: ENDPOINT,
+      endpoint,
       normalized_address: normalizedAddress,
       requested_address: requestedAddress,
       state: "in_flight",
@@ -234,7 +259,7 @@ export interface CompleteRequestInput {
   billable: boolean;
   error: string | null;
   /** Stored before anything parses it. The whole point of the exercise. */
-  responseBody: RentCastValueResponse | null;
+  responseBody: RentCastResponseBody | null;
 }
 
 /**
@@ -297,6 +322,7 @@ const STALE_CLAIM_MINUTES = 2;
  */
 export async function clearStaleClaims(
   normalizedAddress: string,
+  endpoint: string,
   ctx: RequestContext,
   now: Date = new Date()
 ): Promise<void> {
@@ -311,6 +337,7 @@ export async function clearStaleClaims(
     })
     .eq("owner_type", ctx.type)
     .eq("owner_id", ctx.id)
+    .eq("endpoint", endpoint)
     .eq("normalized_address", normalizedAddress)
     .eq("state", "in_flight")
     .lt("requested_at", cutoff.toISOString());

@@ -308,3 +308,105 @@ describe("the fixture itself", () => {
     expect(fixture.subjectProperty.bathrooms).toBe(2);
   });
 });
+
+describe("fetchPropertyRecords", () => {
+  async function capturedRecordsUrl(params: Record<string, unknown> = {}): Promise<URL> {
+    process.env.RENTCAST_API_KEY = "test-key";
+    process.env.RENTCAST_MODE = "live";
+    const fetchSpy = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [] });
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { fetchPropertyRecords } = await client();
+    await fetchPropertyRecords({ address: "1653 Sylvan Rd SW, Atlanta, GA 30310", ...params });
+
+    return new URL(fetchSpy.mock.calls[0][0] as string);
+  }
+
+  it("calls /properties, not /avm/value", async () => {
+    expect((await capturedRecordsUrl()).pathname).toBe("/v1/properties");
+  });
+
+  it("asks for a 1 mile radius, twelve months, single family, 500 records", async () => {
+    const url = await capturedRecordsUrl();
+
+    expect(url.searchParams.get("radius")).toBe(String(COMP_ELIGIBILITY.maxDistanceMiles));
+    expect(url.searchParams.get("saleDateRange")).toBe("365");
+    expect(url.searchParams.get("propertyType")).toBe("Single Family");
+    expect(url.searchParams.get("limit")).toBe("500");
+  });
+
+  it("sends no size, bed, bath or year ranges", async () => {
+    // The API supports them. We filter locally instead, so the stored body
+    // can be rebuilt for free when the tolerances change.
+    const url = await capturedRecordsUrl();
+
+    for (const name of ["squareFootage", "bedrooms", "bathrooms", "yearBuilt", "lotSize"]) {
+      expect(url.searchParams.has(name)).toBe(false);
+    }
+  });
+
+  it("never asks for more than RentCast will return", async () => {
+    expect((await capturedRecordsUrl({ limit: 5_000 })).searchParams.get("limit")).toBe("500");
+  });
+
+  it("returns the array the endpoint actually sends", async () => {
+    process.env.RENTCAST_API_KEY = "test-key";
+    process.env.RENTCAST_MODE = "live";
+    stubFetch({ ok: true, status: 200, json: async () => [{ id: "a" }, { id: "b" }] });
+
+    const { fetchPropertyRecords } = await client();
+    const result = await fetchPropertyRecords({ address: "1653 Sylvan Rd SW" });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    expect(result.data).toHaveLength(2);
+    expect(result.billable).toBe(true);
+  });
+
+  it("refuses an object where an array belongs", async () => {
+    // Mapping an object would silently produce zero comps and look like a
+    // quiet neighbourhood rather than a changed API.
+    process.env.RENTCAST_API_KEY = "test-key";
+    process.env.RENTCAST_MODE = "live";
+    stubFetch({ ok: true, status: 200, json: async () => ({ records: [] }) });
+
+    const { fetchPropertyRecords } = await client();
+    const result = await fetchPropertyRecords({ address: "1653 Sylvan Rd SW" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.failure).toBe("bad_response");
+    expect(result.billable).toBe(true);
+  });
+
+  it("spends nothing in mock mode and invents no sales", async () => {
+    process.env.RENTCAST_API_KEY = "test-key";
+    process.env.RENTCAST_MODE = "mock";
+    const fetchSpy = jest.fn();
+    global.fetch = fetchSpy as unknown as typeof fetch;
+
+    const { fetchPropertyRecords } = await client();
+    const result = await fetchPropertyRecords({ address: "1653 Sylvan Rd SW" });
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("expected success");
+    // Empty, not a fixture. Invented sale prices are worse than none.
+    expect(result.data).toEqual([]);
+    expect(result.billable).toBe(false);
+  });
+
+  it("counts a rejected key, and says to go fix it", async () => {
+    process.env.RENTCAST_API_KEY = "bad-key";
+    process.env.RENTCAST_MODE = "live";
+    stubFetch({ ok: false, status: 401, json: async () => ({ message: "Unauthorized" }) });
+
+    const { fetchPropertyRecords } = await client();
+    const result = await fetchPropertyRecords({ address: "1653 Sylvan Rd SW" });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.failure).toBe("no_key");
+    expect(result.billable).toBe(true);
+  });
+});

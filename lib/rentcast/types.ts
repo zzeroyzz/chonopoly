@@ -12,6 +12,83 @@
  * genuinely returns. Narrowing happens in the mapper, not here.
  */
 
+/**
+ * The endpoints we call, named once.
+ *
+ * These are part of the 30-day cache key and the in-flight lock key, so a
+ * stray string literal in one caller quietly creates a second bucket for the
+ * same endpoint. Import these; never retype them.
+ *
+ * Here rather than in client.ts because client.ts is `server-only`, and the
+ * read-only diagnosis script needs them too.
+ */
+export const VALUE_ESTIMATE_ENDPOINT = "/avm/value";
+export const PROPERTY_RECORDS_ENDPOINT = "/properties";
+
+/**
+ * One sale event from a property record's `history`.
+ *
+ * `history` is an OBJECT keyed by "YYYY-MM-DD", not an array — confirmed
+ * against a real response on 2026-10-20. Iterate `Object.values()`; indexing
+ * `[0]` returns undefined. The only `event` value observed is "Sale".
+ */
+export interface RentCastSaleEvent {
+  date?: string;
+  event?: string;
+  price?: number;
+}
+
+/** The current owner, per public records. An object, not a string. */
+export interface RentCastRecordOwner {
+  type?: string;
+  names?: string[];
+  mailingAddress?: Record<string, unknown>;
+}
+
+/**
+ * One public-record property from GET /properties.
+ *
+ * Shapes confirmed against a live response for 1653 Sylvan Rd SW on
+ * 2026-10-20, not from the docs alone.
+ *
+ * There is no listing price, listing status or listing date here. This
+ * endpoint knows about the deed, not the market — which is the entire reason
+ * to call it.
+ */
+export interface RentCastPropertyRecord {
+  id?: string;
+  formattedAddress?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  county?: string;
+  latitude?: number;
+  longitude?: number;
+  propertyType?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  squareFootage?: number;
+  lotSize?: number;
+  yearBuilt?: number;
+  lastSaleDate?: string;
+  lastSalePrice?: number;
+  owner?: RentCastRecordOwner;
+  history?: Record<string, RentCastSaleEvent>;
+}
+
+/** What GET /properties takes. Ranges are supported but deliberately unused. */
+export interface PropertyRecordsParams {
+  address: string;
+  /** Miles. */
+  radius?: number;
+  propertyType?: string;
+  /** Days since the last sale. 365 = the last twelve months. */
+  saleDateRange?: number;
+  limit?: number;
+}
+
 export interface RentCastSubjectProperty {
   id?: string;
   formattedAddress?: string;

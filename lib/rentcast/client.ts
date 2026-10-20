@@ -3,6 +3,9 @@ import "server-only";
 import {
   type RentCastValueResponse,
   type ValueEstimateParams,
+  type RentCastPropertyRecord,
+  type PropertyRecordsParams,
+  PROPERTY_RECORDS_ENDPOINT,
 } from "./types";
 import { COMP_ELIGIBILITY } from "../comps/arv";
 import fixture from "./fixtures/valueEstimate.json";
@@ -24,6 +27,11 @@ import fixture from "./fixtures/valueEstimate.json";
  */
 
 const BASE = "https://api.rentcast.io/v1";
+
+// Re-exported so server code can keep importing endpoints from the client.
+// They live in types.ts because they are wire facts, and because this file is
+// server-only — a read-only script cannot import from here.
+export { VALUE_ESTIMATE_ENDPOINT, PROPERTY_RECORDS_ENDPOINT } from "./types";
 
 /** Free Developer plan. Foundation is 1,000, Growth 5,000, Scale 25,000. */
 export const FREE_PLAN_MONTHLY_REQUESTS = 50;
@@ -397,4 +405,151 @@ async function readErrorMessage(response: Response): Promise<string> {
     // already carries the useful part.
   }
   return "";
+}
+
+/** Search radius for recorded sales, in miles. Matches the ARV's own filter. */
+export const RECORDED_SALES_RADIUS_MILES = COMP_ELIGIBILITY.maxDistanceMiles;
+
+/**
+ * How far back to look for sales, in days.
+ *
+ * Twelve months, not six. At 180 days the one live call returned 10 records
+ * for 1653 Sylvan Rd SW and only 5 survived the eligibility filter — exactly
+ * MIN_COMPS_FOR_MODERATE, one record away from "low" confidence. Widening the
+ * window is the only lever that does not cost another request.
+ *
+ * The cost: nothing in arv.ts adjusts for time, so an eleven-month-old sale
+ * enters the median at face value. That is disclosed on screen per comp
+ * rather than corrected in the arithmetic.
+ */
+export const RECORDED_SALES_DAYS = 365;
+
+/** RentCast returns at most this many records per call. */
+export const RECORDED_SALES_LIMIT = 500;
+
+/**
+ * The only property type we pull. Detached houses compared to detached
+ * houses; the ARV rejects anything else anyway.
+ */
+export const RECORDED_SALES_PROPERTY_TYPE = "Single Family";
+
+export type PropertyRecordsResult =
+  | {
+      ok: true;
+      data: RentCastPropertyRecord[];
+      statusCode: number;
+      billable: boolean;
+      mode: RentCastMode;
+    }
+  | {
+      ok: false;
+      failure: RentCastFailure;
+      message: string;
+      statusCode: number | null;
+      billable: boolean;
+      mode: RentCastMode;
+    };
+
+/**
+ * Closed sale prices from public records, within a mile.
+ *
+ * One call per house. Deliberately sends only `propertyType`, `radius`,
+ * `saleDateRange` and `limit` — no size, bed, bath or year ranges, even
+ * though the API supports them. Filtering happens locally in
+ * `compEligibility`, so the full response is stored and can be rebuilt for
+ * free under different rules later. A server-side filter bakes today's
+ * tolerances into data we have already paid for.
+ *
+ * Returns an array, not an object. Mock mode returns empty rather than a
+ * fixture: there is no /properties fixture, and inventing sale prices is a
+ * worse failure than returning none.
+ */
+export async function fetchPropertyRecords(
+  params: PropertyRecordsParams,
+  signal?: AbortSignal
+): Promise<PropertyRecordsResult> {
+  const mode = rentCastMode();
+
+  if (mode === "mock") {
+    return { ok: true, data: [], statusCode: 200, billable: false, mode };
+  }
+
+  const apiKey = process.env.RENTCAST_API_KEY;
+  if (!apiKey) {
+    return {
+      ok: false,
+      failure: "no_key",
+      message: "No RentCast API key is configured.",
+      statusCode: null,
+      billable: false,
+      mode,
+    };
+  }
+
+  const query = new URLSearchParams({
+    address: params.address,
+    radius: String(params.radius ?? RECORDED_SALES_RADIUS_MILES),
+    propertyType: params.propertyType ?? RECORDED_SALES_PROPERTY_TYPE,
+    saleDateRange: String(Math.max(1, Math.round(params.saleDateRange ?? RECORDED_SALES_DAYS))),
+    limit: String(Math.min(RECORDED_SALES_LIMIT, params.limit ?? RECORDED_SALES_LIMIT)),
+  });
+
+  let response: Response;
+  try {
+    response = await fetch(`${BASE}${PROPERTY_RECORDS_ENDPOINT}?${query.toString()}`, {
+      headers: { "X-Api-Key": apiKey, Accept: "application/json" },
+      cache: "no-store",
+      signal,
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      failure: "network_error",
+      message: error instanceof Error ? error.message : "Network request failed.",
+      statusCode: null,
+      billable: true,
+      mode,
+    };
+  }
+
+  if (!response.ok) {
+    const mapped = mapErrorResponse(response.status, await readErrorMessage(response), mode);
+    // mapErrorResponse only ever returns the failure arm.
+    return mapped as Extract<PropertyRecordsResult, { ok: false }>;
+  }
+
+  let data: unknown;
+  try {
+    data = await response.json();
+  } catch {
+    return {
+      ok: false,
+      failure: "bad_response",
+      message: "RentCast returned a response that was not JSON.",
+      statusCode: response.status,
+      billable: true,
+      mode,
+    };
+  }
+
+  // This endpoint returns a bare array. An object here means the shape
+  // changed, and mapping it would silently produce zero comps.
+  if (!Array.isArray(data)) {
+    return {
+      ok: false,
+      failure: "bad_response",
+      message: "RentCast returned an unexpected response shape.",
+      statusCode: response.status,
+      billable: true,
+      mode,
+    };
+  }
+
+  return {
+    ok: true,
+    data: data as RentCastPropertyRecord[],
+    statusCode: response.status,
+    billable: true,
+    mode,
+  };
 }

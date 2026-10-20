@@ -36,6 +36,9 @@ function comp(overrides: Partial<Comp> = {}): Comp {
     distanceMiles: 0.5,
     daysOld: 60,
     correlation: 0.9,
+    buyerType: null,
+    buyerName: null,
+    county: null,
     included: true,
     notes: null,
     updatedAt: "2026-10-18T00:00:00.000Z",
@@ -357,9 +360,45 @@ describe("calculateArv", () => {
   });
 
   it("names an older comp as older, not newer", () => {
-    const result = calculateArv([comp({ yearBuilt: 1920 })], 1_500, { subjectYearBuilt: 1990 });
+    // The subject is the modern one here, so the rule fires on the gap and
+    // the wording has to follow the comp, not the newer of the two.
+    const result = calculateArv([comp({ yearBuilt: 1960 })], 1_500, { subjectYearBuilt: 2020 });
 
-    expect(result.excludedForFit[0].reasons).toEqual(["built 1920, 70 years older"]);
+    expect(result.excludedForFit[0].reasons).toEqual(["built 1960, 60 years older"]);
+  });
+
+  it("keeps two old houses a generation apart", () => {
+    // 1653 Sylvan Rd SW is built 1930 and the street around it is 1950s. A
+    // flat +/-20 years threw out five of fifteen comps, four of them the
+    // cheapest, and pushed the ARV up $30,820. Neither house is a modern
+    // build, so age says nothing here.
+    const comps = [
+      comp({ id: "o-1", externalId: "rc-o1", yearBuilt: 1951 }),
+      comp({ id: "o-2", externalId: "rc-o2", yearBuilt: 1965 }),
+      comp({ id: "o-3", externalId: "rc-o3", yearBuilt: 1915 }),
+    ];
+
+    const result = calculateArv(comps, 1_500, { subjectYearBuilt: 1930 });
+
+    expect(result.excludedForFit).toHaveLength(0);
+    expect(result.usedComps).toHaveLength(3);
+  });
+
+  it("keeps a modern comp that is close in age", () => {
+    // Built this century, but only 10 years apart. One condition is not both.
+    const result = calculateArv([comp({ yearBuilt: 2020 })], 1_500, { subjectYearBuilt: 2010 });
+
+    expect(result.excludedForFit).toHaveLength(0);
+  });
+
+  it("excludes exactly at the boundary, and keeps one year inside it", () => {
+    const atBoundary = calculateArv([comp({ yearBuilt: 2000 })], 1_500, { subjectYearBuilt: 1970 });
+    const justInside = calculateArv([comp({ yearBuilt: 1999 })], 1_500, { subjectYearBuilt: 1970 });
+
+    // 2000 is modern and the gap is exactly 30.
+    expect(atBoundary.excludedForFit[0].reasons).toEqual(["built 2000, 30 years newer"]);
+    // 1999 is not modern, so the same 29-year gap says nothing.
+    expect(justInside.excludedForFit).toHaveLength(0);
   });
 
   it("skips a check the subject has no fact for, rather than failing it", () => {
