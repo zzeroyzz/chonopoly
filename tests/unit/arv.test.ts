@@ -46,12 +46,12 @@ function compsAtPricePerSqft(perSqft: number[], status: CompStatus = "removed"):
 
 describe("calculateArv", () => {
   it("takes the median of each comp's price adjusted for size", () => {
-    // Comps are 1,000 sqft at 180k-220k; the subject is 1,600 sqft, so each
-    // price gains 600 x $40 = $24,000. Median 200,000 -> 224,000.
+    // Comps are 1,000 sqft at 180k-220k; the subject is 1,100 sqft, so each
+    // price gains 100 x $40 = $4,000. Median 200,000 -> 204,000.
     const comps = compsAtPricePerSqft([180, 190, 200, 210, 220]);
-    const result = calculateArv(comps, 1_600);
+    const result = calculateArv(comps, 1_100);
 
-    expect(result.value).toBeCloseTo(224_000, 6);
+    expect(result.value).toBeCloseTo(204_000, 6);
     expect(result.adjustmentPerSqft).toBe(40);
     expect(result.usedComps).toHaveLength(5);
   });
@@ -85,9 +85,9 @@ describe("calculateArv", () => {
       comp({ id: "outlier", externalId: "rc-outlier", sqft: 1_000, price: 500_000, included: false }),
     ];
 
-    const result = calculateArv(comps, 1_600);
+    const result = calculateArv(comps, 1_100);
 
-    expect(result.value).toBeCloseTo(224_000, 6);
+    expect(result.value).toBeCloseTo(204_000, 6);
     expect(result.usedComps).toHaveLength(5);
     expect(result.usedComps.map((c) => c.compId)).not.toContain("outlier");
   });
@@ -179,7 +179,7 @@ describe("calculateArv", () => {
   it("skips comps with no price or no size and says how many", () => {
     const comps = [
       ...compsAtPricePerSqft([180, 200, 220]),
-      comp({ id: "no-price", externalId: "rc-np", price: null }),
+      comp({ id: "no-price", externalId: "rc-np", sqft: 1_000, price: null }),
       comp({ id: "no-sqft", externalId: "rc-ns", sqft: null }),
     ];
 
@@ -194,7 +194,7 @@ describe("calculateArv", () => {
 
   it("handles every included comp being unusable", () => {
     const result = calculateArv(
-      [comp({ id: "a", price: null }), comp({ id: "b", sqft: null })],
+      [comp({ id: "a", sqft: 1_000, price: null }), comp({ id: "b", sqft: null })],
       1_000
     );
 
@@ -223,31 +223,48 @@ describe("calculateArv", () => {
   });
 
   it("discounts a bigger comp without scaling it down by price per sqft", () => {
-    // Two comps that fetched 400,000 at twice the subject's size. Price per
-    // sqft would say 200,000, which is far below anything on the street;
-    // adjusting at $40/sqft says 400,000 - 1,000 x 40 = 360,000.
+    // Comps 200 sqft larger than the subject, which is inside the fit rule.
+    // Price per sqft would drag these down hard; adjusting at $40 says
+    // 400,000 - 200 x 40 = 392,000.
     const comps = [
-      comp({ id: "big-1", externalId: "rc-b1", sqft: 2_000, price: 400_000 }),
-      comp({ id: "big-2", externalId: "rc-b2", sqft: 2_000, price: 400_000 }),
+      comp({ id: "big-1", externalId: "rc-b1", sqft: 1_200, price: 400_000 }),
+      comp({ id: "big-2", externalId: "rc-b2", sqft: 1_200, price: 400_000 }),
     ];
 
     const result = calculateArv(comps, 1_000);
 
-    expect(result.value).toBeCloseTo(360_000, 6);
+    expect(result.value).toBeCloseTo(392_000, 6);
+  });
+
+  it("refuses an ARV when no comp is the same kind of house", () => {
+    // White Bird: fourteen comps between 1,938 and 2,505 sqft pulled for a
+    // 1,357 sqft house. Every one is a bigger house, so none is evidence.
+    const comps = [
+      comp({ id: "w-1", externalId: "rc-w1", sqft: 1_938, price: 315_000 }),
+      comp({ id: "w-2", externalId: "rc-w2", sqft: 2_250, price: 400_000 }),
+      comp({ id: "w-3", externalId: "rc-w3", sqft: 2_505, price: 482_144 }),
+    ];
+
+    const result = calculateArv(comps, 1_357);
+
+    expect(result.value).toBeNull();
+    expect(result.excludedForFit).toHaveLength(3);
+    expect(result.excludedForFit.every((e) => e.reasons.includes("much bigger"))).toBe(true);
+    expect(result.warnings.join(" ")).toMatch(/none of the 3 comps here are the same kind of house/i);
   });
 
   it("flags an ARV that lands outside what the street actually fetched", () => {
-    // A subject far bigger than its comps pushes the adjusted median above
-    // every real price, which is the shape of the bug this replaced.
+    // Cheap comps, so even an in-range size difference adjusts them by more
+    // than a tenth of their price. The backstop fires before anyone offers.
     const comps = [
-      comp({ id: "s-1", externalId: "rc-s1", sqft: 1_000, price: 200_000 }),
-      comp({ id: "s-2", externalId: "rc-s2", sqft: 1_000, price: 210_000 }),
+      comp({ id: "s-1", externalId: "rc-s1", sqft: 1_000, price: 50_000 }),
+      comp({ id: "s-2", externalId: "rc-s2", sqft: 1_000, price: 52_000 }),
     ];
 
-    const result = calculateArv(comps, 3_000);
+    const result = calculateArv(comps, 1_200);
 
-    expect(result.nearbyLow).toBe(200_000);
-    expect(result.nearbyHigh).toBe(210_000);
+    expect(result.nearbyLow).toBe(50_000);
+    expect(result.nearbyHigh).toBe(52_000);
     expect(result.sanityWarning).toMatch(/above the most expensive home/);
   });
 });

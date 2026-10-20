@@ -58,7 +58,7 @@ export async function PATCH(
     const comps = await listComps(id, resolved.ctx);
     return NextResponse.json({
       comps,
-      arv: calculateArv(comps, resolved.property.sqft ?? null),
+      arv: calculateArv(comps, resolved.property.sqft ?? null, { subjectBeds: resolved.property.beds ?? null }),
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to update the comp";
@@ -80,7 +80,7 @@ export async function DELETE(
     const comps = await listComps(id, resolved.ctx);
     return NextResponse.json({
       comps,
-      arv: calculateArv(comps, resolved.property.sqft ?? null),
+      arv: calculateArv(comps, resolved.property.sqft ?? null, { subjectBeds: resolved.property.beds ?? null }),
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to remove the comp";

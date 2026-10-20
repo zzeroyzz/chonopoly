@@ -281,7 +281,7 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
 /** What the tab should show when nothing new could be fetched. */
 async function currentState(propertyId: string, ctx: RequestContext, row: PropertyRow) {
   const comps = await listComps(propertyId, ctx);
-  return { comps, arv: calculateArv(comps, row.sqft ?? null) };
+  return { comps, arv: calculateArv(comps, row.sqft ?? null, { subjectBeds: row.beds ?? null }) };
 }
 
 interface ApplyMeta {

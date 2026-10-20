@@ -57,7 +57,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     const comps = await listComps(id, ctx);
     return NextResponse.json({
       comps,
-      arv: calculateArv(comps, property.sqft ?? null),
+      arv: calculateArv(comps, property.sqft ?? null, { subjectBeds: property.beds ?? null }),
+      subjectBeds: property.beds ?? null,
       subjectSqft: property.sqft ?? null,
     });
   } catch (e) {
@@ -123,7 +124,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const comps = await listComps(id, ctx);
 
     return NextResponse.json(
-      { comp, comps, arv: calculateArv(comps, property.sqft ?? null) },
+      { comp, comps, arv: calculateArv(comps, property.sqft ?? null, { subjectBeds: property.beds ?? null }) },
       { status: 201 }
     );
   } catch (e) {
