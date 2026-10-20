@@ -52,7 +52,10 @@ import {
 import { mapComparables } from "../lib/comps/fromRentCast";
 import { normalizeAddress } from "../lib/property/address";
 import { type Comp } from "../lib/comps/types";
-import { type RentCastValueResponse } from "../lib/rentcast/types";
+import {
+  type RentCastValueResponse,
+  VALUE_ESTIMATE_ENDPOINT,
+} from "../lib/rentcast/types";
 
 interface PropertyRow {
   id: string;
@@ -271,6 +274,10 @@ async function run() {
     .from("rentcast_requests")
     .select("id, normalized_address, requested_address, requested_at, billable, response_body")
     .eq("state", "succeeded")
+    // Listings only. Without this the newest row for an address can be a
+    // /properties body, which has no `comparables` at all and replays as
+    // "0 comps" — the same endpoint-blind bug the 30-day cache had.
+    .eq("endpoint", VALUE_ESTIMATE_ENDPOINT)
     .not("response_body", "is", null)
     .order("requested_at", { ascending: false });
 

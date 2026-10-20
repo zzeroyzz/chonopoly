@@ -25,6 +25,11 @@ import fixture from "./fixtures/valueEstimate.json";
 
 const BASE = "https://api.rentcast.io/v1";
 
+// Re-exported so server code can keep importing endpoints from the client.
+// They live in types.ts because they are wire facts, and because this file is
+// server-only — a read-only script cannot import from here.
+export { VALUE_ESTIMATE_ENDPOINT, PROPERTY_RECORDS_ENDPOINT } from "./types";
+
 /** Free Developer plan. Foundation is 1,000, Growth 5,000, Scale 25,000. */
 export const FREE_PLAN_MONTHLY_REQUESTS = 50;
 

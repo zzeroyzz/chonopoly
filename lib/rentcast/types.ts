@@ -12,6 +12,19 @@
  * genuinely returns. Narrowing happens in the mapper, not here.
  */
 
+/**
+ * The endpoints we call, named once.
+ *
+ * These are part of the 30-day cache key and the in-flight lock key, so a
+ * stray string literal in one caller quietly creates a second bucket for the
+ * same endpoint. Import these; never retype them.
+ *
+ * Here rather than in client.ts because client.ts is `server-only`, and the
+ * read-only diagnosis script needs them too.
+ */
+export const VALUE_ESTIMATE_ENDPOINT = "/avm/value";
+export const PROPERTY_RECORDS_ENDPOINT = "/properties";
+
 export interface RentCastSubjectProperty {
   id?: string;
   formattedAddress?: string;

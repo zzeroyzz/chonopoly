@@ -18,6 +18,7 @@ import {
   rentCastMode,
   hasApiKey,
   CACHE_WINDOW_DAYS,
+  VALUE_ESTIMATE_ENDPOINT,
   MockModeWriteError,
   type RentCastFailure,
 } from "@/lib/rentcast/client";
@@ -53,7 +54,14 @@ import { type RequestContext } from "@/lib/context";
  * Every response from this route is JSON, including a failure.
  */
 
-const ENDPOINT = "/avm/value";
+/**
+ * Which endpoint this route's cache, lock and stored responses belong to.
+ *
+ * Passed explicitly into every quota call rather than assumed, so a second
+ * endpoint cannot inherit this one's 30-day window. Imported rather than
+ * retyped — the string is part of the cache key.
+ */
+const ENDPOINT = VALUE_ESTIMATE_ENDPOINT;
 
 /** What the user can actually do about each failure. */
 const DEGRADED_MESSAGES: Record<RentCastFailure, string> = {
@@ -174,7 +182,7 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
 
   // ── Rebuild: never calls, by definition ────────────────────────────────────
   if (rebuildOnly) {
-    const stored = await findLatestResponse(normalized, ctx);
+    const stored = await findLatestResponse(normalized, ENDPOINT, ctx);
     if (!stored) {
       return NextResponse.json({
         ...(await currentState(id, ctx, row)),
@@ -203,7 +211,7 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
   }
 
   // ── Gate 2: the 30-day cache ───────────────────────────────────────────────
-  const cached = await findCachedResponse(normalized, ctx);
+  const cached = await findCachedResponse(normalized, ENDPOINT, ctx);
 
   if (cached && !force) {
     return NextResponse.json(
@@ -258,9 +266,9 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
   }
 
   // ── Gate 3: the in-flight lock ─────────────────────────────────────────────
-  await clearStaleClaims(normalized, ctx);
+  await clearStaleClaims(normalized, ENDPOINT, ctx);
 
-  const claim = await claimRequest(normalized, requestedAddress, id, ctx);
+  const claim = await claimRequest(normalized, ENDPOINT, requestedAddress, id, ctx);
   if (!claim.claimed) {
     // Someone else is already calling for this address. Returning what we hold
     // beats spending a second request on the same answer.
@@ -422,8 +430,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
 
     const [usage, cached, stored, canForce] = await Promise.all([
       getUsage(ctx),
-      findCachedResponse(normalized, ctx),
-      findLatestResponse(normalized, ctx),
+      findCachedResponse(normalized, ENDPOINT, ctx),
+      findLatestResponse(normalized, ENDPOINT, ctx),
       canForceRentCastRefresh(ctx, user.id),
     ]);
 
