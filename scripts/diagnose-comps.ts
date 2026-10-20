@@ -42,7 +42,13 @@ try {
 }
 
 import { createClient } from "@supabase/supabase-js";
-import { calculateArv, compEligibility, COMP_ELIGIBILITY } from "../lib/comps/arv";
+import {
+  calculateArv,
+  compEligibility,
+  subjectOptions,
+  COMP_ELIGIBILITY,
+  type SubjectFit,
+} from "../lib/comps/arv";
 import { mapComparables } from "../lib/comps/fromRentCast";
 import { normalizeAddress } from "../lib/property/address";
 import { type Comp } from "../lib/comps/types";
@@ -155,11 +161,12 @@ function describeSkip(
   comp: Comp,
   subjectSqft: number | null,
   subjectBeds: number | null,
+  subjectFit: SubjectFit,
   soldOnly: boolean
 ): string {
   if (!comp.included) return "unticked on the Comps tab";
 
-  const fit = compEligibility(comp, subjectSqft, subjectBeds);
+  const fit = compEligibility(comp, subjectSqft, subjectBeds, subjectFit);
   if (!fit.eligible) return fit.reasons.join(", ");
 
   if (comp.price === null || comp.price <= 0) return "no price";
@@ -179,8 +186,13 @@ function diagnose(property: PropertyRow, request: RequestRow, trustedValue: numb
 
   const subjectSqft = property.sqft;
   const subjectBeds = property.beds;
+  const subjectFit: SubjectFit = {
+    baths: property.baths,
+    propertyType: property.property_type,
+    yearBuilt: property.year_built,
+  };
 
-  const arv = calculateArv(comps, subjectSqft, { subjectBeds });
+  const arv = calculateArv(comps, subjectSqft, subjectOptions(property));
   const usedIds = new Set(arv.usedComps.map((c) => c.compId));
 
   console.log("");
@@ -201,7 +213,7 @@ function diagnose(property: PropertyRow, request: RequestRow, trustedValue: numb
 
   for (const comp of comps) {
     const used = usedIds.has(comp.id);
-    const why = used ? "" : describeSkip(comp, subjectSqft, subjectBeds, arv.soldOnly);
+    const why = used ? "" : describeSkip(comp, subjectSqft, subjectBeds, subjectFit, arv.soldOnly);
     console.log(
       "  " +
         pad(used ? "YES " : "no  ", 6) +

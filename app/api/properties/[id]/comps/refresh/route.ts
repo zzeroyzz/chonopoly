@@ -8,7 +8,7 @@ import {
   saveRentCastComps,
   applySubjectFacts,
 } from "@/lib/comps/compService";
-import { calculateArv } from "@/lib/comps/arv";
+import { calculateArv, subjectOptions } from "@/lib/comps/arv";
 import { mapComparables, mapSubjectFacts } from "@/lib/comps/fromRentCast";
 import {
   fetchValueEstimate,
@@ -75,6 +75,8 @@ interface PropertyRow {
   sqft: number | null;
   beds: number | null;
   baths: number | null;
+  property_type: string | null;
+  year_built: number | null;
 }
 
 function addressFor(property: PropertyRow): string {
@@ -238,6 +240,9 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
       ...(row.sqft ? { squareFootage: row.sqft } : {}),
       ...(row.beds ? { bedrooms: row.beds } : {}),
       ...(row.baths ? { bathrooms: row.baths } : {}),
+      // Never sent before, and never checked either, so a townhouse could be a
+      // comp for a detached house.
+      ...(row.property_type ? { propertyType: row.property_type } : {}),
     });
   } catch (e) {
     // The claim must not outlive the attempt, or this address stays locked.
@@ -283,7 +288,7 @@ async function currentState(propertyId: string, ctx: RequestContext, row: Proper
   const comps = await listComps(propertyId, ctx);
   return {
     comps,
-    arv: calculateArv(comps, row.sqft ?? null, { subjectBeds: row.beds ?? null }),
+    arv: calculateArv(comps, row.sqft ?? null, subjectOptions(row)),
     subjectBeds: row.beds ?? null,
   };
 }
@@ -317,9 +322,9 @@ async function applyResponse(
 
   // Re-read: the subject's sqft may have just been filled in, and the ARV
   // depends on it.
-  const refreshed = await getProperty(propertyId, ctx);
-  const subjectSqft = (refreshed as unknown as PropertyRow | null)?.sqft ?? null;
-  const subjectBeds = (refreshed as unknown as PropertyRow | null)?.beds ?? null;
+  const refreshed = (await getProperty(propertyId, ctx)) as unknown as PropertyRow | null;
+  const subjectSqft = refreshed?.sqft ?? null;
+  const subjectBeds = refreshed?.beds ?? null;
 
   return {
     degraded: mapped.length === 0 ? "no_comps" : null,
@@ -331,7 +336,9 @@ async function applyResponse(
     // Was calculateArv(comps, subjectSqft) with no subjectBeds, so the bedroom
     // filter was skipped right after a refresh and applied again on reload —
     // the same house showing two different ARVs depending on how you got there.
-    arv: calculateArv(comps, subjectSqft, { subjectBeds }),
+    arv: refreshed
+      ? calculateArv(comps, subjectSqft, subjectOptions(refreshed))
+      : calculateArv(comps, subjectSqft),
     // The panel reads this to show each comp's fit reason. Omitting it blanked
     // the bedroom reason after every refresh.
     subjectBeds,

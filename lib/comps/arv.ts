@@ -36,6 +36,8 @@ export const COMP_ELIGIBILITY = {
   sqftTolerancePct: 20,
   maxDistanceMiles: 1,
   bedsTolerance: 1,
+  bathsTolerance: 1,
+  yearBuiltTolerance: 20,
 } as const;
 
 /** At least this many sold comps and the listings stop being used at all. */
@@ -144,6 +146,43 @@ function buildBasisLabel(sold: number, removed: number, active: number): string 
 }
 
 /**
+ * The subject's remaining facts, for the checks added after beds and size.
+ *
+ * A fourth parameter rather than a reshaped signature: `compEligibility` has
+ * three call sites and all of them keep working unchanged, which is the point.
+ * Every field is optional because a house often knows its size before it knows
+ * what it is, and a missing fact must skip its check rather than fail it.
+ */
+export interface SubjectFit {
+  baths?: number | null;
+  propertyType?: string | null;
+  yearBuilt?: number | null;
+}
+
+/**
+ * "Single Family", "single_family" and "SINGLE-FAMILY" are one type.
+ *
+ * RentCast writes comp types in title case with spaces while our own column
+ * holds snake_case, so a literal comparison would mark every comp a mismatch.
+ */
+function normalizeType(value: string): string {
+  return value.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+/** "single_family" -> "single-family home", for a reason someone can read. */
+function typeLabel(value: string): string {
+  const spaced = value.trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+  if (normalizeType(spaced) === "singlefamily") return "single-family home";
+  if (normalizeType(spaced) === "multifamily") return "multi-family building";
+  return spaced;
+}
+
+/** 2 -> "2", 2.5 -> "2.5". A bathroom count is genuinely fractional. */
+function countLabel(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(1)));
+}
+
+/**
  * Whether a comp is close enough to compare, and why not when it isn't.
  *
  * Exported so the comps list can show the reason beside each one rather than
@@ -152,7 +191,8 @@ function buildBasisLabel(sold: number, removed: number, active: number): string 
 export function compEligibility(
   comp: Comp,
   subjectSqft: number | null,
-  subjectBeds: number | null
+  subjectBeds: number | null,
+  subject: SubjectFit = {}
 ): CompEligibility {
   const reasons: string[] = [];
 
@@ -174,6 +214,38 @@ export function compEligibility(
     }
   }
 
+  // A townhouse is not a comp for a detached house however close it is, and
+  // RentCast was never asked to exclude them.
+  const subjectType = subject.propertyType;
+  if (subjectType && comp.propertyType) {
+    if (normalizeType(comp.propertyType) !== normalizeType(subjectType)) {
+      reasons.push(`a ${typeLabel(comp.propertyType)}, not a ${typeLabel(subjectType)}`);
+    }
+  }
+
+  const subjectBaths = subject.baths;
+  if (subjectBaths !== null && subjectBaths !== undefined && comp.baths !== null) {
+    const diff = comp.baths - subjectBaths;
+    if (Math.abs(diff) > COMP_ELIGIBILITY.bathsTolerance) {
+      const n = Math.abs(diff);
+      reasons.push(
+        `${countLabel(n)} ${diff > 0 ? "more" : "fewer"} bathroom${n === 1 ? "" : "s"}`
+      );
+    }
+  }
+
+  // Age stands in for everything we cannot see: wiring, windows, layout, the
+  // roof. A 2026 build next door to a 1965 house is a different product.
+  const subjectYear = subject.yearBuilt;
+  if (subjectYear !== null && subjectYear !== undefined && comp.yearBuilt !== null) {
+    const diff = comp.yearBuilt - subjectYear;
+    if (Math.abs(diff) > COMP_ELIGIBILITY.yearBuiltTolerance) {
+      reasons.push(
+        `built ${comp.yearBuilt}, ${Math.abs(diff)} years ${diff > 0 ? "newer" : "older"}`
+      );
+    }
+  }
+
   return { compId: comp.id, eligible: reasons.length === 0, reasons };
 }
 
@@ -182,8 +254,15 @@ function summariseReasons(excluded: CompEligibility[]): string {
   const counts = new Map<string, number>();
   for (const e of excluded) {
     for (const reason of e.reasons) {
-      // "1.4 mi away" and "2.1 mi away" are the same complaint.
-      const key = /mi away$/.test(reason) ? "too far away" : reason;
+      // "1.4 mi away" and "2.1 mi away" are the same complaint. So are
+      // "built 2004, 39 years newer" and "built 2026, 61 years newer", and
+      // every variant of the wrong kind of house.
+      let key = reason;
+      if (/mi away$/.test(reason)) key = "too far away";
+      else if (/^built /.test(reason)) key = "a different age";
+      else if (/^a .+, not a /.test(reason)) key = "a different kind of house";
+      else if (/bathrooms?$/.test(reason)) key = "a different number of bathrooms";
+      else if (/bedrooms?$/.test(reason)) key = "a different number of bedrooms";
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
   }
@@ -224,6 +303,35 @@ export interface ArvOptions {
   adjustmentPerSqft?: number;
   /** The subject's bed count, for the eligibility reasons. */
   subjectBeds?: number | null;
+  /** The subject's bath count, property type and age. Each check is skipped
+   *  when the fact is missing, so an unknown subject loses no comps. */
+  subjectBaths?: number | null;
+  subjectPropertyType?: string | null;
+  subjectYearBuilt?: number | null;
+}
+
+/** The subject columns the ARV reads, exactly as they sit on the row. */
+export interface SubjectFactsRow {
+  beds: number | null;
+  baths: number | null;
+  property_type: string | null;
+  year_built: number | null;
+}
+
+/**
+ * The subject facts every ARV caller needs, assembled once.
+ *
+ * Four call sites each built this argument by hand and one of them left out
+ * `subjectBeds`, which is how the same house came to show two different ARVs.
+ * Adding a sixth fact should not be an invitation to make that mistake again.
+ */
+export function subjectOptions(row: SubjectFactsRow): ArvOptions {
+  return {
+    subjectBeds: row.beds,
+    subjectBaths: row.baths,
+    subjectPropertyType: row.property_type,
+    subjectYearBuilt: row.year_built,
+  };
 }
 
 export function calculateArv(
@@ -255,7 +363,11 @@ export function calculateArv(
   // them said the deal worked. A comp that is not the same kind of house is
   // not evidence, however many of them there are.
   const eligibility = included.map((c) =>
-    compEligibility(c, subjectSqft, options.subjectBeds ?? null)
+    compEligibility(c, subjectSqft, options.subjectBeds ?? null, {
+      baths: options.subjectBaths ?? null,
+      propertyType: options.subjectPropertyType ?? null,
+      yearBuilt: options.subjectYearBuilt ?? null,
+    })
   );
   const excludedForFit = eligibility.filter((e) => !e.eligible);
   const eligibleIds = new Set(

@@ -253,6 +253,106 @@ describe("calculateArv", () => {
     expect(result.warnings.join(" ")).toMatch(/none of the 3 comps here are the same kind of house/i);
   });
 
+  it("will not count a townhouse as a comp for a detached house", () => {
+    const comps = [
+      comp({ id: "t-1", externalId: "rc-t1", propertyType: "Townhouse" }),
+      comp({ id: "t-2", externalId: "rc-t2", propertyType: "Condo" }),
+      comp({ id: "t-3", externalId: "rc-t3", propertyType: "Single Family" }),
+    ];
+
+    const result = calculateArv(comps, 1_500, { subjectPropertyType: "single_family" });
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["t-3"]);
+    expect(result.excludedForFit.map((e) => e.reasons[0])).toEqual([
+      "a townhouse, not a single-family home",
+      "a condo, not a single-family home",
+    ]);
+  });
+
+  it("treats Single Family and single_family as the same type", () => {
+    // Our column is snake_case and RentCast's is title case. A literal
+    // comparison would reject every comp as the wrong kind of house.
+    const result = calculateArv([comp({ propertyType: "Single Family" })], 1_500, {
+      subjectPropertyType: "single_family",
+    });
+
+    expect(result.excludedForFit).toHaveLength(0);
+    expect(result.usedComps).toHaveLength(1);
+  });
+
+  it("allows a bathroom either way and rejects the second one", () => {
+    const comps = [
+      comp({ id: "b-1", externalId: "rc-b1", baths: 3 }),
+      comp({ id: "b-2", externalId: "rc-b2", baths: 4 }),
+      comp({ id: "b-3", externalId: "rc-b3", baths: 1 }),
+    ];
+
+    const result = calculateArv(comps, 1_500, { subjectBaths: 2 });
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["b-1", "b-3"]);
+    expect(result.excludedForFit[0].reasons).toEqual(["2 more bathrooms"]);
+  });
+
+  it("says a half bathroom as a half, not as a rounded whole", () => {
+    const result = calculateArv([comp({ baths: 4.5 })], 1_500, { subjectBaths: 2 });
+
+    expect(result.excludedForFit[0].reasons).toEqual(["2.5 more bathrooms"]);
+  });
+
+  it("rejects a new build as a comp for an old house", () => {
+    // 674 White Bird Way: a 1965 house against a 2004-2026 subdivision. Size
+    // caught these too, but age catches them on its own.
+    const comps = [
+      comp({ id: "y-1", externalId: "rc-y1", yearBuilt: 2026 }),
+      comp({ id: "y-2", externalId: "rc-y2", yearBuilt: 1970 }),
+    ];
+
+    const result = calculateArv(comps, 1_500, { subjectYearBuilt: 1965 });
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["y-2"]);
+    expect(result.excludedForFit[0].reasons).toEqual(["built 2026, 61 years newer"]);
+  });
+
+  it("names an older comp as older, not newer", () => {
+    const result = calculateArv([comp({ yearBuilt: 1920 })], 1_500, { subjectYearBuilt: 1990 });
+
+    expect(result.excludedForFit[0].reasons).toEqual(["built 1920, 70 years older"]);
+  });
+
+  it("skips a check the subject has no fact for, rather than failing it", () => {
+    // A house often knows its size before it knows its type or its age, and a
+    // blank column must not throw away every comp.
+    const result = calculateArv([comp({ propertyType: "Townhouse", baths: 9, yearBuilt: 1800 })], 1_500);
+
+    expect(result.excludedForFit).toHaveLength(0);
+    expect(result.value).not.toBeNull();
+  });
+
+  it("skips a check the comp has no fact for", () => {
+    const result = calculateArv(
+      [comp({ propertyType: null, baths: null, yearBuilt: null })],
+      1_500,
+      { subjectPropertyType: "single_family", subjectBaths: 2, subjectYearBuilt: 1965 }
+    );
+
+    expect(result.excludedForFit).toHaveLength(0);
+  });
+
+  it("groups the varied reasons when it summarises why nothing counted", () => {
+    // Each comp carries a different year, so the summary has to group them
+    // rather than report one comp's wording as the common complaint.
+    const comps = [
+      comp({ id: "g-1", externalId: "rc-g1", yearBuilt: 2020 }),
+      comp({ id: "g-2", externalId: "rc-g2", yearBuilt: 2024 }),
+      comp({ id: "g-3", externalId: "rc-g3", yearBuilt: 2026 }),
+    ];
+
+    const result = calculateArv(comps, 1_500, { subjectYearBuilt: 1950 });
+
+    expect(result.value).toBeNull();
+    expect(result.warnings.join(" ")).toMatch(/most are a different age/);
+  });
+
   it("flags an ARV that lands outside what the street actually fetched", () => {
     // Cheap comps, so even an in-range size difference adjusts them by more
     // than a tenth of their price. The backstop fires before anyone offers.

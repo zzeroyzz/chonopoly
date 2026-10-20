@@ -5,7 +5,7 @@ import { RefreshCw, Plus, Trash2, AlertTriangle, Lock } from "lucide-react";
 import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
 import { type Comp, COMP_STATUS_LABELS } from "@/lib/comps/types";
-import { type ArvResult, compEligibility } from "@/lib/comps/arv";
+import { type ArvResult, type SubjectFit, compEligibility } from "@/lib/comps/arv";
 import { CompLinks } from "./CompLinks";
 
 /** "$380k" — the way a price range gets said out loud. */
@@ -29,8 +29,12 @@ interface CompsResponse {
   degraded?: string | null;
   message?: string | null;
   source?: "live" | "cached" | "rebuilt" | "mock" | null;
-  /** The subject's bed count, for the per-comp fit reason. */
+  /** The subject's own facts, for the per-comp fit reason. Each one the panel
+   *  does not have is a check it cannot explain on screen. */
   subjectBeds?: number | null;
+  subjectBaths?: number | null;
+  subjectPropertyType?: string | null;
+  subjectYearBuilt?: number | null;
   fetchedAt?: string | null;
   nextRefreshAt?: string | null;
   usage?: RefreshUsage | null;
@@ -166,6 +170,7 @@ export function CompsPanel({
   const [status, setStatus] = useState<RefreshStatus | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [subjectBeds, setSubjectBeds] = useState<number | null>(null);
+  const [subjectFit, setSubjectFit] = useState<SubjectFit>({});
   const [confirmingForce, setConfirmingForce] = useState(false);
 
   const apply = useCallback((data: CompsResponse) => {
@@ -174,6 +179,11 @@ export function CompsPanel({
     setDegraded(data.message ?? null);
     setSource(data.source ?? null);
     setSubjectBeds(data.subjectBeds ?? null);
+    setSubjectFit({
+      baths: data.subjectBaths ?? null,
+      propertyType: data.subjectPropertyType ?? null,
+      yearBuilt: data.subjectYearBuilt ?? null,
+    });
 
     // Fold the refresh metadata back into the status so the lock message
     // updates without a second round trip.
@@ -598,6 +608,7 @@ export function CompsPanel({
               onRemove={remove}
               subjectSqft={arv?.subjectSqft ?? null}
               subjectBeds={subjectBeds}
+              subjectFit={subjectFit}
             />
           ))}
         </ul>
@@ -617,17 +628,19 @@ function CompRow({
   onRemove,
   subjectSqft,
   subjectBeds,
+  subjectFit,
 }: {
   comp: Comp;
   onToggle: (comp: Comp) => void;
   onRemove: (comp: Comp) => void;
   subjectSqft: number | null;
   subjectBeds: number | null;
+  subjectFit: SubjectFit;
 }) {
   const ppsf = perSqft(comp);
   const date = compDate(comp);
   const fitReasons = comp.included
-    ? compEligibility(comp, subjectSqft, subjectBeds).reasons
+    ? compEligibility(comp, subjectSqft, subjectBeds, subjectFit).reasons
     : [];
 
   return (
