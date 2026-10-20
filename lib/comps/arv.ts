@@ -584,12 +584,12 @@ export function calculateArv(
     );
   }
 
-  // The one sentence most people will read, so it has to say what kind of
-  // evidence this is. "15 similar homes point to about $290,560" sounds like
-  // fifteen sales when not one of them closed.
+  // A sold set says so. A set of listings says nothing extra here — the
+  // warning below already states what they are, and saying it twice in two
+  // different ways reads as two different claims.
   const plainSummary =
     `${basis.length} similar home${basis.length === 1 ? "" : "s"}` +
-    `${soldOnly ? " that sold" : ", by what they asked"}` +
+    `${soldOnly ? " that sold" : ""}` +
     `, adjusted for size, point to about ${money(value)}.`;
 
   return {

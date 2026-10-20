@@ -191,12 +191,14 @@ describe("calculateArv", () => {
     expect(result.warnings.join(" ")).not.toMatch(/asking/);
   });
 
-  it("says what kind of evidence the headline sentence rests on", () => {
+  it("says a sold set sold, and claims nothing extra for listings", () => {
     const listings = calculateArv(compsAtPricePerSqft([180, 190, 200], "removed"), 1_000);
     const sales = calculateArv(compsAtPricePerSqft([180, 190, 200], "sold"), 1_000);
 
-    expect(listings.plainSummary).toMatch(/by what they asked/);
     expect(sales.plainSummary).toMatch(/that sold/);
+    // The listing warning carries that point; the headline must not also make
+    // a second, differently worded claim about the same thing.
+    expect(listings.plainSummary).not.toMatch(/sold|asked/);
   });
 
   it("returns null rather than zero when no comps are included", () => {

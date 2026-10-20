@@ -98,15 +98,12 @@ function perSqft(comp: Comp): string | null {
 /**
  * What this comp's price actually is.
  *
- * Only a sold comp's price is a sale. The other two are what someone hoped
- * for, and "$345,000" beside the word "Removed" reads as a sale to anyone who
- * has not been told otherwise — which is the single easiest way to believe an
- * ARV that is too high.
+ * Only a sale gets a qualifier, because only a sale's price is a fact about
+ * what someone paid. Active and Removed carry their own label beside the
+ * price and say enough on their own.
  */
-const PRICE_MEANING: Record<CompStatus, string> = {
+const PRICE_MEANING: Partial<Record<CompStatus, string>> = {
   sold: "sold for",
-  removed: "was asking",
-  active: "asking",
 };
 
 function monthYear(iso: string): string {
@@ -746,7 +743,7 @@ function CompRow({
           </p>
 
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
-            {comp.price !== null && (
+            {comp.price !== null && PRICE_MEANING[comp.status] && (
               <span
                 data-testid={`comp-price-meaning-${comp.id}`}
                 className="text-[11px] text-(--color-text-secondary)"
