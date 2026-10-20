@@ -1,7 +1,8 @@
 # Plan: make comps and the ARV accurate
 
-Status: proposed, waiting for owner approval. Nothing has been changed.
-RentCast requests spent writing this plan: 0.
+Status: Phase 0 and Phase 1 user approved and implemented on
+`fix/comps-accuracy`. Phase 2 NOT approved and not started.
+RentCast requests spent on this plan so far: 0.
 
 ## The problem
 The ARV doesn't line up with what similar houses nearby actually sold for.
@@ -105,6 +106,46 @@ Before building Phase 2, **one** deliberate live `/properties` call on a
 benchmark house, run only with owner approval, confirms the exact
 sale-price field names and that Gwinnett/Fulton sales come back with
 prices. Cost: 1 request.
+
+### Phase 1 item 6 (added at approval): drop duplicate listings
+RentCast returns the same listing several times under different unit
+numbers and different cities. Comps count as the same house when the
+street address matches after normalizing — unit, city and spelling
+folded away — **and** the sqft matches. The most recent copy is kept;
+the rest show "same house listed twice" on screen.
+
+## What Phase 0 found, and what Phase 1 changed
+
+Replaying the four stored responses, with no new requests:
+
+| House | ARV before | ARV after | Comps used, before → after |
+|---|---|---|---|
+| 674 White Bird Way | none | none | 0 → 0 of 15 |
+| 3484 Primrose Pl | $304,780 | $304,780 | 2 → 2 of 15 |
+| 1653 Sylvan Rd SW | $290,560 | $321,380 | 15 → 10 of 15 |
+| 1900 Windsor Dr SW | $257,820 | $264,000 | 12 → 8 of 15 |
+
+No benchmark values were supplied, so none of these has been checked
+against a number from outside the app. **The plan's "done when" test —
+within about 5% of the agent's figure — is therefore unverified.**
+
+Two things worth noting about the direction of travel:
+
+- **Sylvan Rd went up $30,820.** The ±20-year rule removed five comps,
+  and four of the five were the cheap ones ($165k, $255k, $260k,
+  $274.9k). The subject is built 1930, so the 1910–1950 window excludes
+  most of the surrounding 1950s stock — 1951 misses by one year. On a
+  pre-1940 house this rule is doing more than it was meant to.
+- **Nothing recovered White Bird.** Every comp in that response is a
+  2,000+ sqft new build. No filter change can conjure a comp that was
+  never returned; it needs a fresh, aimed lookup, which is a request.
+
+## Not done, and why
+- **Storing the specs sent with each request** (Phase 1 item 4, second
+  half). `rentcast_requests` has no column for it and a migration was
+  out of scope for the session. Until it exists, the Comps tab cannot
+  say "these were pulled before we knew the size". The warning that
+  stops a blind lookup before it is spent IS in.
 
 ## Not in scope (reported, not fixed)
 - Per-market $/sqft rate (instead of the flat $40). Worth doing once real

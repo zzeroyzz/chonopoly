@@ -477,6 +477,24 @@ describe("calculateArv", () => {
     expect(result.excludedForFit).toHaveLength(0);
   });
 
+  it("reads as a sentence when every comp was the same house", () => {
+    // "most are same house listed twice" is not English. The summary groups
+    // the varied reasons, so this one needs a grouped form too.
+    const comps = [
+      comp({ id: "q-1", externalId: "rc-q1", formattedAddress: "3 Fir St, Atlanta, GA 30310", sqft: 9_000, daysOld: 10 }),
+      comp({ id: "q-2", externalId: "rc-q2", formattedAddress: "3 Fir St, Unit 2, Atlanta, GA 30310", sqft: 9_000, daysOld: 20 }),
+    ];
+
+    // Subject is far smaller, so the surviving copy is excluded for size and
+    // nothing is left — which is what makes the summary sentence show.
+    const result = calculateArv(comps, 1_200);
+
+    expect(result.value).toBeNull();
+    expect(result.warnings.join(" ")).toMatch(/most are the same house listed more than once/);
+    expect(result.warnings.join(" ")).not.toMatch(/most are same house/);
+    expect(result.excludedForFit.map((e) => e.reasons[0])).toContain("same house listed twice");
+  });
+
   it("never dedupes a comp with no size, because it cannot be sure", () => {
     const comps = [
       comp({ id: "u-1", externalId: "rc-u1", formattedAddress: "11 Ash St, Atlanta, GA 30310", sqft: null }),

@@ -20,8 +20,9 @@ export default async function globalSetup() {
   await page.fill('input[name="email"]', process.env.TEST_EMAIL);
   await page.fill('input[name="password"]', process.env.TEST_PASSWORD);
   await page.click('button[type="submit"]');
-  // Login lands on the pipeline — the hub is gone and the pipeline is home.
-  await page.waitForURL("http://localhost:3000/pipeline");
+  // Login lands on the properties list; it used to land on the pipeline. Match
+  // either, so moving the landing page again does not take every test with it.
+  await page.waitForURL(/\/(pipeline|properties)(\?|$)/);
   await context.storageState({ path: AUTH_FILE });
   await browser.close();
 }

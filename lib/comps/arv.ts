@@ -353,6 +353,7 @@ function summariseReasons(excluded: CompEligibility[]): string {
       // every variant of the wrong kind of house.
       let key = reason;
       if (/mi away$/.test(reason)) key = "too far away";
+      else if (/^same house listed/.test(reason)) key = "the same house listed more than once";
       else if (/^built /.test(reason)) key = "a different age";
       else if (/^a .+, not a /.test(reason)) key = "a different kind of house";
       else if (/bathrooms?$/.test(reason)) key = "a different number of bathrooms";
