@@ -3,37 +3,75 @@ import { type Comp, type CompStatus } from "./types";
 /**
  * After-repair value from comparable sales.
  *
- * Method: median price per square foot across the included comps, times the
- * subject's square footage.
+ * Method: take each comp's actual selling price and adjust it only for the
+ * size difference, at a deliberately low rate per square foot. The ARV is the
+ * median of those adjusted prices.
  *
- * Median rather than mean, deliberately. Comp sets are small — often five to
- * fifteen — and one estate sale or one flipped-to-the-studs renovation drags a
- * mean far enough to change the verdict. The median ignores it.
+ * This replaced median price-per-square-foot, which broke on exactly the case
+ * it was most likely to meet. Price per square foot does not scale: a 2,658
+ * sqft house is not worth $165/sqft because smaller houses nearby sold at
+ * $165/sqft, because the land, the kitchen and the roof do not get bigger with
+ * the floor plan. On a subject larger than its comps the old method produced
+ * $438,000 in a street where nothing had sold above $389,000, and nothing
+ * about the number looked wrong.
  *
- * Price per square foot rather than a straight price average, because the comps
- * are not the same size as the subject. Averaging the prices of three houses
- * that are 20% larger produces an ARV that is 20% too high, and nothing about
- * the number looks wrong.
+ * Adjusting from the price instead keeps the answer anchored to what houses
+ * there actually fetched. The rate is low on purpose — an extra square foot
+ * adds some value, not a whole square foot's worth of house.
  *
- * Sold and removed comps are weighted the same, which is a decision worth
- * stating: sold comps are better evidence, but weighting introduces a hidden
- * multiplier nobody can check against the figures on screen. Instead the result
- * reports its own mix — "3 sold · 2 removed listings" — and flags a set with no
- * confirmed sales in it, so the judgement stays with the person making the
- * offer rather than disappearing into a coefficient.
+ * Median rather than mean: comp sets are small, and one estate sale or one
+ * flipped-to-the-studs renovation drags a mean far enough to change the
+ * verdict.
+ *
+ * Confirmed sales outrank listings. A listing is an asking price, which is an
+ * opinion; a sale is evidence. Where there are at least two sold comps the ARV
+ * is built from those alone and says so.
  */
 
-/** A comp needs both a price and a size to say anything about price per sqft. */
+/** Dollars of value per square foot of size difference. */
+export const DEFAULT_SIZE_ADJUSTMENT_PER_SQFT = 40;
+
+/** How far a comp may differ from the subject before it stops being a comp. */
+export const COMP_ELIGIBILITY = {
+  sqftTolerancePct: 20,
+  maxDistanceMiles: 1,
+  bedsTolerance: 1,
+} as const;
+
+/** At least this many sold comps and the listings stop being used at all. */
+const SOLD_ONLY_THRESHOLD = 2;
+
+/** Below this, a median is one opinion rather than a market. */
+const MIN_COMPS_FOR_MODERATE = 5;
+const MIN_COMPS_FOR_GOOD = 8;
+
+/** How far outside the plain range of nearby prices the ARV may sit. */
+const SANITY_TOLERANCE_PCT = 10;
+
 export interface ArvCompBreakdown {
   compId: string;
   address: string;
   status: CompStatus;
+  /** What it actually fetched. */
   price: number;
   sqft: number;
-  pricePerSqft: number;
+  /** Subject sqft minus comp sqft — positive when the subject is bigger. */
+  sqftDifference: number;
+  /** The size adjustment applied, in dollars. Signed. */
+  adjustment: number;
+  /** price + adjustment. This is what the median is taken of. */
+  adjustedPrice: number;
 }
 
 export type ArvConfidence = "none" | "low" | "moderate" | "good";
+
+/** Why a comp is not a fair comparison, in words that go on screen. */
+export interface CompEligibility {
+  compId: string;
+  eligible: boolean;
+  /** e.g. "much smaller", "1.4 mi away", "2 more bedrooms" */
+  reasons: string[];
+}
 
 export interface ArvResult {
   /** Null when nothing usable was included — never a zero posing as a value. */
@@ -41,33 +79,33 @@ export interface ArvResult {
   valueLow: number | null;
   valueHigh: number | null;
 
-  medianPricePerSqft: number | null;
   subjectSqft: number | null;
+  /** The rate used, so the explanation can name it. */
+  adjustmentPerSqft: number;
 
   /** The comps that actually moved the number, with their arithmetic shown. */
   usedComps: ArvCompBreakdown[];
+  /** True when sold comps alone built the number. */
+  soldOnly: boolean;
 
   soldCount: number;
   removedCount: number;
   activeCount: number;
-
-  /**
-   * Included comps that had to be skipped for want of a price or a size.
-   * Surfaced rather than silently dropped: "built on 5 comps" when you ticked
-   * nine is a question the screen should answer before it is asked.
-   */
   skippedForMissingData: number;
 
+  /** The plain range of what nearby homes actually fetched, unadjusted. */
+  nearbyLow: number | null;
+  nearbyHigh: number | null;
+  /** Set when the ARV sits outside that range by more than the tolerance. */
+  sanityWarning: string | null;
+
   confidence: ArvConfidence;
-  /** Plain-language caveats to show under the number. */
   warnings: string[];
   /** e.g. "3 sold · 2 removed listings" */
   basisLabel: string;
+  /** "5 similar homes, adjusted for size, point to about $345,000." */
+  plainSummary: string | null;
 }
-
-/** Below this, a median is one opinion rather than a market. */
-const MIN_COMPS_FOR_MODERATE = 5;
-const MIN_COMPS_FOR_GOOD = 8;
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -86,6 +124,15 @@ function quartiles(values: number[]): { low: number; high: number } {
   return { low: median(lowerHalf), high: median(upperHalf) };
 }
 
+function money(n: number): string {
+  return `$${Math.round(n).toLocaleString("en-US")}`;
+}
+
+/** Rounded to the nearest thousand, for the ranges people say out loud. */
+function roughMoney(n: number): string {
+  return `$${Math.round(n / 1000)}k`;
+}
+
 function buildBasisLabel(sold: number, removed: number, active: number): string {
   const parts: string[] = [];
   if (sold > 0) parts.push(`${sold} sold`);
@@ -94,36 +141,94 @@ function buildBasisLabel(sold: number, removed: number, active: number): string 
   return parts.length > 0 ? parts.join(" · ") : "no comps";
 }
 
-function emptyResult(subjectSqft: number | null, warnings: string[]): ArvResult {
+/**
+ * Whether a comp is close enough to compare, and why not when it isn't.
+ *
+ * Exported so the comps list can show the reason beside each one rather than
+ * leaving an unchecked box with no explanation.
+ */
+export function compEligibility(
+  comp: Comp,
+  subjectSqft: number | null,
+  subjectBeds: number | null
+): CompEligibility {
+  const reasons: string[] = [];
+
+  if (subjectSqft !== null && subjectSqft > 0 && comp.sqft !== null && comp.sqft > 0) {
+    const diffPct = ((comp.sqft - subjectSqft) / subjectSqft) * 100;
+    if (diffPct < -COMP_ELIGIBILITY.sqftTolerancePct) reasons.push("much smaller");
+    else if (diffPct > COMP_ELIGIBILITY.sqftTolerancePct) reasons.push("much bigger");
+  }
+
+  if (comp.distanceMiles !== null && comp.distanceMiles > COMP_ELIGIBILITY.maxDistanceMiles) {
+    reasons.push(`${comp.distanceMiles.toFixed(1)} mi away`);
+  }
+
+  if (subjectBeds !== null && comp.beds !== null) {
+    const diff = comp.beds - subjectBeds;
+    if (Math.abs(diff) > COMP_ELIGIBILITY.bedsTolerance) {
+      const n = Math.abs(diff);
+      reasons.push(`${n} ${diff > 0 ? "more" : "fewer"} bedroom${n === 1 ? "" : "s"}`);
+    }
+  }
+
+  return { compId: comp.id, eligible: reasons.length === 0, reasons };
+}
+
+function emptyResult(
+  subjectSqft: number | null,
+  adjustmentPerSqft: number,
+  warnings: string[]
+): ArvResult {
   return {
     value: null,
     valueLow: null,
     valueHigh: null,
-    medianPricePerSqft: null,
     subjectSqft,
+    adjustmentPerSqft,
     usedComps: [],
+    soldOnly: false,
     soldCount: 0,
     removedCount: 0,
     activeCount: 0,
     skippedForMissingData: 0,
+    nearbyLow: null,
+    nearbyHigh: null,
+    sanityWarning: null,
     confidence: "none",
     warnings,
     basisLabel: "no comps",
+    plainSummary: null,
   };
 }
 
-export function calculateArv(comps: Comp[], subjectSqft: number | null): ArvResult {
+export interface ArvOptions {
+  /** Dollars per square foot of difference. Defaults to the shared constant. */
+  adjustmentPerSqft?: number;
+  /** The subject's bed count, for the eligibility reasons. */
+  subjectBeds?: number | null;
+}
+
+export function calculateArv(
+  comps: Comp[],
+  subjectSqft: number | null,
+  options: ArvOptions = {}
+): ArvResult {
+  const rate = Math.max(0, options.adjustmentPerSqft ?? DEFAULT_SIZE_ADJUSTMENT_PER_SQFT);
+
   // Unchecked comps are not part of the answer. This is the whole point of the
   // include checkbox, and it is tested directly.
   const included = comps.filter((comp) => comp.included);
 
   if (included.length === 0) {
-    return emptyResult(subjectSqft, ["No comps are included yet."]);
+    return emptyResult(subjectSqft, rate, ["No comps are included yet."]);
   }
 
+  // Size is still needed, but only to measure the difference — not as a
+  // multiplier. A missing size now costs an adjustment, not the whole ARV.
   if (subjectSqft === null || subjectSqft <= 0) {
-    return emptyResult(subjectSqft, [
-      "This property has no square footage, so price per square foot cannot be applied. Add the size to get an ARV.",
+    return emptyResult(subjectSqft, rate, [
+      "Add this house's square footage to get an ARV.",
     ]);
   }
 
@@ -135,24 +240,22 @@ export function calculateArv(comps: Comp[], subjectSqft: number | null): ArvResu
       skipped++;
       continue;
     }
+    const sqftDifference = subjectSqft - comp.sqft;
+    const adjustment = sqftDifference * rate;
     usable.push({
       compId: comp.id,
       address: comp.formattedAddress,
       status: comp.status,
       price: comp.price,
       sqft: comp.sqft,
-      pricePerSqft: comp.price / comp.sqft,
+      sqftDifference,
+      adjustment,
+      adjustedPrice: comp.price + adjustment,
     });
   }
 
-  // Counts describe the comps the number is actually built on, not everything
-  // that happened to be ticked — the label has to match the arithmetic.
-  const soldCount = usable.filter((c) => c.status === "sold").length;
-  const removedCount = usable.filter((c) => c.status === "removed").length;
-  const activeCount = usable.filter((c) => c.status === "active").length;
-
   if (usable.length === 0) {
-    const result = emptyResult(subjectSqft, [
+    const result = emptyResult(subjectSqft, rate, [
       skipped > 0
         ? `All ${skipped} included comp${skipped === 1 ? "" : "s"} are missing a price or a size.`
         : "No usable comps.",
@@ -161,14 +264,42 @@ export function calculateArv(comps: Comp[], subjectSqft: number | null): ArvResu
     return result;
   }
 
-  const perSqft = usable.map((c) => c.pricePerSqft);
-  const medianPerSqft = median(perSqft);
-  const { low, high } = quartiles(perSqft);
+  // Confirmed sales outrank listings outright once there are enough of them.
+  const sold = usable.filter((c) => c.status === "sold");
+  const soldOnly = sold.length >= SOLD_ONLY_THRESHOLD;
+  const basis = soldOnly ? sold : usable;
+
+  const soldCount = basis.filter((c) => c.status === "sold").length;
+  const removedCount = basis.filter((c) => c.status === "removed").length;
+  const activeCount = basis.filter((c) => c.status === "active").length;
+
+  const adjusted = basis.map((c) => c.adjustedPrice);
+  const value = median(adjusted);
+  const { low, high } = quartiles(adjusted);
+
+  // The sanity check reads the unadjusted prices, because that is the number
+  // someone can verify by looking at the street.
+  const rawPrices = basis.map((c) => c.price);
+  const nearbyLow = Math.min(...rawPrices);
+  const nearbyHigh = Math.max(...rawPrices);
+
+  let sanityWarning: string | null = null;
+  const overBy = value - nearbyHigh * (1 + SANITY_TOLERANCE_PCT / 100);
+  const underBy = nearbyLow * (1 - SANITY_TOLERANCE_PCT / 100) - value;
+  if (overBy > 0) {
+    sanityWarning =
+      `This ARV is ${money(value - nearbyHigh)} above the most expensive home in the set ` +
+      `(${money(nearbyHigh)}). Check the size difference before trusting it.`;
+  } else if (underBy > 0) {
+    sanityWarning =
+      `This ARV is ${money(nearbyLow - value)} below the cheapest home in the set ` +
+      `(${money(nearbyLow)}). Check the size difference before trusting it.`;
+  }
 
   const confidence: ArvConfidence =
-    usable.length >= MIN_COMPS_FOR_GOOD
+    basis.length >= MIN_COMPS_FOR_GOOD
       ? "good"
-      : usable.length >= MIN_COMPS_FOR_MODERATE
+      : basis.length >= MIN_COMPS_FOR_MODERATE
         ? "moderate"
         : "low";
 
@@ -176,13 +307,13 @@ export function calculateArv(comps: Comp[], subjectSqft: number | null): ArvResu
 
   if (soldCount === 0) {
     warnings.push(
-      "No confirmed sales. A removed listing left the market but may not have sold, so treat this as a ceiling rather than a value."
+      "None of these are confirmed sales. RentCast only knows they left the market. Add a sold comp from your agent to firm it up."
     );
   }
 
-  if (usable.length < MIN_COMPS_FOR_MODERATE) {
+  if (basis.length < MIN_COMPS_FOR_MODERATE) {
     warnings.push(
-      `Only ${usable.length} usable comp${usable.length === 1 ? "" : "s"}. A median this thin moves a lot on one more sale.`
+      `Only ${basis.length} comp${basis.length === 1 ? "" : "s"} behind this. A median this thin moves a lot on one more sale.`
     );
   }
 
@@ -192,19 +323,28 @@ export function calculateArv(comps: Comp[], subjectSqft: number | null): ArvResu
     );
   }
 
+  const plainSummary =
+    `${basis.length} similar home${basis.length === 1 ? "" : "s"}` +
+    `${soldOnly ? " that sold" : ""}, adjusted for size, point to about ${money(value)}.`;
+
   return {
-    value: medianPerSqft * subjectSqft,
-    valueLow: low * subjectSqft,
-    valueHigh: high * subjectSqft,
-    medianPricePerSqft: medianPerSqft,
+    value,
+    valueLow: low,
+    valueHigh: high,
     subjectSqft,
-    usedComps: usable,
+    adjustmentPerSqft: rate,
+    usedComps: basis,
+    soldOnly,
     soldCount,
     removedCount,
     activeCount,
     skippedForMissingData: skipped,
+    nearbyLow,
+    nearbyHigh,
+    sanityWarning,
     confidence,
     warnings,
     basisLabel: buildBasisLabel(soldCount, removedCount, activeCount),
+    plainSummary,
   };
 }
