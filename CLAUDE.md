@@ -85,6 +85,8 @@ Every hand-off states, in this order:
    irreversible, and anything deliberately left undone.
 
 ## Branching Rules
+- One feature branch at a time. Start the next branch from main only after the
+  last one is merged. Never branch off an unmerged branch.
 - Committing on a non-main branch is allowed without per-commit approval.
   NEVER commit on main. NEVER push, under any circumstances, without explicit
   user instruction in the user's current message.
