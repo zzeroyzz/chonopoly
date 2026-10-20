@@ -281,7 +281,11 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
 /** What the tab should show when nothing new could be fetched. */
 async function currentState(propertyId: string, ctx: RequestContext, row: PropertyRow) {
   const comps = await listComps(propertyId, ctx);
-  return { comps, arv: calculateArv(comps, row.sqft ?? null, { subjectBeds: row.beds ?? null }) };
+  return {
+    comps,
+    arv: calculateArv(comps, row.sqft ?? null, { subjectBeds: row.beds ?? null }),
+    subjectBeds: row.beds ?? null,
+  };
 }
 
 interface ApplyMeta {
@@ -315,6 +319,7 @@ async function applyResponse(
   // depends on it.
   const refreshed = await getProperty(propertyId, ctx);
   const subjectSqft = (refreshed as unknown as PropertyRow | null)?.sqft ?? null;
+  const subjectBeds = (refreshed as unknown as PropertyRow | null)?.beds ?? null;
 
   return {
     degraded: mapped.length === 0 ? "no_comps" : null,
@@ -323,7 +328,13 @@ async function applyResponse(
         ? "RentCast found no comparable sales near this address. Enter comps by hand."
         : null,
     comps,
-    arv: calculateArv(comps, subjectSqft),
+    // Was calculateArv(comps, subjectSqft) with no subjectBeds, so the bedroom
+    // filter was skipped right after a refresh and applied again on reload —
+    // the same house showing two different ARVs depending on how you got there.
+    arv: calculateArv(comps, subjectSqft, { subjectBeds }),
+    // The panel reads this to show each comp's fit reason. Omitting it blanked
+    // the bedroom reason after every refresh.
+    subjectBeds,
     estimate: {
       price: response.price ?? null,
       priceRangeLow: response.priceRangeLow ?? null,
