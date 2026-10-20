@@ -345,6 +345,17 @@ export function CompsPanel({
 
   const includedCount = comps.filter((c) => c.included).length;
 
+  /**
+   * What the ARV actually decided about each comp it left out.
+   *
+   * The card used to recompute this locally, which cannot see the reasons that
+   * depend on the whole set — a duplicate listing is only a duplicate next to
+   * its twin. Where the server has a verdict, it wins.
+   */
+  const excludedReasons = new Map<string, string[]>(
+    (arv?.excludedForFit ?? []).map((e) => [e.compId, e.reasons])
+  );
+
   return (
     <div data-testid="panel-comps" className="flex flex-col gap-4">
       {/* ── The ARV ─────────────────────────────────────────────────────── */}
@@ -670,6 +681,7 @@ export function CompsPanel({
               subjectSqft={arv?.subjectSqft ?? null}
               subjectBeds={subjectBeds}
               subjectFit={subjectFit}
+              decidedReasons={excludedReasons.get(comp.id)}
             />
           ))}
         </ul>
@@ -690,6 +702,7 @@ function CompRow({
   subjectSqft,
   subjectBeds,
   subjectFit,
+  decidedReasons,
 }: {
   comp: Comp;
   onToggle: (comp: Comp) => void;
@@ -697,12 +710,16 @@ function CompRow({
   subjectSqft: number | null;
   subjectBeds: number | null;
   subjectFit: SubjectFit;
+  /** The ARV's own verdict, where it has one. Outranks the local check. */
+  decidedReasons: string[] | undefined;
 }) {
   const ppsf = perSqft(comp);
   const date = compDate(comp);
-  const fitReasons = comp.included
-    ? compEligibility(comp, subjectSqft, subjectBeds, subjectFit).reasons
-    : [];
+  // Falls back to the local check so an optimistic tick shows a reason
+  // immediately, before the server's recomputed ARV lands.
+  const fitReasons = !comp.included
+    ? []
+    : (decidedReasons ?? compEligibility(comp, subjectSqft, subjectBeds, subjectFit).reasons);
 
   return (
     <li

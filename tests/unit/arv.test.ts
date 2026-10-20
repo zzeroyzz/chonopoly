@@ -2,13 +2,19 @@ import { calculateArv } from "@/lib/comps/arv";
 import { mapCompStatus, mapComparables, mapSubjectFacts } from "@/lib/comps/fromRentCast";
 import { type Comp, type CompStatus } from "@/lib/comps/types";
 
+/**
+ * The address is derived from the id so that every comp is a different house.
+ * Sharing one address made the whole set look like one listing repeated, which
+ * is exactly what the duplicate check is for.
+ */
 function comp(overrides: Partial<Comp> = {}): Comp {
+  const id = overrides.id ?? "c-1";
   return {
-    id: "c-1",
+    id,
     propertyId: "p-1",
     source: "rentcast",
     externalId: "rc-1",
-    formattedAddress: "1 Test St, Duluth, GA 30096",
+    formattedAddress: `${id} Test St, Duluth, GA 30096`,
     city: "Duluth",
     state: "GA",
     zip: "30096",
@@ -388,6 +394,96 @@ describe("calculateArv", () => {
 
     expect(result.value).toBeNull();
     expect(result.warnings.join(" ")).toMatch(/most are a different age/);
+  });
+
+  it("counts one house once, however many times it was listed", () => {
+    // 2469 Romain Way came back as Atlanta and as East Point, same price and
+    // same size, and both sat in the median.
+    const comps = [
+      comp({
+        id: "d-1",
+        externalId: "rc-d1",
+        formattedAddress: "2469 Romain Way, Atlanta, GA 30311",
+        sqft: 1_312,
+        price: 225_000,
+        daysOld: 30,
+      }),
+      comp({
+        id: "d-2",
+        externalId: "rc-d2",
+        formattedAddress: "2469 Romain Way, East Point, GA 30344",
+        sqft: 1_312,
+        price: 225_000,
+        daysOld: 90,
+      }),
+    ];
+
+    const result = calculateArv(comps, 1_312);
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["d-1"]);
+    expect(result.excludedForFit).toEqual([
+      { compId: "d-2", eligible: false, reasons: ["same house listed twice"] },
+    ]);
+  });
+
+  it("ignores the unit number when deciding it is the same house", () => {
+    // 6721 Homer Ln arrived four times: bare, as Unit 73, and under two cities.
+    const comps = [
+      comp({ id: "h-1", externalId: "rc-h1", formattedAddress: "6721 Homer Ln, Fairburn, GA 30213", sqft: 2_013, daysOld: 40 }),
+      comp({ id: "h-2", externalId: "rc-h2", formattedAddress: "6721 Homer Ln, Unit 73, Fairburn, GA 30213", sqft: 2_013, daysOld: 50 }),
+      comp({ id: "h-3", externalId: "rc-h3", formattedAddress: "6721 Homer Ln, Unit 73, Atlanta, GA 30213", sqft: 2_013, daysOld: 60 }),
+      comp({ id: "h-4", externalId: "rc-h4", formattedAddress: "6721 Homer Ln, Atlanta, GA 30213", sqft: 2_013, daysOld: 70 }),
+    ];
+
+    const result = calculateArv(comps, 2_013);
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["h-1"]);
+    expect(result.excludedForFit.map((e) => e.reasons[0])).toEqual([
+      "same house listed 4 times",
+      "same house listed 4 times",
+      "same house listed 4 times",
+    ]);
+  });
+
+  it("keeps the most recent copy, whatever order they arrive in", () => {
+    const comps = [
+      comp({ id: "o-1", externalId: "rc-o1", formattedAddress: "5 Elm St, Atlanta, GA 30310", sqft: 1_200, daysOld: 200 }),
+      comp({ id: "o-2", externalId: "rc-o2", formattedAddress: "5 Elm St, Atlanta, GA 30310", sqft: 1_200, daysOld: 10 }),
+    ];
+
+    expect(calculateArv(comps, 1_200).usedComps.map((c) => c.compId)).toEqual(["o-2"]);
+  });
+
+  it("falls back to the last date seen when neither copy knows its age", () => {
+    const comps = [
+      comp({ id: "n-1", externalId: "rc-n1", formattedAddress: "7 Oak St, Atlanta, GA 30310", sqft: 1_200, daysOld: null, lastSeenDate: "2026-01-05" }),
+      comp({ id: "n-2", externalId: "rc-n2", formattedAddress: "7 Oak St, Atlanta, GA 30310", sqft: 1_200, daysOld: null, lastSeenDate: "2026-09-30" }),
+    ];
+
+    expect(calculateArv(comps, 1_200).usedComps.map((c) => c.compId)).toEqual(["n-2"]);
+  });
+
+  it("keeps both when the same street address has two different sizes", () => {
+    // A rebuild or a subdivided lot. Dropping a real comp is worse than
+    // keeping a duplicate, so size has to match too.
+    const comps = [
+      comp({ id: "s-1", externalId: "rc-s1", formattedAddress: "9 Pine St, Atlanta, GA 30310", sqft: 1_200, price: 250_000 }),
+      comp({ id: "s-2", externalId: "rc-s2", formattedAddress: "9 Pine St, Atlanta, GA 30310", sqft: 1_400, price: 300_000 }),
+    ];
+
+    const result = calculateArv(comps, 1_300);
+
+    expect(result.usedComps).toHaveLength(2);
+    expect(result.excludedForFit).toHaveLength(0);
+  });
+
+  it("never dedupes a comp with no size, because it cannot be sure", () => {
+    const comps = [
+      comp({ id: "u-1", externalId: "rc-u1", formattedAddress: "11 Ash St, Atlanta, GA 30310", sqft: null }),
+      comp({ id: "u-2", externalId: "rc-u2", formattedAddress: "11 Ash St, Atlanta, GA 30310", sqft: null }),
+    ];
+
+    expect(calculateArv(comps, 1_200).excludedForFit).toHaveLength(0);
   });
 
   it("flags an ARV that lands outside what the street actually fetched", () => {

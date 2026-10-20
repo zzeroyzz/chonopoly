@@ -1,4 +1,5 @@
 import { type Comp, type CompStatus } from "./types";
+import { normalizeStreet } from "../property/address";
 
 /**
  * After-repair value from comparable sales.
@@ -249,6 +250,99 @@ export function compEligibility(
   return { compId: comp.id, eligible: reasons.length === 0, reasons };
 }
 
+/**
+ * The street part of a comp's address, as a key.
+ *
+ * Takes the segment before the first comma, so the city never participates:
+ * RentCast returned 2469 Romain Way under both "Atlanta" and "East Point".
+ * The unit is dropped too, because 6721 Homer Ln came back four times — bare,
+ * as "Unit 73", and under two different cities — all at the same 2,013 sqft.
+ */
+function streetKey(formattedAddress: string): string {
+  const street = normalizeStreet(formattedAddress.split(",")[0] ?? "");
+  return street.replace(/\s*\bUNIT\b.*$/, "").trim();
+}
+
+/**
+ * Null when we cannot be sure, which means the comp is never deduped.
+ *
+ * Size is half the key on purpose. Two genuinely different houses can share a
+ * street address in the data — a rebuild, a subdivided lot — and dropping a
+ * real comp is worse than keeping a duplicate.
+ */
+function duplicateKey(comp: Comp): string | null {
+  if (comp.sqft === null || comp.sqft <= 0) return null;
+  const street = streetKey(comp.formattedAddress);
+  return street ? `${street}|${comp.sqft}` : null;
+}
+
+/** Most recent first. Lower daysOld wins; failing that, the later date. */
+function compareRecency(a: Comp, b: Comp): number {
+  if (a.daysOld !== null && b.daysOld !== null) return a.daysOld - b.daysOld;
+  if (a.daysOld !== null) return -1;
+  if (b.daysOld !== null) return 1;
+
+  const dateA = a.lastSeenDate ?? a.removedDate ?? a.listedDate ?? "";
+  const dateB = b.lastSeenDate ?? b.removedDate ?? b.listedDate ?? "";
+  if (dateA !== dateB) return dateA < dateB ? 1 : -1;
+  return 0;
+}
+
+/**
+ * One house, one comp.
+ *
+ * The same listing arrives several times under different unit numbers and
+ * different cities, and every copy was counted — 2469 Romain Way sat in the
+ * median twice at $225,000, weighting one house as though it were two. The
+ * most recent copy is kept and the rest are reported with a reason, never
+ * dropped silently.
+ */
+function dropDuplicateListings(comps: Comp[]): {
+  unique: Comp[];
+  duplicates: CompEligibility[];
+} {
+  const groups = new Map<string, Comp[]>();
+  const unkeyed: Comp[] = [];
+
+  for (const comp of comps) {
+    const key = duplicateKey(comp);
+    if (key === null) {
+      unkeyed.push(comp);
+      continue;
+    }
+    const group = groups.get(key);
+    if (group) group.push(comp);
+    else groups.set(key, [comp]);
+  }
+
+  const kept = new Set<string>(unkeyed.map((c) => c.id));
+  const duplicates: CompEligibility[] = [];
+
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      kept.add(group[0].id);
+      continue;
+    }
+    const [newest, ...rest] = [...group].sort(compareRecency);
+    kept.add(newest.id);
+    for (const copy of rest) {
+      duplicates.push({
+        compId: copy.id,
+        eligible: false,
+        reasons: [
+          group.length === 2
+            ? "same house listed twice"
+            : `same house listed ${group.length} times`,
+        ],
+      });
+    }
+  }
+
+  // Input order is meaningful — the list arrives sorted by correlation — so
+  // the survivors are filtered out of the original rather than regrouped.
+  return { unique: comps.filter((c) => kept.has(c.id)), duplicates };
+}
+
 /** "most are much bigger" — the reason in the fewest words that are true. */
 function summariseReasons(excluded: CompEligibility[]): string {
   const counts = new Map<string, number>();
@@ -362,18 +456,22 @@ export function calculateArv(
   // 1,357 sqft house: every one of them a bigger house, and an ARV built on
   // them said the deal worked. A comp that is not the same kind of house is
   // not evidence, however many of them there are.
-  const eligibility = included.map((c) =>
+  // Duplicates go first: the same listing arriving four times under different
+  // unit numbers would otherwise be weighted four times in the median.
+  const { unique, duplicates } = dropDuplicateListings(included);
+
+  const eligibility = unique.map((c) =>
     compEligibility(c, subjectSqft, options.subjectBeds ?? null, {
       baths: options.subjectBaths ?? null,
       propertyType: options.subjectPropertyType ?? null,
       yearBuilt: options.subjectYearBuilt ?? null,
     })
   );
-  const excludedForFit = eligibility.filter((e) => !e.eligible);
+  const excludedForFit = [...duplicates, ...eligibility.filter((e) => !e.eligible)];
   const eligibleIds = new Set(
     eligibility.filter((e) => e.eligible).map((e) => e.compId)
   );
-  const comparable = included.filter((c) => eligibleIds.has(c.id));
+  const comparable = unique.filter((c) => eligibleIds.has(c.id));
 
   if (comparable.length === 0) {
     const result = emptyResult(subjectSqft, rate, [
