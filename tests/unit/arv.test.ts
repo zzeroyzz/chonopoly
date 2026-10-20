@@ -148,15 +148,13 @@ describe("calculateArv", () => {
     expect(calculateArv(comps, 1_000).basisLabel).toBe("1 sold · 1 removed listing");
   });
 
-  it("calls a set of listings asking prices, and names the direction", () => {
+  it("says a set with no sales is not confirmed, and what to do about it", () => {
     const result = calculateArv(compsAtPricePerSqft([180, 190, 200, 210, 220], "removed"), 1_000);
 
     expect(result.soldCount).toBe(0);
-    expect(result.warnings.join(" ")).toMatch(/asking prices, not sale prices/);
-    // The bias has a direction, and no discount is applied for it anywhere.
-    expect(result.warnings.join(" ")).toMatch(/usually sell for less than they ask/);
-    expect(result.warnings.join(" ")).toMatch(/nothing here has been discounted/);
-    expect(result.warnings.join(" ")).toMatch(/Add a sold comp from your agent/);
+    expect(result.warnings).toContain(
+      "None of these are confirmed sales yet. Add sold comps to firm it up."
+    );
   });
 
   it("says how many are asking prices when the set is mixed", () => {
@@ -182,7 +180,7 @@ describe("calculateArv", () => {
     const result = calculateArv(comps, 1_000);
 
     expect(result.soldOnly).toBe(false);
-    expect(result.warnings.join(" ")).toMatch(/1 of these is an asking price rather than a sale/);
+    expect(result.warnings.join(" ")).toMatch(/1 of these is a listing, not a confirmed sale/);
   });
 
   it("does not call a sold set asking prices", () => {

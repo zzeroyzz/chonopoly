@@ -557,18 +557,15 @@ export function calculateArv(
 
   const warnings: string[] = [];
 
-  // Say which direction the number is likely to be wrong in. An asking price
-  // is what someone hoped for, and no discount is applied anywhere in this
-  // file to allow for that — so the screen has to carry the caveat instead of
-  // the arithmetic quietly carrying a guess.
+  // Say plainly what the number does and does not rest on. No discount is
+  // applied anywhere in this file for a listing being a listing, so the
+  // screen carries the caveat rather than the arithmetic carrying a guess.
   const listingCount = removedCount + activeCount;
   if (soldCount === 0) {
-    warnings.push(
-      "These are asking prices, not sale prices. RentCast only knows a listing left the market, not what it closed at. Houses usually sell for less than they ask, and nothing here has been discounted for that, so treat this as a ceiling. Add a sold comp from your agent to firm it up."
-    );
+    warnings.push("None of these are confirmed sales yet. Add sold comps to firm it up.");
   } else if (listingCount > 0) {
     warnings.push(
-      `${listingCount} of these ${listingCount === 1 ? "is an asking price" : "are asking prices"} rather than a sale. Houses usually sell for less than they ask, and nothing here has been discounted for that.`
+      `${listingCount} of these ${listingCount === 1 ? "is a listing" : "are listings"}, not a confirmed sale.`
     );
   }
 
