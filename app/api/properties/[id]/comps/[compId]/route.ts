@@ -79,6 +79,12 @@ export async function PATCH(
   const salePrice = numberOrNull((body as { salePrice?: unknown }).salePrice);
   const saleDate = isoDateOrNull((body as { saleDate?: unknown }).saleDate);
 
+  // Absent means "leave them alone"; a string, including an empty one, means
+  // "this is what they say now". Anything else is ignored rather than stored.
+  const rawNotes = (body as { reviewNotes?: unknown }).reviewNotes;
+  const reviewNotes =
+    rawNotes === undefined ? undefined : typeof rawNotes === "string" ? rawNotes.trim() || null : undefined;
+
   const resolved = await resolve(request, id);
   if ("error" in resolved) return resolved.error;
 
@@ -93,8 +99,8 @@ export async function PATCH(
 
   try {
     await setCompReview(compId, review, resolved.ctx, resolved.userId, {
-      price: salePrice,
-      date: saleDate,
+      sale: { price: salePrice, date: saleDate },
+      notes: reviewNotes,
     });
     const updated = await listComps(id, resolved.ctx);
     return NextResponse.json({

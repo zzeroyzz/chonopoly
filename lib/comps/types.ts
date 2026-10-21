@@ -14,7 +14,21 @@
  * way to inflate an ARV, so the two stay apart and the database enforces it:
  * `sold` requires `source = 'manual'`, because only a person can confirm a sale.
  */
-export type CompStatus = "active" | "removed" | "sold";
+export type CompStatus = "active" | "pending" | "removed" | "sold";
+
+/**
+ * Whether this status can be judged at all.
+ *
+ * An active listing is an asking price and a pending one is an accepted offer
+ * that has not closed. Neither is evidence of what a finished house sells for,
+ * so neither is reviewed and neither counts. They are context, not a chore.
+ *
+ * One definition because four call sites drifting apart is how "active comps
+ * are not counted" became true of the screen and false of the arithmetic.
+ */
+export function isReviewable(status: CompStatus): boolean {
+  return status === "removed" || status === "sold";
+}
 
 /**
  * Where a comp came from, which decides whether it may claim a sale.
@@ -41,7 +55,8 @@ export type CompReview =
   | "renovated_use"
   | "not_renovated_skip"
   | "took_off_market_skip"
-  | "not_comparable_skip";
+  | "not_comparable_skip"
+  | "cant_tell_skip";
 
 export const COMP_REVIEW_LABELS: Record<CompReview, string> = {
   needs_review: "Needs review",
@@ -49,6 +64,10 @@ export const COMP_REVIEW_LABELS: Record<CompReview, string> = {
   not_renovated_skip: "Not renovated: skip",
   took_off_market_skip: "Took off market: skip",
   not_comparable_skip: "Not comparable: skip",
+  // Says what it does as well as what it is: the resale price is the thing
+  // the owner is deciding about, and "can't tell" alone does not say that it
+  // moves out of the number.
+  cant_tell_skip: "Photos are gone — can't tell. Left out of the resale price.",
 };
 
 /**
@@ -58,13 +77,22 @@ export const COMP_REVIEW_LABELS: Record<CompReview, string> = {
  * sale closed and an active listing has not finished yet, so offering it
  * there would be offering an answer that cannot be true.
  */
-export function compReviewOptions(status: CompStatus): CompReview[] {
+export function compReviewOptions(status: CompStatus, review: CompReview): CompReview[] {
+  // An unreviewable status has nothing to answer — unless somebody already
+  // answered it. Returning nothing for a comp that is already approved would
+  // leave it counting with no control to change it: unreachable and live at
+  // the same time.
+  if (!isReviewable(status) && review === "needs_review") return [];
+
   return status === "removed"
     ? [
         "needs_review",
         "renovated_use",
         "not_renovated_skip",
         "took_off_market_skip",
+        // Only a removed listing can have lost its photos in a way that
+        // matters: an active one still has its listing up.
+        "cant_tell_skip",
         "not_comparable_skip",
       ]
     : ["needs_review", "renovated_use", "not_renovated_skip", "not_comparable_skip"];
@@ -77,6 +105,7 @@ export const COMP_REVIEW_ORDER: CompReview[] = [
   "not_renovated_skip",
   "took_off_market_skip",
   "not_comparable_skip",
+  "cant_tell_skip",
 ];
 
 /** The one state that puts a comp in the number. */
@@ -151,6 +180,14 @@ export interface Comp {
   reviewSetAt: string | null;
 
   /**
+   * What the owner saw when they reviewed it.
+   *
+   * Its own column, beside `notes`: that one carries a hand-entered comp's
+   * listing URL and the card reads it as one.
+   */
+  reviewNotes: string | null;
+
+  /**
    * What the owner says a removed listing actually sold for, and when.
    *
    * Beside `price`, never instead of it: `price` is what was asked, this is
@@ -187,8 +224,14 @@ export interface ManualCompInput {
   notes: string | null;
 }
 
+/** Every status, for validation at the API boundary. */
+export const COMP_STATUS_ORDER: CompStatus[] = ["active", "pending", "removed", "sold"];
+
 export const COMP_STATUS_LABELS: Record<CompStatus, string> = {
   active: "Active",
+  // An accepted offer that has not closed. Only a person can say so: RentCast
+  // reports Active or Inactive and nothing else.
+  pending: "Pending",
   // Not "Inactive", which says nothing, and emphatically not "Sold".
   removed: "Removed",
   sold: "Sold",

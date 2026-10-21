@@ -79,6 +79,7 @@ function toComp(row: Record<string, unknown>): Comp {
     correlation: num(row.correlation),
     review: row.review as CompReview,
     reviewSetAt: (row.review_set_at as string) ?? null,
+    reviewNotes: null,
     salePrice: num(row.sale_price),
     saleDate: (row.sale_date as string) ?? null,
     buyerType: (row.buyer_type as string) ?? null,

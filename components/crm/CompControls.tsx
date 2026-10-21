@@ -1,6 +1,6 @@
 "use client";
 
-import { type Comp, isSkipped } from "@/lib/comps/types";
+import { type Comp, isReviewable, isSkipped } from "@/lib/comps/types";
 import { type CompNote } from "@/lib/comps/arv";
 import { Dropdown } from "@/components/ui/Dropdown";
 
@@ -72,6 +72,9 @@ const TAB_FILTERS: Record<ReviewTab, CompFilter[]> = {
 };
 
 export function matchesTab(comp: Comp, note: CompNote | undefined, tab: ReviewTab): boolean {
+  // A house still on the market cannot be judged, so it is in neither half of
+  // the work. It is context, and the Listings filter is where it lives.
+  if (!isReviewable(comp.status)) return false;
   return TAB_FILTERS[tab].some((filter) => matchesFilter(comp, note, filter));
 }
 
@@ -188,7 +191,12 @@ export function filterCounts(
  * appears in the dropdown.
  */
 export function defaultTab(comps: Comp[]): ReviewTab {
-  return comps.some((c) => c.review === "needs_review") ? "todo" : "done";
+  // Reads the same predicate the tab does. Asking only about `needs_review`
+  // opened Still-to-check on a house whose comps are all active — the tab
+  // that rule had just emptied, on exactly the houses it was written for.
+  return comps.some((c) => c.review === "needs_review" && isReviewable(c.status))
+    ? "todo"
+    : "done";
 }
 
 export function CompControls({

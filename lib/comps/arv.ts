@@ -1,4 +1,4 @@
-import { type Comp, type CompStatus, COMP_REVIEW_COUNTS } from "./types";
+import { type Comp, type CompStatus, COMP_REVIEW_COUNTS, isReviewable } from "./types";
 import { normalizeStreet } from "../property/address";
 import { ORGANIZATION_BUYER } from "./fromPropertyRecords";
 
@@ -165,6 +165,15 @@ export interface ArvResult {
 
   /** How many comps nobody has judged yet. */
   stillToReview: number;
+  /**
+   * Comps the owner looked at and could not judge, because the listing's
+   * photos were gone.
+   *
+   * Reported rather than merely skipped: four comps where two more were
+   * unreadable is a different number from four out of six, and the owner
+   * should see that without going looking.
+   */
+  unreadable: number;
 
   /**
    * Set instead of a value when nothing is approved. Not a warning — nothing
@@ -197,10 +206,30 @@ function money(n: number): string {
   return `$${Math.round(n).toLocaleString("en-US")}`;
 }
 
-/** "Based on 4 comps you approved · 77 still to review" */
-function buildApprovedLabel(approved: number, stillToReview: number): string {
-  const base = `Based on ${approved} comp${approved === 1 ? "" : "s"} you approved`;
-  return stillToReview > 0 ? `${base} · ${stillToReview} still to review` : base;
+/**
+ * "Based on 4 comps you approved · 77 still to review · 2 had no photos left"
+ *
+ * One object rather than three positional counts: it was two, this makes it
+ * three, and the next one makes it four — which is where call sites start
+ * passing zeroes to reach the argument they mean.
+ */
+function buildApprovedLabel(counts: {
+  approved: number;
+  stillToReview: number;
+  unreadable: number;
+}): string {
+  const parts = [
+    `Based on ${counts.approved} comp${counts.approved === 1 ? "" : "s"} you approved`,
+  ];
+  if (counts.stillToReview > 0) parts.push(`${counts.stillToReview} still to review`);
+  // Said out loud because it changes what the number rests on, not just how
+  // many comps are in it.
+  if (counts.unreadable > 0) {
+    parts.push(
+      `${counts.unreadable} had no photos left, so ${counts.unreadable === 1 ? "it was" : "they were"} left out`
+    );
+  }
+  return parts.join(" · ");
 }
 
 /**
@@ -558,6 +587,7 @@ function emptyResult(
     plainSummary: null,
     compNotes: [],
     stillToReview: 0,
+    unreadable: 0,
     reviewPrompt: null,
     countedTwice: [],
   };
@@ -610,8 +640,19 @@ export function calculateArv(
   // is why it moved four times on its own. They now only produce text.
   const verdicts = assessComps(comps, subjectSqft, options);
 
-  const approved = comps.filter((c) => c.review === COMP_REVIEW_COUNTS);
-  const stillToReview = comps.filter((c) => c.review === "needs_review").length;
+  // An unreviewable status can never reach the basis, whatever its stored
+  // review. Without this, "active comps are not counted" is a claim about
+  // what the screen offers and not about the arithmetic — and a row approved
+  // before that rule existed would keep counting, invisibly.
+  const approved = comps.filter(
+    (c) => c.review === COMP_REVIEW_COUNTS && isReviewable(c.status)
+  );
+  // Work left is work that can be done. An asking price is not evidence, so a
+  // house still on the market is context rather than a chore.
+  const stillToReview = comps.filter(
+    (c) => c.review === "needs_review" && isReviewable(c.status)
+  ).length;
+  const unreadable = comps.filter((c) => c.review === "cant_tell_skip").length;
 
   /** Nothing approved, so nothing is counted and nothing can be flagged. */
   const notesWithNothingCounted = () =>
@@ -621,6 +662,7 @@ export function calculateArv(
     const result = emptyResult(subjectSqft, rate, []);
     result.compNotes = notesWithNothingCounted();
     result.stillToReview = stillToReview;
+    result.unreadable = unreadable;
     // Not a warning. Nothing is wrong — the work simply has not been done.
     result.reviewPrompt =
       stillToReview > 0
@@ -637,6 +679,7 @@ export function calculateArv(
     ]);
     result.compNotes = notesWithNothingCounted();
     result.stillToReview = stillToReview;
+    result.unreadable = unreadable;
     return result;
   }
 
@@ -782,12 +825,13 @@ export function calculateArv(
     removedCount,
     activeCount,
     skippedForMissingData: skipped,
+    unreadable,
     nearbyLow,
     nearbyHigh,
     sanityWarning,
     confidence,
     warnings,
-    basisLabel: buildApprovedLabel(basis.length, stillToReview),
+    basisLabel: buildApprovedLabel({ approved: basis.length, stillToReview, unreadable }),
     plainSummary,
     // Every per-comp reason now lives in compNotes. Kept empty so the shape
     // does not change for anything still reading it.

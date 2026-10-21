@@ -6,6 +6,7 @@ import { dollars } from "@/components/mortgage/format";
 import {
   type Comp,
   type CompReview,
+  type CompStatus,
   COMP_REVIEW_LABELS,
   COMP_STATUS_LABELS,
   compReviewOptions,
@@ -48,15 +49,24 @@ import { SalePricePrompt } from "./SalePricePrompt";
  */
 const REVIEW_CONSEQUENCE: Record<CompReview, string> = {
   needs_review: "Leaves it undecided.",
+  cant_tell_skip:
+    "Stays out, and your resale price will say how many you couldn't judge.",
   renovated_use: "Goes into your resale price.",
   not_renovated_skip: "Stays out: it sold tired, so it says nothing about your finished house.",
   took_off_market_skip: "Stays out: there was no sale, so there is no price to use.",
   not_comparable_skip: "Stays out: wrong size, wrong street, or the wrong kind of house.",
 };
 
-/** Why this house is or is not in the number, before any answer is given. */
-const STATUS_MEANING: Record<string, string> = {
+/**
+ * Why this house is or is not in the number, before any answer is given.
+ *
+ * `Record<CompStatus, …>`, not `Record<string, …>`. It was the loose one, and
+ * a new status would have rendered the sentence as `undefined` with a clean
+ * build. The compiler holds this now.
+ */
+const STATUS_MEANING: Record<CompStatus, string> = {
   active: "Still on the market, so this is an ask, not a sale. It isn't in your resale price.",
+  pending: "Under contract. The price isn't final, so it isn't in your resale price yet.",
   removed: "It left the market. Nobody knows yet whether it sold or the owner gave up.",
   sold: "It closed at this price. This is the kind of house your resale price is built from.",
 };
@@ -68,10 +78,13 @@ const STATUS_MEANING: Record<string, string> = {
  * a grey word on a grey patch — the one piece of the header that says whether
  * the price in front of it is a sale or an opinion.
  */
-export const STATUS_STYLE: Record<string, string> = {
+export const STATUS_STYLE: Record<CompStatus, string> = {
   sold: "bg-(--color-accent) text-(--color-base) border-transparent",
   removed: "text-amber-300 border-amber-400/50 bg-amber-500/10",
   active: "text-sky-300 border-sky-400/50 bg-sky-500/10",
+  // Its own ink. Pending inheriting the Active pill is the exact defect the
+  // loose Record above let through.
+  pending: "text-violet-300 border-violet-400/50 bg-violet-500/10",
 };
 
 export function CompReviewCard({
@@ -88,10 +101,15 @@ export function CompReviewCard({
   subject: SubjectFacts;
   /** "3 of 7". A review you cannot see the end of is one nobody finishes. */
   position: { index: number; total: number };
-  onReview: (comp: Comp, review: CompReview, sale?: { price: number; date: string | null }) => void;
+  onReview: (
+    comp: Comp,
+    review: CompReview,
+    extra?: { sale?: { price: number; date: string | null }; notes?: string | null }
+  ) => void;
   onLater: () => void;
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [notes, setNotes] = useState(comp.reviewNotes ?? "");
   /** Set only when the answer still needs a figure before it can be saved. */
   const [pendingSale, setPendingSale] = useState(false);
 
@@ -120,7 +138,7 @@ export function CompReviewCard({
       setPendingSale(true);
       return;
     }
-    onReview(comp, review);
+    onReview(comp, review, { notes: notes.trim() || null });
   }
 
   return (
@@ -157,7 +175,7 @@ export function CompReviewCard({
           )}
           <span
             className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5
-              rounded-(--radius-pill) border ${STATUS_STYLE[comp.status] ?? STATUS_STYLE.active}`}
+              rounded-(--radius-pill) border ${STATUS_STYLE[comp.status]}`}
           >
             {COMP_STATUS_LABELS[comp.status]}
           </span>
@@ -201,10 +219,34 @@ export function CompReviewCard({
         <CompLinks comp={comp} />
       </div>
 
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-(--color-text-secondary)">
+          Notes
+        </span>
+        <textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={2}
+          placeholder="new kitchen, old windows"
+          data-testid="comp-review-notes"
+          className="w-full bg-(--color-base) border border-(--color-border-default)
+            rounded-(--radius-md) px-3 py-2 text-[16px] leading-relaxed resize-y
+            focus:outline-none focus:border-(--color-accent) transition-colors"
+        />
+        <span className="text-[11px] text-(--color-text-secondary)">
+          What you saw. Only you and your team see this.
+        </span>
+      </label>
+
       {pendingSale ? (
         <SalePricePrompt
           comp={comp}
-          onSave={(price, saleDate) => onReview(comp, "renovated_use", { price, date: saleDate })}
+          onSave={(price, saleDate) =>
+            onReview(comp, "renovated_use", {
+              sale: { price, date: saleDate },
+              notes: notes.trim() || null,
+            })
+          }
           onCancel={() => setPendingSale(false)}
         />
       ) : (
@@ -224,12 +266,22 @@ export function CompReviewCard({
             type="button"
             onClick={onLater}
             data-testid="comp-review-later"
+            /* Notes cannot be saved on their own — the route needs a review
+               to attach them to — so Later loses them, and says so rather
+               than letting the owner find out. */
+            title={notes.trim() ? "Your notes here won't be kept" : undefined}
             className="min-h-11 px-4 rounded-(--radius-pill) border border-(--color-border-default)
               text-[13px] font-medium"
           >
             Later
           </button>
         </div>
+      )}
+
+      {notes.trim() && (
+        <p className="text-[11px] text-(--color-text-secondary) -mt-2">
+          Answer below to save these notes. &ldquo;Later&rdquo; won&apos;t keep them.
+        </p>
       )}
 
       {sheetOpen && (
@@ -255,7 +307,9 @@ function ReviewSheet({
   onPick: (review: CompReview) => void;
   onClose: () => void;
 }) {
-  const options = compReviewOptions(comp.status).filter((key) => key !== "needs_review");
+  const options = compReviewOptions(comp.status, comp.review).filter(
+    (key) => key !== "needs_review"
+  );
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {

@@ -61,6 +61,7 @@ interface CompRow {
   correlation: number | null;
   review: string;
   review_set_at: string | null;
+  review_notes: string | null;
   sale_price: number | null;
   sale_date: string | null;
   buyer_type: string | null;
@@ -107,6 +108,7 @@ const COMP_FIELDS: CompColumn[] = [
   "correlation",
   "review",
   "review_set_at",
+  "review_notes",
   "sale_price",
   "sale_date",
   "buyer_type",
@@ -152,6 +154,7 @@ function toComp(row: CompRow): Comp {
     correlation: row.correlation === null ? null : Number(row.correlation),
     review: row.review as CompReview,
     reviewSetAt: row.review_set_at,
+    reviewNotes: row.review_notes,
     salePrice: row.sale_price === null ? null : Number(row.sale_price),
     saleDate: row.sale_date,
     buyerType: row.buyer_type,
@@ -442,8 +445,20 @@ export async function setCompReview(
   review: CompReview,
   ctx: RequestContext,
   userId: string,
-  sale: { price: number | null; date: string | null } = { price: null, date: null }
+  /**
+   * Everything the judgement carries with it.
+   *
+   * An options object rather than a growing tail of positionals: `sale` was
+   * the fifth argument and notes would have been the sixth, which is the
+   * point at which call sites start passing nulls to reach the one they
+   * mean.
+   */
+  extra: {
+    sale?: { price: number | null; date: string | null };
+    notes?: string | null;
+  } = {}
 ): Promise<void> {
+  const sale = extra.sale ?? { price: null, date: null };
   // The sale figure belongs to the claim that it sold. Any other answer
   // clears it, so a price can never outlive the judgement it was entered
   // for — the database CHECK would reject the pair anyway.
@@ -457,6 +472,9 @@ export async function setCompReview(
       review_set_at: review === "needs_review" ? null : new Date().toISOString(),
       sale_price: keepsSale ? sale.price : null,
       sale_date: keepsSale ? sale.date : null,
+      // Notes survive a change of mind: they describe the house, not the
+      // answer. Only an explicit empty string clears them.
+      ...(extra.notes === undefined ? {} : { review_notes: extra.notes }),
       updated_at: new Date().toISOString(),
     })
     .eq("id", compId)
