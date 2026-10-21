@@ -10,6 +10,7 @@ import {
   COMP_STATUS_LABELS,
   COMP_REVIEW_LABELS,
   compReviewOptions,
+  isReviewable,
   isSkipped,
 } from "@/lib/comps/types";
 import { type ArvResult, type CompNote } from "@/lib/comps/arv";
@@ -432,6 +433,17 @@ export function CompsPanel({
    * Reviewing a comp takes it out of this tab, so the queue shortens as the
    * work is done and the next house arrives on its own.
    */
+  /**
+   * The comps this screen is actually about.
+   *
+   * The header counted every comp while the tabs counted only the ones that
+   * can be judged, so a house with nine active listings read "0 of 81
+   * approved" above "72 Still to check" — two true numbers that look like a
+   * bug sitting next to each other.
+   */
+  const judgeable = comps.filter((c) => isReviewable(c.status)).length;
+  const onMarket = comps.length - judgeable;
+
   const queue = [
     ...visible.filter((c) => !deferred.includes(c.id)),
     ...visible.filter((c) => deferred.includes(c.id)),
@@ -714,10 +726,19 @@ export function CompsPanel({
       )}
 
       {/* ── The comps ───────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-[13px] font-semibold">
-          Comps{comps.length > 0 ? ` · ${counts.approved} of ${comps.length} approved` : ""}
-        </h2>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <h2 className="text-[13px] font-semibold">
+            Comps{comps.length > 0 ? ` · ${counts.approved} of ${judgeable} approved` : ""}
+          </h2>
+          {/* Where the rest went, so the two counts never silently disagree. */}
+          {onMarket > 0 && (
+            <p data-testid="comps-on-market" className="text-[11px] text-(--color-text-secondary)">
+              {onMarket} more {onMarket === 1 ? "is" : "are"} still on the market, so{" "}
+              {onMarket === 1 ? "it isn't" : "they aren't"} judged.
+            </p>
+          )}
+        </div>
         <button
           type="button"
           onClick={() => setAdding((v) => !v)}
