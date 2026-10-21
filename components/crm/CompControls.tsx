@@ -57,23 +57,34 @@ export const FILTER_LABELS: Record<CompFilter, string> = {
  */
 export const FILTER_ORDER: CompFilter[] = ["all", "sold", "listings", "flagged"];
 
-/** The two halves of the work. */
-export type ReviewTab = "todo" | "done";
+/**
+ * The two halves of the work, and the houses that are not work.
+ *
+ * `market` is active and pending listings: an asking price and an accepted
+ * offer. Neither can be judged, so neither is in the queue — but they are
+ * real houses nearby at real prices, and hiding them entirely was worse than
+ * asking about them. They are context, with their own tab.
+ */
+export type ReviewTab = "todo" | "done" | "market";
 
 export const TAB_LABELS: Record<ReviewTab, string> = {
   todo: "Still to check",
   done: "Checked",
+  market: "On the market",
 };
 
 /** Checked is both answers: what counts, and what was looked at and left out. */
 const TAB_FILTERS: Record<ReviewTab, CompFilter[]> = {
   todo: ["needs_review"],
   done: ["approved", "skipped"],
+  // Decided by status, not by review: see matchesTab.
+  market: [],
 };
 
 export function matchesTab(comp: Comp, note: CompNote | undefined, tab: ReviewTab): boolean {
   // A house still on the market cannot be judged, so it is in neither half of
-  // the work. It is context, and the Listings filter is where it lives.
+  // the work — it has its own tab instead.
+  if (tab === "market") return !isReviewable(comp.status);
   if (!isReviewable(comp.status)) return false;
   return TAB_FILTERS[tab].some((filter) => matchesFilter(comp, note, filter));
 }
@@ -82,6 +93,7 @@ export function tabCounts(comps: Comp[], notes: Map<string, CompNote>): Record<R
   return {
     todo: comps.filter((c) => matchesTab(c, notes.get(c.id), "todo")).length,
     done: comps.filter((c) => matchesTab(c, notes.get(c.id), "done")).length,
+    market: comps.filter((c) => matchesTab(c, notes.get(c.id), "market")).length,
   };
 }
 
@@ -283,7 +295,9 @@ export function CompReviewTabs({
   counts: Record<ReviewTab, number>;
   onTabChange: (tab: ReviewTab) => void;
 }) {
-  const tabs: ReviewTab[] = ["todo", "done"];
+  // The third only appears when there is something in it: two tabs is a
+  // clearer screen than three with a zero on the end.
+  const tabs: ReviewTab[] = counts.market > 0 ? ["todo", "done", "market"] : ["todo", "done"];
 
   return (
     <div
@@ -312,7 +326,7 @@ export function CompReviewTabs({
             <span className="text-[16px] font-bold leading-none" data-testid={`comp-tab-${key}-count`}>
               {counts[key]}
             </span>
-            <span className="text-[11px] leading-none">{TAB_LABELS[key]}</span>
+            <span className="text-[11px] leading-tight">{TAB_LABELS[key]}</span>
           </button>
         );
       })}

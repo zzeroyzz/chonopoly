@@ -442,7 +442,6 @@ export function CompsPanel({
    * bug sitting next to each other.
    */
   const judgeable = comps.filter((c) => isReviewable(c.status)).length;
-  const onMarket = comps.length - judgeable;
 
   const queue = [
     ...visible.filter((c) => !deferred.includes(c.id)),
@@ -731,13 +730,6 @@ export function CompsPanel({
           <h2 className="text-[13px] font-semibold">
             Comps{comps.length > 0 ? ` · ${counts.approved} of ${judgeable} approved` : ""}
           </h2>
-          {/* Where the rest went, so the two counts never silently disagree. */}
-          {onMarket > 0 && (
-            <p data-testid="comps-on-market" className="text-[11px] text-(--color-text-secondary)">
-              {onMarket} more {onMarket === 1 ? "is" : "are"} still on the market, so{" "}
-              {onMarket === 1 ? "it isn't" : "they aren't"} judged.
-            </p>
-          )}
         </div>
         <button
           type="button"
@@ -832,6 +824,28 @@ export function CompsPanel({
             Show all
           </button>
         </div>
+      ) : activeTab === "market" ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+            Asking prices, not sales. These aren&apos;t judged and aren&apos;t in your
+            resale price — they show what people are asking nearby right now.
+          </p>
+          <ul
+            data-testid="comp-list"
+            className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto pr-1"
+          >
+            {visible.map((comp) => (
+              <CompRow
+                key={comp.id}
+                comp={comp}
+                note={notes.get(comp.id)}
+                subject={subject}
+                onReview={review}
+                onRemove={remove}
+              />
+            ))}
+          </ul>
+        </div>
       ) : activeTab === "todo" && current ? (
         /* One house, filling the screen. The next arrives when this is saved. */
         <CompReviewCard
@@ -904,6 +918,9 @@ function CompRow({
    */
   const [opened, setOpened] = useState<CompLinkSource | null>(null);
   const against = comparedToSubject(comp, subject);
+  // Empty on a house that cannot be judged, which is how the On-the-market
+  // rows come out read-only without a second rule saying so.
+  const reviewOptions = compReviewOptions(comp.status, comp.review);
   const ppsf = perSqft(comp);
   const date = compDate(comp);
   const provenance = provenanceLabel(comp);
@@ -1051,11 +1068,13 @@ function CompRow({
           </div>
 
           {/* The only control that moves the ARV. A native select, which is
-              the right thing to tap on a phone. */}
+              the right thing to tap on a phone. Absent entirely on a house
+              that cannot be judged: an empty picker is worse than none. */}
+          {reviewOptions.length > 0 && (
           <Dropdown
             className="mt-2"
             value={comp.review}
-            options={compReviewOptions(comp.status, comp.review).map((key) => ({
+            options={reviewOptions.map((key) => ({
               value: key,
               label: COMP_REVIEW_LABELS[key],
               tone: REVIEW_TONE[key],
@@ -1074,6 +1093,7 @@ function CompRow({
             label={`What to do with ${comp.formattedAddress}`}
             testId={`comp-review-${comp.id}`}
           />
+          )}
 
           {askingSale && (
             <SalePricePrompt

@@ -9,7 +9,12 @@ import {
   COMP_REVIEW_ORDER,
   COMP_REVIEW_SKIPS,
 } from "@/lib/comps/types";
-import { matchesFilter, defaultTab, type CompFilter } from "@/components/crm/CompControls";
+import {
+  matchesFilter,
+  matchesTab,
+  defaultTab,
+  type CompFilter,
+} from "@/components/crm/CompControls";
 import { comparedToSubject } from "@/lib/comps/format";
 
 /**
@@ -1023,5 +1028,32 @@ describe("when the photos are gone", () => {
 
     expect(result.unreadable).toBe(0);
     expect(result.basisLabel).not.toContain("no photos left");
+  });
+});
+
+describe("houses that are on the market", () => {
+  /**
+   * They cannot be judged, so they are not work — but they are real houses
+   * nearby at real prices, and taking them out of the queue without giving
+   * them anywhere to go made nine of them unreachable.
+   */
+  it("are in their own tab and neither half of the work", () => {
+    const active = comp({ id: "m-1", status: "active", review: "needs_review" });
+
+    expect(matchesTab(active, undefined, "market")).toBe(true);
+    expect(matchesTab(active, undefined, "todo")).toBe(false);
+    expect(matchesTab(active, undefined, "done")).toBe(false);
+  });
+
+  it("does not put a judgeable house in with them", () => {
+    const removed = comp({ id: "m-2", status: "removed", review: "needs_review" });
+
+    expect(matchesTab(removed, undefined, "market")).toBe(false);
+    expect(matchesTab(removed, undefined, "todo")).toBe(true);
+  });
+
+  it("offers no review control, because there is nothing to answer", () => {
+    expect(compReviewOptions("active", "needs_review")).toHaveLength(0);
+    expect(compReviewOptions("pending", "needs_review")).toHaveLength(0);
   });
 });
