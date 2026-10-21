@@ -1,6 +1,6 @@
 # Plan: when you cannot tell, say so
 
-Status: **Draft** — waiting for the Approver, then the owner. No code written.
+Status: **Changes requested** — 2026-10-21 (self-review). No code written.
 Branch: `feat/comp-cant-tell`, cut from `1eefcd6` (the PR #58 merge, tip of main).
 RentCast requests: **0**.
 Follows: `plans/feat-arv-review-flow.md`, which called this Stage B.
@@ -271,4 +271,103 @@ green is its own branch, named under Out of scope.
 
 ## Approver
 
-Not yet reviewed. Outcome and date to be recorded here.
+**2026-10-21 — Changes requested.**
+
+**This is a self-review.** The implementer wrote this plan and reviewed it, at
+the owner's standing instruction. It is not the independent review the repo's
+`CLAUDE.md` describes, and nobody reading this later should take it for one. A
+self-review can check facts against code, which is what follows. It cannot
+judge whether the design is right, because the same assumptions produced it.
+
+### 1. BLOCKING — an undeclared dependency between §1 and §5
+
+`lib/comps/arv.ts:692-694` counts the basis by status, in three explicit
+branches:
+
+```ts
+const soldCount    = basis.filter((c) => c.status === "sold").length;
+const removedCount = basis.filter((c) => c.status === "removed").length;
+const activeCount  = basis.filter((c) => c.status === "active").length;
+```
+
+A `pending` comp in `basis` is counted in **none** of them, and the basis line
+undercounts with a clean build. `tsc` cannot see it.
+
+It cannot happen *as long as §1 lands*: `basis` is built from approved comps,
+and §1 makes a pending comp unapprovable. So the two changes protect each
+other — and the plan never says so. **Write the dependency down.** If §1 is
+ever dropped, deferred or reverted, §5 becomes a live undercount, and the next
+person needs to know these two cannot be separated.
+
+Either add a fourth count, or state in the plan that `pending` is
+unreachable here *because* of §1, and say which.
+
+### 2. BLOCKING — §1 changes a number on a screen the plan does not name
+
+`lib/screen/screenRow.ts:236` reads it directly:
+
+```ts
+const compsToReview = arvResult.stillToReview;
+```
+
+Changing `stillToReview` to exclude unreviewable comps therefore changes what
+the Screen table shows for every house, not just the ARV tab. That is the
+intended fix and it is still a change to another screen, which makes
+`screenRow.ts` a file this work affects. **It is not in the scope table.**
+
+It probably needs no edit — it passes the value through. "Probably" is the
+problem: the scope table is the list of what a reviewer and the owner are
+agreeing to, and a behaviour change on another page belongs in it.
+
+### 3. `compDate` has no branch for pending
+
+`lib/comps/format.ts:167-171` maps sold and removed to `removedDate` and
+everything else to `listedDate`. A pending comp falls through to
+*"Listed Mar 2026"*, which is true but not the useful date — the useful one is
+when it went under contract, which nothing records.
+
+Not a bug; a gap worth a decision in writing. "Listed" is honest and the plan
+should say that is deliberate.
+
+### 4. The migration's four changes in one transaction — correct
+
+Judged and accepted. They share a table and a lock, and the Pending constraint
+is only meaningful once the status CHECK admits `pending`, so splitting them
+would create a window where one is applied and the other is not. That is the
+exact failure a transaction prevents.
+
+**One ordering requirement to state explicitly:** the status CHECK must be
+widened *before* the `pending`-needs-evidence constraint is added, inside the
+same transaction. The plan lists the four changes without saying they are
+ordered.
+
+### Verified as the plan claims
+
+- Every comp does default to `needs_review` whatever its status, and
+  `compReviewOptions` (`types.ts:61-71`) does offer review options to an active
+  listing. **§1 is real**, and it is the highest-value item here.
+- `status IN ('active','removed','sold')` is at
+  `20261019010000_comps_valuations_usage.sql:57`, and
+  `status <> 'sold' OR source IN ('manual','public_record')` at
+  `20261020120000_recorded_sales.sql:82`. The Pending constraint mirrors a
+  shape that already exists.
+- `CompLinks.tsx` does read `comp.notes` as a listing URL, so `review_notes`
+  is still justified.
+- `COMP_STATUS_LABELS` and `STATUS_STYLE` are `Record<CompStatus, …>`, so a new
+  member *is* caught there by the compiler.
+- The manual comp form does hard-code `status: "sold"` (`CompsPanel.tsx:1096`).
+- `arv.ts:456`, `:493`, `:689` filter on `sold` and are correct unchanged — a
+  pending listing is not a sale.
+
+### Open
+
+The testing question was decided by the owner before this review: deferred, with
+the cost recorded in Testing above. Nothing here reopens it.
+
+**Recommendation: revise items 1-4 and proceed.** None is deep — items 1 and 2
+are both the same omission, a change traced one step but not two. The design is
+sound as far as a self-review can say, and §1 is worth doing on its own merits
+whatever happens to the rest.
+
+**This review is not approval to start, and nothing in it authorizes running
+the migration.**
