@@ -1,45 +1,49 @@
 # Plan: review one house at a time
 
-Status: **Changes requested** — 2026-10-21. No code written.
-Branch: `feat/arv-review-flow` — **not yet cut.** See Precondition.
+Status: **Revised (rev 2)** — 2026-10-21. Awaiting the Approver, then the
+owner. No implementation code written.
+Branch: `feat/arv-review-flow`, cut from `367ade7` (tip of main), two docs
+commits plus one authorised bug fix on it.
 RentCast requests: **0**. Nothing here fetches anything.
 Design system: https://claude.ai/artifact/AfFqeoXw92zbqvYSFpchrx — `review-flow.md`.
 
-## Precondition, before a branch exists
+**Revision 2 answers the self-review's items 1-4 and the independent
+Approver's items 5-13.** Where an item needed a decision the owner has not
+made, the decision is stated as an assumption and marked **OWNER**.
 
-`fix/comp-controls` has five commits and no merge. The rules say the next
-branch starts from main only after the last one lands. This plan assumes
-`fix/comp-controls` is merged first and `feat/arv-review-flow` is cut from the
-updated main. **If it is not merged, stop — do not branch off it.**
+## Precondition — corrected
 
-Also true, and worth saying out loud before anything is built on top: the two
-migrations this feature depends on, `20261020200000_comp_review.sql` and
-`20261020220000_comp_sale_price.sql`, both say WRITTEN, NOT RUN. The
-TypeScript already reads `review`, `sale_price` and `took_off_market_skip`.
-Whether those columns exist in the database is something only the owner knows.
+`fix/comp-controls` **is merged**: `367ade7`, "Merge pull request #57", is the
+tip of `main`. `feat/arv-review-flow` **is already cut** from it. The branching
+rule was followed; rev 1's "not yet cut" text was stale.
+
+`took_off_market_skip` (self-review item 2) **is already fixed on this
+branch**, commit `e5eb59f`, at the owner's explicit instruction. The skip set
+is now derived from `COMP_REVIEW_ORDER` in `lib/comps/types.ts`
+(`COMP_REVIEW_SKIPS`, `isSkipped`) rather than listed twice. **This removes two
+of the four silent sites in item 10** — the remaining two are below.
+
+**OWNER, unanswered and blocking item 8:** have
+`20261020200000_comp_review.sql` or `20261020220000_comp_sale_price.sql` been
+applied to the database? Both say WRITTEN, NOT RUN while the TypeScript reads
+their columns.
 
 ## The problem
 
-The ARV tab works and is painful to use. It is a scrolling stack of small
-cards, each carrying the same question and two dropdowns stacked on top of
-each other. The actual work happens in another app — you tap out to Zillow,
-look at photos, decide, come back.
+The ARV tab works and is painful to use. A scrolling stack of small cards, each
+carrying the same question and two dropdowns stacked on top of each other. The
+work happens in another app — out to Zillow, look at photos, come back.
 
-Doing that eleven times, on a phone, breaks in five specific places:
+Eleven times, on a phone, it breaks in five places:
 
 1. **Eleven cards of equal weight.** Nothing says which one you are on.
-2. **You lose your place.** Every card looks the same on return, so the only
-   way to find the one you just looked at is to go back to Zillow and read the
-   address again.
-3. **The subject house scrolls away.** Two cards down, the price, beds, baths,
-   size and year of the house you are buying are gone — the facts you are
-   comparing against.
+2. **You lose your place.** Every card looks the same on return.
+3. **The subject house scrolls away** — the facts you are comparing against.
 4. **Two stacked dropdowns to reach four links.**
 5. **Nowhere to write down what you saw.**
 
-And one correctness gap underneath all of it: when a listing's photos are gone
-— which happens constantly on removed listings — the five review states force
-a guess between "it counts" and "leave it out". Both move the ARV on no
+Underneath: when a removed listing's photos are gone, the five review states
+force a guess between "it counts" and "leave it out". Both move the ARV on no
 evidence.
 
 ## Goal
@@ -50,167 +54,303 @@ sixth review state for "the photos are gone and I cannot tell".
 ## Stack
 
 TypeScript strict, Tailwind utilities, tokens from `globals.css`. No new
-dependencies. `lucide-react` icons, already present.
+dependencies. `lucide-react`, already present. SQL for the migration, the
+named exception.
 
-Next.js: **read `node_modules/next/dist/docs/` before writing any component
-code.** This repo's Next is not the one in anybody's training data.
+**Read `node_modules/next/dist/docs/` before writing any component code.**
+This repo's Next is not the one in training data.
 
-## Scope — files that change
+## Scope — every file that changes
+
+Rev 1 named eight. The real count is nineteen. Each is listed because touching
+a file not named in an approved plan is Tier 2.
+
+**The flow**
 
 | File | Change |
 |---|---|
-| `components/crm/CompsPanel.tsx` | the flow: one card, tabs, sticky specs |
-| `components/crm/CompControls.tsx` | tabs added; the two halves leave the filter |
-| `components/crm/CompLinks.tsx` | dropdown becomes four buttons |
-| `lib/comps/types.ts` | `cant_tell_skip` added to `CompReview` |
-| `app/api/properties/[id]/comps/[compId]/route.ts` | accept the new value and review notes |
-| `tests/23-comps.spec.ts` | extended, not replaced |
-| `supabase/migrations/<ts>_comp_cant_tell.sql` | **new file, written not run** |
-| `components/crm/CompReviewCard.tsx` | **new file** — see Refactors |
+| `components/crm/CompsPanel.tsx` | one card, tabs, sticky specs; **export nothing** — see Refactors |
+| `components/crm/CompReviewCard.tsx` | **new** — the one card |
+| `lib/comps/format.ts` | **new** — the eight shared formatters, see item 5 |
+| `components/crm/CompControls.tsx` | tabs added; two halves leave the filter |
+| `components/crm/CompLinks.tsx` | dropdown becomes five pills |
+
+**The data path**
+
+| File | Change |
+|---|---|
+| `lib/comps/types.ts` | `cant_tell_skip`; `reviewNotes` on `Comp` |
+| `lib/comps/compService.ts` | `CompRow`, `toComp`, **`setCompReview` signature** |
+| `app/api/properties/[id]/comps/[compId]/route.ts` | accept the value and the notes |
+| `lib/supabase/database.types.ts` | `review_notes` — **see Sequencing** |
+| `lib/comps/arv.ts` | reporting only, not arithmetic — see Refactors |
+
+**Styling**
+
+| File | Change |
+|---|---|
+| `app/globals.css` | **`--color-reviewing` does not exist.** It is added here. |
+
+**Files broken by adding `reviewNotes` to `Comp`** — `tsc` catches all six:
+`scripts/review-reset.ts`, `scripts/diagnose-comps.ts`,
+`tests/27-recorded-sales.spec.ts`, `tests/unit/screenRow.test.ts`,
+`tests/unit/arv.test.ts`, `tests/23-comps.spec.ts`.
+
+**Consumers of the basis line:** `components/crm/PropertyDetailPage.tsx` and
+`components/properties/PropertiesPage.tsx` each compose their own "Built from
+N comps you approved" sentence. **OWNER (item 7):** assumption — the ARV card
+gains the unreadable count, these two **stay as they are**. Saying it in three
+places triples the surface for one fact.
+
+**Migration:** `supabase/migrations/<ts>_comp_cant_tell_and_review_notes.sql`,
+**new, written and NOT run.**
 
 ## Approach
 
-### 1. The review states — migration, written and NOT run
+### 1. Migration — written, NOT run
 
-A sixth value. Same shape as `20261020220000`: look the CHECK up by
-definition rather than by name, drop it, re-add it with the new member,
-verify, commit.
+A sixth review value and one column.
 
 ```
 'needs_review' | 'renovated_use' | 'not_renovated_skip'
 | 'took_off_market_skip' | 'not_comparable_skip' | 'cant_tell_skip'
 ```
 
-`cant_tell_skip` skips arithmetically, like the other three. It is kept apart
-for the same reason they are: it records a different judgement, and it is the
-only one the ARV basis line has to mention out loud. A resale price built from
-four houses where two more were unreadable is a different number from one
-built from four out of six, and the owner should see that without going
-looking.
+`cant_tell_skip` skips arithmetically. It is kept apart because it records a
+different judgement and is the only one the ARV basis line must mention aloud:
+a resale price built from four houses where two more were unreadable is a
+different number from four out of six.
 
-Plus one column, `review_notes text`, because `notes` is already taken —
-`CompLinks` reads `comp.notes` as the listing URL on a hand-entered comp
-(`comp.notes?.startsWith("http")`). Writing review notes into the same column
-would break the link on exactly the comps the owner typed in by hand.
+`review_notes text`, because `notes` is taken — `CompLinks.tsx:71` reads
+`comp.notes` as the listing URL on hand-entered comps
+(`comp.notes?.startsWith("http")`). Writing review notes there breaks the link
+on exactly the comps typed in by hand.
 
-The migration carries the same baseline / verify / commented-Down structure as
-the two before it. **It is not run. It is not run as part of testing. The
-owner runs it when the owner says so.**
+Structure follows `20261020220000`: baseline temp table, CHECK looked up by
+definition not by name, re-add, verify block, commented Down. **With item 13's
+guard:** `property_comps` now carries three review-related CHECKs, and `SELECT
+… INTO` takes an arbitrary row when several match. Count the matches and
+`RAISE EXCEPTION` unless it is exactly one.
 
-### 2. The card — `CompReviewCard.tsx`
+**Not run. Not run during testing. The owner runs it.**
 
-A new file, and under the rules that needs a reason: `CompsPanel.tsx` is 1,225
-lines and already holds six components. The review card is the largest single
-piece of this change, and adding ~250 lines to that file makes it unreviewable
-in one sitting. The existing `CompRow` **stays where it is and is not
-deleted** — see below.
+### 2. Sequencing — the problem `feat-comp-review.md` named and rev 1 dropped
 
-The card holds, in order: address and "3 of 7" · price with the status pill ·
-the spec line · the status sentence · the four source buttons · the five or
-six review choices as radio rows · the notes field · Save and next / Later.
+`database.types.ts` is generated and cannot be regenerated until the migration
+runs. Code reading `review_notes` does not typecheck until then — so the
+plan's own stopping gate, `npm run build` and `tsc`, cannot pass.
+
+The last plan's answer was "I stop and ask". **This plan's answer, stated so
+it is not discovered at the gate:**
+
+> The work splits at the migration. **Stage A** is everything that needs no new
+> column. **Stage B** is everything that does, and Stage B does not begin until
+> the owner says the migration has run.
+
+| Stage | Contents | Gate |
+|---|---|---|
+| **A** | sticky specs, tabs, five pills, the one-card flow, `lib/comps/format.ts`, `--color-reviewing` | `tsc` + build pass today |
+| **B** | `cant_tell_skip`, review notes, the basis-line count | needs the migration run first |
+
+`database.types.ts` is **not** hand-edited ahead of the migration. A generated
+file edited by hand is a lie that survives until the next regeneration.
+
+### 3. The card — `CompReviewCard.tsx`
+
+Address and "3 of 7" · price with the status pill · spec line · status
+sentence · five source pills · the review choices as radio rows ·
+**the sale-price step** · notes · Save and next / Later.
+
+**Item 6 — the sale-price step is not optional.** `route.ts:87` rejects
+`renovated_use` on a removed comp with no sale price, and the database CHECK
+`property_comps_removed_sale_needs_price` enforces the same. Today
+`CompsPanel.tsx:984-1001` routes that through **`SalePricePrompt`**. The card
+**reuses that component, not a copy of it**, and it appears between the choice
+rows and the notes field, shown only when the choice is "it counts" and the
+status is `removed`. Without this, Save 400s on the exact case the feature
+exists for.
 
 - Save is disabled until a choice is picked, with the sentence saying so.
-- `Later` returns the comp to Still to check. It is not a review state.
-- Saving advances to the next unreviewed comp; on the last, it lands on
-  Checked.
+- `Later` returns the comp to Still to check; it is not a review state.
+- Saving advances to the next unreviewed comp.
 - Nothing is pre-selected, ever.
 
-### 3. Keeping your place
+### 4. Keeping your place
 
-From the moment a source link is tapped until a choice is recorded, the card
-takes `--color-reviewing` violet on its border and a tinted ground, the tapped
-pill stays lit and reads "Zillow — opened", and a line says it in words:
-*"You're on 1842 Maple Ridge Dr — the one you just opened in Zillow."*
+From tapping a source until a choice is recorded: violet border and tint, the
+tapped pill stays lit reading "Zillow — opened", and a line says it in words.
+Colour is never the only signal.
 
-Colour is never the only signal. The state is component-local; it does not
-need to survive a reload, but it must survive the app being backgrounded,
-which it does for free.
+**Item 7 — `--color-reviewing` does not exist in `app/globals.css`.** It is
+added there in this change, beside `--color-accent`, as
+`--color-reviewing: #A78BFA;` with `--color-reviewing-tint:
+rgba(167,139,250,0.12)`. Violet is used for nothing else in the app, which is
+the whole point.
 
-### 4. Tabs
+### 5. Tabs
 
-`Still to check (n)` and `Checked (n)`, below the filter and sort. Opens on
-Still to check unless it is empty. `needs_review`, `approved` and `skipped`
-come out of the seven-option filter; `all`, `sold`, `listings` and `flagged`
-stay in it.
+`Still to check (n)` · `Checked (n)`, below filter and sort. Opens on Still to
+check unless empty. `needs_review`, `approved` and `skipped` leave the filter;
+`all`, `sold`, `listings`, `flagged` stay.
 
-### 5. Sticky specs
+**Self-review item 4:** `CompControls.tsx:143` `defaultFilter` returns
+`"approved"`, which has no meaning once that option is gone. It is **deleted
+and replaced by the tab's own default** — this is removal of a function made
+genuinely dead by the change, not deletion as a method of fixing a bug.
 
-The subject house pinned above the list: address, price, beds, baths, sqft,
-year. `position: sticky`, picks up `shadow-lg` once content scrolls under it.
-Two lines at 390px, under 72px tall.
+### 6. Sticky specs
 
-### 6. Source buttons
+Address, price, beds, baths, sqft, year. `position: sticky`, `shadow-lg` once
+content scrolls under. Two lines at 390px, under 72px.
 
-`CompLinks` keeps its `searchUrls` export — the property page imports it, and
-a second copy would drift the moment one of those sites changes its URL shape.
-The dropdown is replaced by four pills: Zillow · Redfin · Realtor · Records.
+### 7. Source pills — five, not four
 
-Realtor and Records are new and are the answer to the missing-photos problem:
-Realtor keeps listing photos longest, and the county record works when every
-photo is gone.
+**Item 9.** `searchUrls` currently returns `{ zillow, redfin, maps }` and is
+imported by `PropertyDetailPage.tsx:28,414` (which reads `.zillow` only).
 
-## Refactors — what is reused, not duplicated
+- **Google Maps stays.** Rev 1 silently dropped a working link. Five pills:
+  Zillow · Redfin · Realtor · Records · Map.
+- **The return shape gains `realtor` and `records`.** Additive, so
+  `PropertyDetailPage` is unaffected — but it is an exported-interface change
+  and is named in Risks.
+- **Records — what it actually opens.** There is no county-records URL builder
+  anywhere, and `Comp.county` is null on every RentCast comp. So the honest
+  mechanism is **a web search for `"<address>" county property records`**, not
+  a deep link. Rev 1's claim that "the county record works when every photo is
+  gone" overstated it. The pill's help text says what it is: *"Searches for the
+  county record. Works when the photos are gone."*
+  **OWNER (item 9):** if there is a county site you use by hand, name it and
+  this becomes a real link instead of a search.
+
+### 8. The sixth state's label
+
+**Item 13.** `COMP_REVIEW_LABELS` needs a string, and the writing rules say a
+verdict must say why and what it does:
+
+> `cant_tell_skip: "Photos are gone — can't tell. Left out of the resale price."`
+
+### 9. Reporting the unreadable count
+
+**Self-review item 3.** Rev 1 said `arv.ts` is "not touched" while requiring
+the basis line to report unreadable comps. Both cannot be true.
+
+The **arithmetic** is unchanged — `arv.ts:613-614` reads `review` only as two
+equality checks. The **reporting** is not: `ArvResult` gains
+`unreadable: number`, populated beside `stillToReview` at `arv.ts:613-630`.
+`ArvResult` is a public type; `tests/unit/arv.test.ts` is in scope above.
+Stage B.
+
+## Refactors — what is shared, not duplicated
+
+**Item 5 — the eight private formatters.** `dollarsShort`, `shortDate`,
+`perSqft`, `priceLabel`, `provenanceLabel`, `fixerUpperNote`, `monthYear`,
+`compDate` are module-private in `CompsPanel.tsx:31-193`. The new card needs
+most of them.
+
+**Decision: they move to `lib/comps/format.ts`, and both components import
+them.** Not exported from `CompsPanel.tsx`, for a concrete reason rather than
+taste: `CompsPanel` imports `CompReviewCard`, so `CompReviewCard` importing
+helpers back out of `CompsPanel` is a circular import. They are pure functions
+with no React in them and no business in a 1,225-line component. This is a
+third new file and it is named in Scope.
 
 - **`CompRow` stays.** It is the right control for the Checked tab, where the
-  owner is scanning what the number is built from rather than deciding. The
-  new card serves Still to check. Nothing is deleted to make room.
+  owner scans rather than decides. Nothing is deleted to make room.
+- **`SalePricePrompt` is reused**, not copied. See §3.
 - `searchUrls`, `compReviewOptions`, `matchesFilter`, `sortComps`,
-  `filterCounts` are all extended in place. `compReviewOptions` already gates
-  `took_off_market_skip` to removed listings; `cant_tell_skip` joins it under
-  the same rule, since an active listing's photos being gone is not a thing.
-- The ARV arithmetic in `lib/comps/arv.ts` is **not touched**. One new skip
-  state skips; the number's construction does not change.
+  `filterCounts`, `isSkipped` extended in place.
+- `cant_tell_skip` joins `took_off_market_skip` under `compReviewOptions`'
+  removed-only rule: an active listing's photos being gone is not a thing.
 
-## Risks — the Tier 2 items, named
+## Risks — every Tier 2 action, named
 
 - **A migration is written.** Not run. Needs its own instruction.
-- **Two new files** (`CompReviewCard.tsx`, the migration), justified above.
-- **`CompReview` is a public type** with call sites in the panel, the API
-  route, the ARV builder and the tests. Adding a union member is additive, but
-  every `switch` over it must be checked — `tsc` will find them.
-- **The API route changes shape** to accept `review_notes`. Additive and
-  optional.
+- **Three new files**: `CompReviewCard.tsx`, `lib/comps/format.ts`, the
+  migration. Each justified above.
+- **`setCompReview`'s signature changes** (`compService.ts:440`) to carry the
+  notes. This repo's hard rule: *never change function signatures without
+  checking all call sites.* It currently takes
+  `(compId, review, ctx, userId, sale)`; notes join `sale` as an options
+  object rather than a sixth positional. Call sites checked before the edit.
+- **`searchUrls`' return shape changes** — exported, additive.
+- **`app/globals.css` is edited** to add the token.
+- **`ArvResult` gains a field** — public type.
+- **Two silent non-exhaustive sites remain** after `e5eb59f`, and `tsc` will
+  **not** find them (item 10):
+  - `COMP_REVIEW_ORDER` (`types.ts:74`) — the API validator. Miss it and
+    `route.ts:70` returns 400 for the new value, with a clean build.
+  - `compReviewOptions` (`types.ts:61`) — miss it and the choice never renders.
+
+  `tsc` **does** catch `COMP_REVIEW_LABELS` and `REVIEW_TONE`, both
+  `Record<CompReview, …>`. Rev 1's claim that the compiler finds everything was
+  wrong; this is where reading is required.
 - No change to auth, RLS, env, CI, lockfiles, or any Plaid path.
 
 ## Testing
 
-Extend `tests/23-comps.spec.ts`. New cases:
+### Existing tests that change, and why — stated before the work
 
-1. one card shows at a time, and saving advances to the next
-2. "3 of 7" counts down as houses are reviewed
-3. Save is disabled with no choice picked, and says why
-4. tapping a source lights that pill and marks the card as the one in hand
-5. `Later` returns the comp to Still to check, and does not record a review
+**Item 11.** `tests/23-comps.spec.ts:432-477` — "skipping a comp moves the
+ARV" and "approving a comp again restores the ARV" — drive
+`comp-review-comp-4-option-*` on the default Needs-review view, which is the
+view the new card replaces. **They must be rewritten, and the reason is that
+the UI deliberately changed, not that they went red.** Recorded here so the
+two are distinguishable afterwards. **The assertions are kept**: a review
+moves the ARV, a skip does not.
+
+### New cases
+
+1. one card at a time; saving advances to the next
+2. "3 of 7" counts down
+3. Save disabled with no choice, and says why
+4. tapping a source lights that pill and marks the card
+5. `Later` returns the comp to Still to check, records no review
 6. tab counts move when a review is saved
-7. "Can't tell" skips the comp **and** the ARV basis line says how many were
-   unreadable
-8. the spec bar stays put while the list scrolls
-9. **the whole tab fits 390px with no sideways scroll** — the existing
-   `23-comps.spec.ts` already has this shape; follow it
-10. review notes survive a reload
+7. **approving a removed listing asks what it sold for, and does not 400**
+8. "Can't tell" skips the comp and the basis line says how many were
+   unreadable *(Stage B)*
+9. the spec bar stays put while the list scrolls
+10. review notes round-trip *(Stage B — see below)*
 
-Run `npx playwright test tests/23-comps.spec.ts`, then `npm run build` and
-`tsc`.
+**Item 11, case 9:** no new 390px test. The file already sets
+`viewport: 390x844` at `test.use` and already has "the Comps tab fits 390px
+without sideways scroll". That one covers it.
 
-**One contradiction in the rules to resolve before work starts.** `CLAUDE.md`
-§Testing says every major feature needs a passing Playwright test, no
-exceptions. §Stop At The Commit says "No tests. Run `npm run build` and `tsc`
-before stopping." I have planned for the Playwright test. The owner should say
-which rule wins.
+**Item 8, case 10:** with the column absent this can only stub the route,
+which proves the field round-trips through the UI and **nothing about
+persistence**. It is named that way — "review notes reach the request" — and
+the persistence test waits for Stage B.
+
+### Gate
+
+`npx playwright test tests/23-comps.spec.ts`, then `npm run build` and `tsc`.
+
+**Known today, unrelated to this work:** 8 of the 55 tests in that spec
+already fail on `main` — ARV values and refresh/lock flows. Verified by
+running the spec against the pre-fix tree. They are **not** to be "fixed" as
+part of this branch, and a pass here means those 8 and no others.
+
+**OWNER (item 1), unanswered:** `CLAUDE.md` §Testing demands a passing
+Playwright test, "no exceptions". §Stop At The Commit says "No tests. Run
+`npm run build` and `tsc`", under a heading claiming it overrides everything
+*below* it — and §Testing sits *above*, so the override does not reach it.
+Both are in force. **Assumption used here:** write and run the Playwright
+test, let build + `tsc` be the stopping gate. Say if that is wrong.
 
 ## Out of scope
 
-- **Pending as a comp status.** It belongs in the notes but not in this
-  branch, and for a reason worth recording: RentCast reports only Active and
-  Inactive, so the app can never learn that a listing went under contract. A
-  Pending status could only ever be hand-set, which makes it a change to
-  manual comp entry rather than to the review flow. Its own plan.
+- **Pending as a comp status.** Verified: `lib/rentcast/types.ts:130-135`
+  documents Active/Inactive only, `fromRentCast.ts:22` maps inactive→removed.
+  The app can never learn a listing went under contract, so Pending could only
+  be hand-set — a change to manual comp entry, not to the review flow.
 - Verdict levers on "Doesn't work" — the Deal tab.
 - Team sharing — needs RLS work.
 - Every other tab.
-- Swipe gestures. The buttons ship first; a gesture with no button is a
-  feature only its author can find.
-- Changing `cashReservesTightMonths` from 3 to 6.
+- Swipe gestures. Buttons first.
+- `cashReservesTightMonths` 3 → 6.
+- **Splitting the comps specs.** `23-comps.spec.ts` is 1,159 lines and 55
+  tests; ten more is fine and the split is its own plan.
+- **The 8 pre-existing Playwright failures.**
 
 ## Approver
 
