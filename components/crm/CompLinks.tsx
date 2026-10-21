@@ -98,11 +98,13 @@ export function CompLinks({
             title={source.title}
             onClick={() => onOpen?.(source.id)}
             data-testid={`comp-link-${source.id}-${comp.id}`}
-            className={`inline-flex items-center gap-1 min-h-11 px-3 rounded-(--radius-pill)
-              border text-[12px] font-medium transition-colors ${
+            /* border-default is 8% white, which on an elevated card reads as
+               no edge at all — the pills ghosted. */
+            className={`inline-flex items-center gap-1.5 min-h-11 px-3.5 rounded-(--radius-pill)
+              border text-[12px] font-semibold transition-colors ${
                 isOpen
                   ? "border-(--color-accent) bg-(--color-accent-glow) text-(--color-accent)"
-                  : "border-(--color-border-default) text-(--color-text-primary) hover:border-(--color-border-strong)"
+                  : "border-(--color-border-strong) bg-(--color-base) text-(--color-text-primary) hover:border-(--color-accent)"
               }`}
           >
             <ExternalLink size={11} className="shrink-0" />

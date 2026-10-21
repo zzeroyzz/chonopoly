@@ -61,10 +61,17 @@ const STATUS_MEANING: Record<string, string> = {
   sold: "It closed at this price. This is the kind of house your resale price is built from.",
 };
 
-const STATUS_STYLE: Record<string, string> = {
-  sold: "bg-(--color-accent-glow) text-(--color-accent)",
-  removed: "bg-amber-500/10 text-amber-400",
-  active: "bg-(--color-elevated) text-(--color-text-secondary)",
+/**
+ * Each status gets its own ink and an edge.
+ *
+ * Active was elevated-on-elevated with secondary text, which on this card is
+ * a grey word on a grey patch — the one piece of the header that says whether
+ * the price in front of it is a sale or an opinion.
+ */
+export const STATUS_STYLE: Record<string, string> = {
+  sold: "bg-(--color-accent) text-(--color-base) border-transparent",
+  removed: "text-amber-300 border-amber-400/50 bg-amber-500/10",
+  active: "text-sky-300 border-sky-400/50 bg-sky-500/10",
 };
 
 export function CompReviewCard({
@@ -94,13 +101,15 @@ export function CompReviewCard({
   const date = compDate(comp);
   const provenance = provenanceLabel(comp);
 
-  const specs = [
+  const facts = [
     comp.beds === null ? null : `${comp.beds} bed`,
     comp.baths === null ? null : `${comp.baths} bath`,
     comp.sqft === null ? null : `${comp.sqft.toLocaleString("en-US")} sq ft`,
     comp.yearBuilt === null ? null : `built ${comp.yearBuilt}`,
     comp.distanceMiles === null ? null : `${comp.distanceMiles.toFixed(1)} mi away`,
-  ].filter((part): part is string => part !== null);
+    date,
+    provenance,
+  ].filter((part): part is string => part !== null && part !== "");
 
   function answer(review: CompReview) {
     setSheetOpen(false);
@@ -121,7 +130,7 @@ export function CompReviewCard({
         bg-(--color-elevated) p-5 flex flex-col gap-4"
     >
       <div className="flex items-start justify-between gap-3">
-        <p className="text-[14px] font-semibold leading-snug wrap-break-word min-w-0">
+        <p className="text-[15px] font-semibold leading-snug wrap-break-word min-w-0">
           {comp.formattedAddress}
         </p>
         <span
@@ -132,44 +141,48 @@ export function CompReviewCard({
         </span>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <div className="flex flex-col gap-2.5">
+        <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
           {label && <span className="text-[11px] text-(--color-text-secondary)">{label}</span>}
-          <span className="text-[18px] font-bold">
+          <span className="text-[26px] font-bold leading-none tracking-tight">
             {comp.price === null ? "—" : dollars(comp.price)}
           </span>
           {comp.salePrice !== null && (
-            <span className="text-[13px] font-semibold text-(--color-accent)">
+            <span className="text-[15px] font-semibold text-(--color-accent)">
               · Sold for {dollars(comp.salePrice)}
             </span>
           )}
-          {ppsf && <span className="text-[11px] text-(--color-text-secondary)">{ppsf}</span>}
+          {ppsf && (
+            <span className="text-[12px] text-(--color-text-secondary)">{ppsf}</span>
+          )}
           <span
-            className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
-              STATUS_STYLE[comp.status] ?? STATUS_STYLE.active
-            }`}
+            className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5
+              rounded-(--radius-pill) border ${STATUS_STYLE[comp.status] ?? STATUS_STYLE.active}`}
           >
             {COMP_STATUS_LABELS[comp.status]}
           </span>
         </div>
 
-        {specs.length > 0 && (
-          <p className="text-[11px] text-(--color-text-secondary)">{specs.join(" · ")}</p>
+        {/* One quiet line of plain facts, the date among them. Four separate
+            lines of the same grey was four things competing and none read. */}
+        {facts.length > 0 && (
+          <p className="text-[12px] text-(--color-text-secondary)">{facts.join(" · ")}</p>
         )}
+
+        {/* The comparison is the thing the decision turns on, so it reads at
+            full strength rather than as another grey aside. */}
         {against && (
-          <p
-            data-testid="comp-review-vs"
-            className="text-[12px] text-(--color-text-primary)"
-          >
-            Next to yours: <span className="text-(--color-text-secondary)">{against}</span>
+          <p data-testid="comp-review-vs" className="text-[13px] leading-relaxed">
+            <span className="text-(--color-text-secondary)">Next to yours: </span>
+            <span className="font-medium">{against}</span>
           </p>
         )}
-        {(date || provenance) && (
-          <p className="text-[11px] text-(--color-text-secondary)">
-            {[date, provenance].filter(Boolean).join(" · ")}
-          </p>
-        )}
-        <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+
+        {/* Whether the price above is a sale or an opinion. It gets a ground
+            of its own so it reads as the note it is. */}
+        <p className="text-[12px] leading-relaxed text-(--color-text-primary)
+          bg-(--color-base) border border-(--color-border-subtle)
+          rounded-(--radius-md) px-3 py-2">
           {STATUS_MEANING[comp.status]}
         </p>
 
@@ -182,7 +195,7 @@ export function CompReviewCard({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <p className="text-[9px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-(--color-text-secondary)">
           Go and look at it
         </p>
         <CompLinks comp={comp} />

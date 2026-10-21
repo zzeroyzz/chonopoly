@@ -42,7 +42,7 @@ import {
   type CompSort,
   type ReviewTab,
 } from "./CompControls";
-import { CompReviewCard } from "./CompReviewCard";
+import { CompReviewCard, STATUS_STYLE } from "./CompReviewCard";
 
 /**
  * Comparable sales for one property, and the ARV they produce.
@@ -116,13 +116,6 @@ const REVIEW_TONE: Record<CompReview, DropdownTone> = {
   not_renovated_skip: "warn",
   took_off_market_skip: "warn",
   not_comparable_skip: "warn",
-};
-
-const STATUS_STYLE: Record<string, string> = {
-  // Sold is the evidence that counts, so it gets the accent.
-  sold: "bg-(--color-accent-glow) text-(--color-accent)",
-  removed: "bg-amber-500/10 text-amber-400",
-  active: "bg-(--color-elevated) text-(--color-text-secondary)",
 };
 
 /**
@@ -931,9 +924,8 @@ function CompRow({
               <span className="text-[11px] text-(--color-text-secondary)">{ppsf}</span>
             )}
             <span
-              className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                STATUS_STYLE[comp.status] ?? STATUS_STYLE.active
-              }`}
+              className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5
+              rounded-(--radius-pill) border ${STATUS_STYLE[comp.status] ?? STATUS_STYLE.active}`}
             >
               {COMP_STATUS_LABELS[comp.status]}
             </span>
