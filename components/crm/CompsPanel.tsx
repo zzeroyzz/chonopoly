@@ -161,11 +161,14 @@ async function readResponse(res: Response, fallback: string): Promise<CompsRespo
 
 export function CompsPanel({
   propertyId,
+  subjectAddress,
   ctx,
   ctxParams,
   onEditFacts,
 }: {
   propertyId: string;
+  /** The house being bought. Only the address: the rest arrives with the comps. */
+  subjectAddress: string | null;
   ctx: ActiveContext | null;
   ctxParams: string | null;
   /** Opens the house facts form, which is the only way past a blocked lookup. */
@@ -181,6 +184,8 @@ export function CompsPanel({
   const [status, setStatus] = useState<RefreshStatus | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [subjectBeds, setSubjectBeds] = useState<number | null>(null);
+  const [subjectBaths, setSubjectBaths] = useState<number | null>(null);
+  const [subjectYearBuilt, setSubjectYearBuilt] = useState<number | null>(null);
   const [confirmingForce, setConfirmingForce] = useState(false);
   /** Set when a lookup stopped because the house has no size or bed count. */
   const [blindLookup, setBlindLookup] = useState<{ message: string; facts: string[] } | null>(null);
@@ -211,6 +216,8 @@ export function CompsPanel({
     setDegraded(stoppedForFacts ? null : (data.message ?? null));
     setSource(data.source ?? null);
     setSubjectBeds(data.subjectBeds ?? null);
+    setSubjectBaths(data.subjectBaths ?? null);
+    setSubjectYearBuilt(data.subjectYearBuilt ?? null);
 
     // Fold the refresh metadata back into the status so the lock message
     // updates without a second round trip.
@@ -424,6 +431,14 @@ export function CompsPanel({
 
   return (
     <div data-testid="panel-comps" className="flex flex-col gap-4">
+      <SubjectSpecs
+        address={subjectAddress}
+        beds={subjectBeds}
+        baths={subjectBaths}
+        sqft={arv?.subjectSqft ?? null}
+        yearBuilt={subjectYearBuilt}
+      />
+
       {/* ── The ARV ─────────────────────────────────────────────────────── */}
       <div
         data-testid="arv-card"
@@ -822,6 +837,65 @@ export function CompsPanel({
             />
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The house you are buying, pinned to the top of the tab.
+ *
+ * Every judgement here is a comparison — is this nearby house like mine? —
+ * and the facts being compared against used to scroll off the top after two
+ * cards, which turns the comparison into a memory test.
+ *
+ * Two lines at 390px and under 72px tall: it is on screen for the whole
+ * session, so every pixel it takes is a pixel of the house being reviewed.
+ */
+function SubjectSpecs({
+  address,
+  beds,
+  baths,
+  sqft,
+  yearBuilt,
+}: {
+  address: string | null;
+  beds: number | null;
+  baths: number | null;
+  sqft: number | null;
+  yearBuilt: number | null;
+}) {
+  const specs = [
+    beds === null ? null : `${beds} bed`,
+    baths === null ? null : `${baths} bath`,
+    sqft === null ? null : `${sqft.toLocaleString("en-US")} sq ft`,
+    yearBuilt === null ? null : `built ${yearBuilt}`,
+  ].filter((part): part is string => part !== null);
+
+  // Nothing to pin is better than an empty bar taking the space.
+  if (!address && specs.length === 0) return null;
+
+  return (
+    <div
+      data-testid="subject-specs"
+      className="sticky top-0 z-10 -mx-1 px-1 py-2 bg-(--color-base)
+        border-b border-(--color-border-default) flex flex-col gap-0.5"
+    >
+      <p className="text-[9px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
+        You&apos;re comparing against
+      </p>
+      {address && (
+        <p className="text-[13px] font-semibold leading-snug truncate">{address}</p>
+      )}
+      {specs.length > 0 ? (
+        <p className="text-[11px] text-(--color-text-secondary)">{specs.join(" · ")}</p>
+      ) : (
+        /* The facts are what the comps are matched on, so a house without
+           them cannot be compared to anything. Say what is needed. */
+        <p className="text-[11px] text-amber-400">
+          We don&apos;t know this house&apos;s size or beds yet, so there is nothing to
+          compare against.
+        </p>
       )}
     </div>
   );

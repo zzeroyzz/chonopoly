@@ -757,6 +757,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
             {tab === "ARV" && property && (
               <CompsPanel
                 propertyId={property.id}
+                subjectAddress={property.address_line1}
                 ctx={ctx}
                 ctxParams={ctxParams}
                 // The facts form lives above the tabs, so opening it is
