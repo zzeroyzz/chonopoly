@@ -58,6 +58,7 @@ function fixtureComps(): Comp[] {
     included: true,
     review: "renovated_use",
     reviewSetAt: null,
+    reviewNotes: null,
     salePrice: null,
     saleDate: null,
     notes: null,
@@ -214,6 +215,7 @@ async function stubComps(page: Page, options: StubOptions = {}) {
         included: true,
     review: "renovated_use",
     reviewSetAt: null,
+    reviewNotes: null,
     salePrice: null,
     saleDate: null,
         // Spreading a fixture comp carried its RentCast dates onto a manual

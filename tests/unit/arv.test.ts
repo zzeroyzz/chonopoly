@@ -4,10 +4,17 @@ import {
   type Comp,
   type CompStatus,
   compReviewOptions,
+  isReviewable,
   isSkipped,
   COMP_REVIEW_ORDER,
+  COMP_REVIEW_SKIPS,
 } from "@/lib/comps/types";
-import { matchesFilter, type CompFilter } from "@/components/crm/CompControls";
+import {
+  matchesFilter,
+  matchesTab,
+  defaultTab,
+  type CompFilter,
+} from "@/components/crm/CompControls";
 import { comparedToSubject } from "@/lib/comps/format";
 
 /**
@@ -50,6 +57,7 @@ function comp(overrides: Partial<Comp> = {}): Comp {
     included: true,
     review: "renovated_use",
     reviewSetAt: null,
+    reviewNotes: null,
     salePrice: null,
     saleDate: null,
     notes: null,
@@ -709,9 +717,9 @@ describe("calculateArv", () => {
   it("offers Took off market only on a removed listing", () => {
     // A recorded sale closed and an active listing has not finished yet, so
     // the option would be an answer that cannot be true.
-    expect(compReviewOptions("removed")).toContain("took_off_market_skip");
-    expect(compReviewOptions("sold")).not.toContain("took_off_market_skip");
-    expect(compReviewOptions("active")).not.toContain("took_off_market_skip");
+    expect(compReviewOptions("removed", "needs_review")).toContain("took_off_market_skip");
+    expect(compReviewOptions("sold", "needs_review")).not.toContain("took_off_market_skip");
+    expect(compReviewOptions("active", "needs_review")).not.toContain("took_off_market_skip");
   });
 
   it("does not count a comp taken off the market", () => {
@@ -897,5 +905,155 @@ describe("comparedToSubject", () => {
     const nearby = comp({ id: "d-5", beds: null, baths: null, sqft: null, yearBuilt: null });
 
     expect(comparedToSubject(nearby, subject)).toBeNull();
+  });
+});
+
+describe("a house that cannot be judged", () => {
+  /**
+   * An active listing is an asking price and a pending one is an accepted
+   * offer. Neither is evidence of what a finished house sells for, so neither
+   * is reviewed and neither counts — they are context, not a chore.
+   *
+   * Every comp defaults to needs_review whatever its status, so without this
+   * the owner was asked "was it fixed up like yours will be?" about a house
+   * that has not sold. That is where "81 to go" came from.
+   */
+  it("knows which statuses can be judged", () => {
+    expect(isReviewable("removed")).toBe(true);
+    expect(isReviewable("sold")).toBe(true);
+    expect(isReviewable("active")).toBe(false);
+    expect(isReviewable("pending")).toBe(false);
+  });
+
+  it("offers no answers for a house still on the market", () => {
+    expect(compReviewOptions("active", "needs_review")).toEqual([]);
+    expect(compReviewOptions("pending", "needs_review")).toEqual([]);
+  });
+
+  /**
+   * Returning nothing for an already-answered comp would leave it counting
+   * with no control to change it: unreachable and live at the same time.
+   */
+  it("keeps the answers on a comp somebody already answered", () => {
+    expect(compReviewOptions("active", "renovated_use")).toContain("needs_review");
+  });
+
+  it("does not count an unjudgeable house as work still to do", () => {
+    const comps = [
+      comp({ id: "w-1", status: "active", review: "needs_review", sqft: 1_000, price: 300_000 }),
+      comp({ id: "w-2", status: "pending", review: "needs_review", sqft: 1_000, price: 300_000 }),
+      comp({ id: "w-3", status: "removed", review: "needs_review", sqft: 1_000, price: 300_000 }),
+    ];
+
+    expect(calculateArv(comps, 1_000).stillToReview).toBe(1);
+  });
+
+  /**
+   * The arithmetic has to agree with the screen. `approved` had no status
+   * filter at all, so a row approved before this rule existed would have kept
+   * counting, invisibly.
+   */
+  it("never counts an unjudgeable house, even if it was approved", () => {
+    const comps = [
+      comp({ id: "a-1", status: "active", review: "renovated_use", sqft: 1_000, price: 900_000 }),
+      comp({ id: "a-2", status: "sold", review: "renovated_use", sqft: 1_000, price: 300_000 }),
+    ];
+
+    const result = calculateArv(comps, 1_000);
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["a-2"]);
+    expect(result.value).toBe(300_000);
+  });
+
+  it("opens on Checked when nothing can be judged", () => {
+    const comps = [
+      comp({ id: "t-1", status: "active", review: "needs_review" }),
+      comp({ id: "t-2", status: "pending", review: "needs_review" }),
+    ];
+
+    expect(defaultTab(comps)).toBe("done");
+  });
+});
+
+describe("when the photos are gone", () => {
+  /**
+   * The old answers forced a guess between "it counts" and "leave it out"
+   * when a removed listing had taken its photos down with it. Both move the
+   * resale price on no evidence.
+   */
+  it("is offered on a removed listing and nowhere else", () => {
+    expect(compReviewOptions("removed", "needs_review")).toContain("cant_tell_skip");
+    expect(compReviewOptions("sold", "needs_review")).not.toContain("cant_tell_skip");
+  });
+
+  it("is a skip, without a second edit anywhere", () => {
+    expect(COMP_REVIEW_SKIPS).toContain("cant_tell_skip");
+    expect(isSkipped("cant_tell_skip")).toBe(true);
+  });
+
+  it("keeps the house out of the resale price", () => {
+    const comps = [
+      comp({ id: "c-1", status: "sold", review: "renovated_use", sqft: 1_000, price: 300_000 }),
+      comp({ id: "c-2", status: "removed", review: "cant_tell_skip", sqft: 1_000, price: 900_000 }),
+    ];
+
+    expect(calculateArv(comps, 1_000).value).toBe(300_000);
+  });
+
+  /**
+   * Four comps where two more were unreadable is a different number from four
+   * out of six, and the owner should see that without going looking.
+   */
+  it("says how many could not be judged", () => {
+    const comps = [
+      comp({ id: "u-1", status: "sold", review: "renovated_use", sqft: 1_000, price: 300_000 }),
+      comp({ id: "u-2", status: "removed", review: "cant_tell_skip", sqft: 1_000, price: 310_000 }),
+      comp({ id: "u-3", status: "removed", review: "cant_tell_skip", sqft: 1_000, price: 320_000 }),
+    ];
+
+    const result = calculateArv(comps, 1_000);
+
+    expect(result.unreadable).toBe(2);
+    expect(result.basisLabel).toContain("2 had no photos left");
+  });
+
+  it("counts only that answer, not the other skips", () => {
+    const comps = [
+      comp({ id: "o-1", status: "sold", review: "renovated_use", sqft: 1_000, price: 300_000 }),
+      comp({ id: "o-2", status: "removed", review: "not_renovated_skip", sqft: 1_000, price: 310_000 }),
+      comp({ id: "o-3", status: "removed", review: "took_off_market_skip", sqft: 1_000, price: 320_000 }),
+    ];
+
+    const result = calculateArv(comps, 1_000);
+
+    expect(result.unreadable).toBe(0);
+    expect(result.basisLabel).not.toContain("no photos left");
+  });
+});
+
+describe("houses that are on the market", () => {
+  /**
+   * They cannot be judged, so they are not work — but they are real houses
+   * nearby at real prices, and taking them out of the queue without giving
+   * them anywhere to go made nine of them unreachable.
+   */
+  it("are in their own tab and neither half of the work", () => {
+    const active = comp({ id: "m-1", status: "active", review: "needs_review" });
+
+    expect(matchesTab(active, undefined, "market")).toBe(true);
+    expect(matchesTab(active, undefined, "todo")).toBe(false);
+    expect(matchesTab(active, undefined, "done")).toBe(false);
+  });
+
+  it("does not put a judgeable house in with them", () => {
+    const removed = comp({ id: "m-2", status: "removed", review: "needs_review" });
+
+    expect(matchesTab(removed, undefined, "market")).toBe(false);
+    expect(matchesTab(removed, undefined, "todo")).toBe(true);
+  });
+
+  it("offers no review control, because there is nothing to answer", () => {
+    expect(compReviewOptions("active", "needs_review")).toHaveLength(0);
+    expect(compReviewOptions("pending", "needs_review")).toHaveLength(0);
   });
 });

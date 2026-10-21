@@ -4,7 +4,7 @@ import { resolveContext } from "@/lib/context";
 import { getProperty } from "@/lib/property/propertyService";
 import { listComps, addManualComp } from "@/lib/comps/compService";
 import { calculateArv, subjectOptions } from "@/lib/comps/arv";
-import { type CompStatus, type ManualCompInput } from "@/lib/comps/types";
+import { type CompStatus, type ManualCompInput, COMP_STATUS_ORDER } from "@/lib/comps/types";
 
 /**
  * A property's comps, and the ARV they produce.
@@ -15,8 +15,24 @@ import { type CompStatus, type ManualCompInput } from "@/lib/comps/types";
  * committed as the property's figure, which is a separate, deliberate act.
  */
 
-const statusFor = (value: unknown): CompStatus =>
-  value === "active" || value === "removed" ? value : "sold";
+/**
+ * What the caller says this comp is, or nothing.
+ *
+ * This used to read `value === "active" || value === "removed" ? value :
+ * "sold"`, so anything unrecognised — a typo, a new status the client knew
+ * about and the server did not — became a confirmed sale. `types.ts` calls
+ * collapsing a non-sale into sold "the single easiest way to inflate an ARV",
+ * and that is what a default branch was quietly doing.
+ *
+ * Now the value has to be one we know. The caller's default is still `sold`,
+ * because typing a comp in from an agent's closed-sales list is the reason
+ * this endpoint exists — but it is a default for a MISSING value, not for an
+ * unrecognised one.
+ */
+const statusFor = (value: unknown): CompStatus | null => {
+  if (value === undefined || value === null) return "sold";
+  return COMP_STATUS_ORDER.includes(value as CompStatus) ? (value as CompStatus) : null;
+};
 
 /**
  * A date column will take almost anything and store something surprising, so
@@ -105,6 +121,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "price must be a number above zero" }, { status: 400 });
   }
 
+  const status = statusFor(payload.status);
+  if (status === null) {
+    return NextResponse.json(
+      { error: `status must be one of: ${COMP_STATUS_ORDER.join(", ")}` },
+      { status: 400 }
+    );
+  }
+
   const input: ManualCompInput = {
     formattedAddress: address,
     price,
@@ -112,7 +136,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     beds: numberOrNull(payload.beds),
     baths: numberOrNull(payload.baths),
     yearBuilt: numberOrNull(payload.yearBuilt),
-    status: statusFor(payload.status),
+    status,
     saleDate: isoDateOrNull(payload.saleDate),
     notes: typeof payload.notes === "string" && payload.notes.trim() ? payload.notes.trim() : null,
   };

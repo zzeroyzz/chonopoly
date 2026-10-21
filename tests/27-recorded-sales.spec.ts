@@ -114,6 +114,7 @@ function recordedSaleComps(): Comp[] {
     // takes a person to leave it out, so the fixture leaves it out.
     review: COUNTY_RECORDS[index]?.skip ? "not_comparable_skip" : "renovated_use",
     reviewSetAt: null,
+    reviewNotes: null,
     salePrice: null,
     saleDate: null,
     notes: null,
@@ -137,7 +138,8 @@ function listingComp(): Comp {
     listingType: "Standard", listedDate: "2026-03-01", removedDate: "2026-06-01",
     lastSeenDate: "2026-06-01", daysOnMarket: 92, distanceMiles: 0.32, daysOld: 40,
     correlation: 0.9, buyerType: null, buyerName: null, county: null,
-    included: true, review: "renovated_use", reviewSetAt: null, salePrice: null, saleDate: null, notes: null, updatedAt: "",
+    included: true, review: "renovated_use", reviewSetAt: null, reviewNotes: null,
+    salePrice: null, saleDate: null, notes: null, updatedAt: "",
   };
 }
 
@@ -239,6 +241,7 @@ async function stubRecordedSales(page: Page, initial: Comp[]) {
           ? {
               ...comp,
               review: payload.review ?? comp.review,
+              reviewNotes: null,
               salePrice: payload.salePrice ?? null,
               saleDate: payload.saleDate ?? null,
             }

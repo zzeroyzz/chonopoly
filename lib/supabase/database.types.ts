@@ -1738,6 +1738,7 @@ export type Database = {
           property_type: string | null
           removed_date: string | null
           review: string
+          review_notes: string | null
           review_set_at: string | null
           review_set_by: string | null
           sale_date: string | null
@@ -1781,6 +1782,7 @@ export type Database = {
           property_type?: string | null
           removed_date?: string | null
           review?: string
+          review_notes?: string | null
           review_set_at?: string | null
           review_set_by?: string | null
           sale_date?: string | null
@@ -1824,6 +1826,7 @@ export type Database = {
           property_type?: string | null
           removed_date?: string | null
           review?: string
+          review_notes?: string | null
           review_set_at?: string | null
           review_set_by?: string | null
           sale_date?: string | null

@@ -47,6 +47,8 @@ export function perSqft(comp: Comp): string | null {
  */
 const PRICE_MEANING: Partial<Record<CompStatus, string>> = {
   sold: "sold for",
+  // The one status whose entire point is that the price is not final yet.
+  pending: "under contract at",
 };
 
 /**

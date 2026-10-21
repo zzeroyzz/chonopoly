@@ -10,6 +10,7 @@ import {
   COMP_STATUS_LABELS,
   COMP_REVIEW_LABELS,
   compReviewOptions,
+  isReviewable,
   isSkipped,
 } from "@/lib/comps/types";
 import { type ArvResult, type CompNote } from "@/lib/comps/arv";
@@ -116,6 +117,7 @@ const REVIEW_TONE: Record<CompReview, DropdownTone> = {
   not_renovated_skip: "warn",
   took_off_market_skip: "warn",
   not_comparable_skip: "warn",
+  cant_tell_skip: "warn",
 };
 
 /**
@@ -340,15 +342,22 @@ export function CompsPanel({
   async function review(
     comp: Comp,
     next: CompReview,
-    sale?: { price: number; date: string | null }
+    extra?: { sale?: { price: number; date: string | null }; notes?: string | null }
   ) {
+    const sale = extra?.sale;
     if (!ctxParams) return;
     // Optimistic: choosing an answer should feel instant, and the server's
     // recomputed ARV lands a moment later.
     setComps((current) =>
       current.map((c) =>
         c.id === comp.id
-          ? { ...c, review: next, salePrice: sale?.price ?? null, saleDate: sale?.date ?? null }
+          ? {
+              ...c,
+              review: next,
+              salePrice: sale?.price ?? null,
+              saleDate: sale?.date ?? null,
+              reviewNotes: extra?.notes === undefined ? c.reviewNotes : extra.notes,
+            }
           : c
       )
     );
@@ -361,6 +370,7 @@ export function CompsPanel({
           body: JSON.stringify({
             review: next,
             ...(sale ? { salePrice: sale.price, saleDate: sale.date } : {}),
+            ...(extra?.notes === undefined ? {} : { reviewNotes: extra.notes }),
           }),
         }
       );
@@ -423,6 +433,16 @@ export function CompsPanel({
    * Reviewing a comp takes it out of this tab, so the queue shortens as the
    * work is done and the next house arrives on its own.
    */
+  /**
+   * The comps this screen is actually about.
+   *
+   * The header counted every comp while the tabs counted only the ones that
+   * can be judged, so a house with nine active listings read "0 of 81
+   * approved" above "72 Still to check" — two true numbers that look like a
+   * bug sitting next to each other.
+   */
+  const judgeable = comps.filter((c) => isReviewable(c.status)).length;
+
   const queue = [
     ...visible.filter((c) => !deferred.includes(c.id)),
     ...visible.filter((c) => deferred.includes(c.id)),
@@ -705,10 +725,12 @@ export function CompsPanel({
       )}
 
       {/* ── The comps ───────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-[13px] font-semibold">
-          Comps{comps.length > 0 ? ` · ${counts.approved} of ${comps.length} approved` : ""}
-        </h2>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-col gap-0.5 min-w-0">
+          <h2 className="text-[13px] font-semibold">
+            Comps{comps.length > 0 ? ` · ${counts.approved} of ${judgeable} approved` : ""}
+          </h2>
+        </div>
         <button
           type="button"
           onClick={() => setAdding((v) => !v)}
@@ -772,7 +794,10 @@ export function CompsPanel({
           <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
             All {comps.length} checked.{" "}
             {arv && arv.value !== null
-              ? `Your resale price is ${dollars(arv.value)}, built from ${counts.approved} of them.`
+              ? `Your resale price is ${dollars(arv.value)}, built from ${counts.approved} of them.` +
+              (arv.unreadable > 0
+                ? ` ${arv.unreadable} had no photos left, so ${arv.unreadable === 1 ? "it was" : "they were"} left out.`
+                : "")
               : "Nothing is counted yet, so there is no resale price."}
           </p>
           <button
@@ -798,6 +823,28 @@ export function CompsPanel({
           >
             Show all
           </button>
+        </div>
+      ) : activeTab === "market" ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+            Asking prices, not sales. These aren&apos;t judged and aren&apos;t in your
+            resale price — they show what people are asking nearby right now.
+          </p>
+          <ul
+            data-testid="comp-list"
+            className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto pr-1"
+          >
+            {visible.map((comp) => (
+              <CompRow
+                key={comp.id}
+                comp={comp}
+                note={notes.get(comp.id)}
+                subject={subject}
+                onReview={review}
+                onRemove={remove}
+              />
+            ))}
+          </ul>
         </div>
       ) : activeTab === "todo" && current ? (
         /* One house, filling the screen. The next arrives when this is saved. */
@@ -852,7 +899,11 @@ function CompRow({
   /** The ARV's verdict on this comp. Absent only before the first load. */
   note: CompNote | undefined;
   subject: SubjectFacts;
-  onReview: (comp: Comp, review: CompReview, sale?: { price: number; date: string | null }) => void;
+  onReview: (
+    comp: Comp,
+    review: CompReview,
+    extra?: { sale?: { price: number; date: string | null }; notes?: string | null }
+  ) => void;
   onRemove: (comp: Comp) => void;
 }) {
   const [askingSale, setAskingSale] = useState(false);
@@ -867,6 +918,9 @@ function CompRow({
    */
   const [opened, setOpened] = useState<CompLinkSource | null>(null);
   const against = comparedToSubject(comp, subject);
+  // Empty on a house that cannot be judged, which is how the On-the-market
+  // rows come out read-only without a second rule saying so.
+  const reviewOptions = compReviewOptions(comp.status, comp.review);
   const ppsf = perSqft(comp);
   const date = compDate(comp);
   const provenance = provenanceLabel(comp);
@@ -987,6 +1041,16 @@ function CompRow({
             </p>
           )}
 
+          {comp.reviewNotes && (
+            <p
+              data-testid={`comp-notes-${comp.id}`}
+              className="text-[11px] text-(--color-text-primary) mt-1.5 px-2.5 py-1.5
+                rounded-(--radius-md) bg-(--color-base) border border-(--color-border-subtle)"
+            >
+              {comp.reviewNotes}
+            </p>
+          )}
+
           {/* The comparison, already done. "3 bed" is above; whether 3 is the
               same as yours is the thing you were working out by hand. */}
           {against && (
@@ -1004,11 +1068,13 @@ function CompRow({
           </div>
 
           {/* The only control that moves the ARV. A native select, which is
-              the right thing to tap on a phone. */}
+              the right thing to tap on a phone. Absent entirely on a house
+              that cannot be judged: an empty picker is worse than none. */}
+          {reviewOptions.length > 0 && (
           <Dropdown
             className="mt-2"
             value={comp.review}
-            options={compReviewOptions(comp.status).map((key) => ({
+            options={reviewOptions.map((key) => ({
               value: key,
               label: COMP_REVIEW_LABELS[key],
               tone: REVIEW_TONE[key],
@@ -1027,6 +1093,7 @@ function CompRow({
             label={`What to do with ${comp.formattedAddress}`}
             testId={`comp-review-${comp.id}`}
           />
+          )}
 
           {askingSale && (
             <SalePricePrompt
@@ -1034,7 +1101,7 @@ function CompRow({
               onCancel={() => setAskingSale(false)}
               onSave={(price, date) => {
                 setAskingSale(false);
-                onReview(comp, "renovated_use", { price, date });
+                onReview(comp, "renovated_use", { sale: { price, date } });
               }}
             />
           )}
@@ -1074,6 +1141,15 @@ function ManualCompForm({
   const [price, setPrice] = useState("");
   const [sqft, setSqft] = useState("");
   const [saleDate, setSaleDate] = useState("");
+  /**
+   * Sold or Pending, and only here.
+   *
+   * RentCast reports Active or Inactive and nothing else, so an accepted
+   * offer can only ever reach the app through a person. An agent's list
+   * carries both, and calling a pending house sold would put a price that is
+   * not final into the resale price.
+   */
+  const [status, setStatus] = useState<"sold" | "pending">("sold");
   const [saving, setSaving] = useState(false);
 
   async function submit(e: React.FormEvent) {
@@ -1091,9 +1167,7 @@ function ManualCompForm({
           price: Number(price),
           sqft: sqft ? Number(sqft) : null,
           saleDate: saleDate || null,
-          // Typed in by hand means a confirmed sale, which is the entire
-          // reason to enter one.
-          status: "sold",
+          status,
         }),
       });
       onAdded(await readResponse(res, "Failed to add the comp"));
@@ -1101,6 +1175,7 @@ function ManualCompForm({
       setPrice("");
       setSqft("");
       setSaleDate("");
+      setStatus("sold");
     } catch (e) {
       onError(e instanceof Error ? e.message : "Failed to add the comp");
     } finally {
@@ -1118,9 +1193,34 @@ function ManualCompForm({
       className="flex flex-col gap-2.5 rounded-xl border border-(--color-border-default) p-3"
     >
       <p className="text-[11px] text-(--color-text-secondary) leading-relaxed">
-        Saved as a confirmed sale. RentCast can only tell you a listing was
-        removed, not that it closed.
+        RentCast can only tell you a listing was removed, not what happened to
+        it. Anything you enter here, it cannot know.
       </p>
+
+      <div className="flex gap-2" role="radiogroup" aria-label="What happened to this house">
+        {([
+          ["sold", "It sold", "Counts toward your resale price once you review it."],
+          ["pending", "Under contract", "Not final, so it stays out of your resale price."],
+        ] as const).map(([value, label, why]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={status === value}
+            onClick={() => setStatus(value)}
+            title={why}
+            data-testid={`manual-comp-status-${value}`}
+            className={`flex-1 min-h-11 px-3 rounded-(--radius-md) border text-[12px] font-medium
+              transition-colors ${
+                status === value
+                  ? "border-(--color-accent) bg-(--color-accent-glow) text-(--color-accent)"
+                  : "border-(--color-border-default) text-(--color-text-secondary)"
+              }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       <input
         value={address}
