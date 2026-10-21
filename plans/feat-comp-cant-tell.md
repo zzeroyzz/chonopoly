@@ -147,10 +147,22 @@ Two consequences, both of which must be handled here:
   `needs_review`.** A comp someone has already answered keeps its options, so
   any existing answer can always be changed or cleared.
 
-**Before this ships, a read-only count:** how many comps are at a review other
-than `needs_review` with status `active`? If that is zero — likely, since the
-UI only recently made such an answer easy — the migration path is empty and
-this is pure prevention. The owner runs it; nothing here writes.
+**Answered, 2026-10-21.** The owner ran it. Every comp in the database that
+carries a review other than `needs_review`:
+
+| status | review | count |
+|---|---|---|
+| removed | not_renovated_skip | 1 |
+
+**Zero active comps have been answered**, so there is nothing to migrate and
+item 1a is pure prevention. The one reviewed comp is a removed listing that
+was skipped — unaffected by anything in this plan.
+
+Worth noticing rather than passing over: **exactly one comp has ever been
+reviewed.** Against 81 on a single house, that is the shape of a screen nobody
+could face using, which is what Stage A and §1 are both for. It also means the
+one-card flow has barely been exercised by anyone, so treat Stage A as
+built-and-compiling rather than proven.
 
 **1b. `defaultTab` lands the owner on the tab §1 just emptied.**
 `CompControls.tsx:191` is
