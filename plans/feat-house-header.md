@@ -713,7 +713,22 @@ failure counts rather than asserting green — this suite is not green.
 - The other 36 pre-existing suite failures.
 - Extracting group B's predicates out of `CompsPanel`.
 
-## Open questions for the owner
+## Result
+
+Suite-wide, before this branch and after:
+
+| | tests | passed | failed |
+|---|---|---|---|
+| baseline `c203eb7` | 165 | 129 | **40** |
+| after Stage C | 165 | 129 | 36 |
+| after Stage D | **158** | **133** | **25** |
+
+Eleven failures cleared: four nav tests repointed, six retired into Jest, one
+rewording. Jest went 472 -> 486 cases, still ~1.2s. The 25 that remain are
+pre-existing and untouched — 23-comps (9), 24-screen (12),
+25-calculator-binding (2), 20-mortgage-scenarios (1), 21-buyer-profile (1).
+
+## Still open for the owner
 
 1. **The CLAUDE.md wording.** Proposed replacement for the Testing section:
 
