@@ -1,6 +1,16 @@
 -- What a removed listing actually sold for.
 --
--- WRITTEN, NOT RUN. Nothing here has been applied to any database.
+-- APPLIED. Confirmed 2026-10-21.
+--
+-- This line read "WRITTEN, NOT RUN. Nothing here has been applied to any
+-- database." for some time after the migration was in fact run, and nobody
+-- updated it. That cost a planning round: work was designed around columns
+-- that were assumed absent and were not. If you run a migration, change its
+-- banner in the same breath.
+--
+-- Evidence it is applied: the columns below appear in
+-- lib/supabase/database.types.ts, which is generated from the live schema,
+-- and the ARV tab reads these review states at runtime.
 --
 -- A removed listing has two prices and they are not the same fact. The listing
 -- price is what the seller wanted; the sale price is what somebody paid. The
