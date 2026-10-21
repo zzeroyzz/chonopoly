@@ -12,7 +12,7 @@ import { type ScreenRow } from "@/lib/screen/screenRow";
 import { AFFORDABILITY_LABEL, DEAL_LABEL } from "@/lib/mortgage/verdicts";
 import { STAGE_LABEL, daysInStage } from "@/lib/crm/stages";
 import { cadenceDueDate } from "@/lib/crm/cadence";
-import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/types";
+import { type ActivityType, type PropertyDetail, type PropertyLike, type Stage } from "@/lib/crm/types";
 import { StageMenu } from "./StageMenu";
 import { ContactCard } from "./ContactCard";
 import { CompsPanel } from "./CompsPanel";
@@ -69,6 +69,49 @@ function when(iso: string): string {
  * the loan looks like, what the deal makes. Rehab and Activity come after
  * because they refine a deal rather than decide one.
  */
+/**
+ * The house, pinned while you work.
+ *
+ * Every tab below compares something to this house, and its facts used to
+ * scroll off the top — which turns the comparison into a memory test. One
+ * definition, above the tabs, so it serves all six rather than being written
+ * again inside one of them. The same facts are no longer repeated in the
+ * grid above.
+ */
+function SubjectSpecs({ property }: { property: PropertyLike }) {
+  const specs = [
+    property.beds === null ? null : `${property.beds} bed`,
+    property.baths === null ? null : `${property.baths} bath`,
+    property.sqft === null ? null : `${property.sqft.toLocaleString("en-US")} sq ft`,
+    property.year_built === null ? null : `built ${property.year_built}`,
+  ].filter((part): part is string => part !== null);
+
+  const price = property.list_price ?? null;
+
+  return (
+    <div
+      data-testid="subject-specs"
+      className="sticky top-0 z-20 -mx-4 px-4 py-2 bg-(--color-base)
+        border-b border-(--color-border-default) flex flex-col gap-0.5"
+    >
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-[13px] font-semibold leading-snug truncate min-w-0">
+          {property.address_line1}
+        </p>
+        {/* The address truncates; the price never does. */}
+        {price !== null && (
+          <p data-testid="subject-price" className="text-[13px] font-semibold shrink-0">
+            {dollars(price)}
+          </p>
+        )}
+      </div>
+      {specs.length > 0 && (
+        <p className="text-[11px] text-(--color-text-secondary)">{specs.join(" · ")}</p>
+      )}
+    </div>
+  );
+}
+
 const TABS = ["Details", "ARV", "Numbers", "Deal", "Rehab", "Activity"] as const;
 
 /** The four steps of the flow, each pointing at the tab that does it. */
@@ -606,9 +649,6 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   ["Parcel", property.parcel_number],
                   ["County", property.county],
                   ["Type", propertyTypeLabel(property.property_type)],
-                  ["Beds / baths", property.beds || property.baths ? `${property.beds ?? "—"} / ${property.baths ?? "—"}` : null],
-                  ["Sqft", property.sqft ? property.sqft.toLocaleString() : null],
-                  ["Year built", property.year_built],
                 ]
                   .filter(([, v]) => v !== null && v !== undefined && v !== "")
                   .map(([label, value]) => (
@@ -642,6 +682,8 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 overflowed by 37px and "Activity" was cut to "Act"; tighter
                 padding and a smaller label fit them with room to spare, so
                 every tab keeps its full name. */}
+            {property && <SubjectSpecs property={property} />}
+
             <div className="flex border-b border-(--color-border-default) mt-4 mb-4">
               {TABS.map((t) => (
                 <button
@@ -757,8 +799,6 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
             {tab === "ARV" && property && (
               <CompsPanel
                 propertyId={property.id}
-                subjectAddress={property.address_line1}
-                subjectPrice={property.list_price ?? null}
                 ctx={ctx}
                 ctxParams={ctxParams}
                 // The facts form lives above the tabs, so opening it is

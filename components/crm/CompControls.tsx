@@ -149,12 +149,29 @@ export function sortComps(comps: Comp[], sort: CompSort, subjectSqft: number | n
     .map((entry) => entry.comp);
 }
 
+/**
+ * Every filter, which is not the same list as the dropdown's.
+ *
+ * `FILTER_ORDER` is what the menu offers. Counting only those left
+ * `counts.approved` undefined the moment the work filters moved to tabs, and
+ * it reached the screen as "undefined of 81 approved".
+ */
+const EVERY_FILTER: CompFilter[] = [
+  "needs_review",
+  "approved",
+  "skipped",
+  "all",
+  "sold",
+  "listings",
+  "flagged",
+];
+
 export function filterCounts(
   comps: Comp[],
   notes: Map<string, CompNote>
 ): Record<CompFilter, number> {
   const counts = {} as Record<CompFilter, number>;
-  for (const filter of FILTER_ORDER) {
+  for (const filter of EVERY_FILTER) {
     counts[filter] = comps.filter((c) => matchesFilter(c, notes.get(c.id), filter)).length;
   }
   return counts;
