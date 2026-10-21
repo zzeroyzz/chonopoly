@@ -23,7 +23,7 @@ import {
   provenanceLabel,
   shortDate,
 } from "@/lib/comps/format";
-import { CompLinks } from "./CompLinks";
+import { CompLinks, type CompLinkSource } from "./CompLinks";
 import { SalePricePrompt } from "./SalePricePrompt";
 import { Dropdown, type DropdownTone } from "@/components/ui/Dropdown";
 import {
@@ -734,6 +734,7 @@ export function CompsPanel({
           total={comps.length}
           onSortChange={setSort}
           onFilterChange={setFilter}
+          showFilter={activeTab === "done"}
         />
       )}
 
@@ -844,6 +845,16 @@ function CompRow({
   onRemove: (comp: Comp) => void;
 }) {
   const [askingSale, setAskingSale] = useState(false);
+  /**
+   * Which site you last opened for this house, so you can find it again.
+   *
+   * This belongs here and not on the review card: there is only one card on
+   * screen, so marking it says nothing. Here there are rows of houses that
+   * look alike, and coming back from Zillow to a list is exactly where the
+   * place gets lost. No label — the row is already named by its address, and
+   * a sentence on every row would be noise.
+   */
+  const [opened, setOpened] = useState<CompLinkSource | null>(null);
   const ppsf = perSqft(comp);
   const date = compDate(comp);
   const provenance = provenanceLabel(comp);
@@ -859,10 +870,13 @@ function CompRow({
   return (
     <li
       data-testid={`comp-${comp.id}`}
+      data-reviewing={opened ? "true" : undefined}
       className={`rounded-xl border p-3 transition-opacity ${
-        counted
-          ? "border-(--color-accent) bg-(--color-elevated)"
-          : "border-(--color-border-default)"
+        opened
+          ? "border-(--color-reviewing) bg-(--color-reviewing-tint)"
+          : counted
+            ? "border-(--color-accent) bg-(--color-elevated)"
+            : "border-(--color-border-default)"
       }`}
     >
       <div className="flex items-start gap-3">
@@ -964,7 +978,7 @@ function CompRow({
 
           {/* Somewhere to go and check whether this one was renovated. */}
           <div className="mt-1.5">
-            <CompLinks comp={comp} />
+            <CompLinks comp={comp} opened={opened} onOpen={setOpened} />
           </div>
 
           {/* The only control that moves the ARV. A native select, which is

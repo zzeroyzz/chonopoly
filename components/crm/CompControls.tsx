@@ -180,6 +180,7 @@ export function CompControls({
   counts,
   shown,
   total,
+  showFilter = true,
   onSortChange,
   onFilterChange,
 }: {
@@ -188,6 +189,15 @@ export function CompControls({
   counts: Record<CompFilter, number>;
   shown: number;
   total: number;
+  /**
+   * Off while reviewing one house at a time.
+   *
+   * A filter narrows a list you are scanning. On a one-at-a-time queue it
+   * silently shortens the work instead, and "Showing 4 of 11" describes a
+   * list that is not on screen. Sort still earns its place there: it decides
+   * the order you work through them.
+   */
+  showFilter?: boolean;
   onSortChange: (sort: CompSort) => void;
   onFilterChange: (filter: CompFilter) => void;
 }) {
@@ -195,6 +205,7 @@ export function CompControls({
     <div data-testid="comp-controls" className="flex flex-col gap-2">
       {/* Wraps onto a second line rather than scrolling sideways. */}
       <div className="flex flex-wrap items-center gap-2">
+        {showFilter && (
         <Dropdown
           className="flex-1 min-w-[150px]"
           value={filter}
@@ -207,6 +218,7 @@ export function CompControls({
           label="Show which comps"
           testId="comp-filter"
         />
+        )}
 
         <Dropdown
           className="flex-1 min-w-[150px]"
@@ -218,9 +230,11 @@ export function CompControls({
         />
       </div>
 
-      <p data-testid="comp-shown" className="text-[12px] text-(--color-text-secondary)">
-        Showing {shown} of {total}
-      </p>
+      {showFilter && (
+        <p data-testid="comp-shown" className="text-[12px] text-(--color-text-secondary)">
+          Showing {shown} of {total}
+        </p>
+      )}
     </div>
   );
 }

@@ -32,8 +32,15 @@ export function searchUrls(address: string) {
   return {
     zillow: `https://www.zillow.com/homes/${q}_rb/`,
     redfin: `https://www.redfin.com/search?query=${q}`,
-    /** Keeps listing photos longest, and often has them when the others don't. */
-    realtor: `https://www.realtor.com/realestateandhomes-search/${q.replace(/%20/g, "-")}`,
+    /**
+     * Keeps listing photos longest, and often has them when the others don't.
+     *
+     * A site-scoped search rather than a direct link. realtor.com addresses a
+     * listing by its own internal id, which we do not have, and its
+     * address-shaped search URL resolves to the surrounding zip — so the
+     * direct-looking version landed on a neighbourhood, not the house.
+     */
+    realtor: `https://www.google.com/search?q=site%3Arealtor.com+${q}`,
     /**
      * A search, not a deep link, and the wording on screen says so.
      *

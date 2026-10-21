@@ -151,7 +151,15 @@ it is not discovered at the gate:**
 | Stage | Contents | Gate |
 |---|---|---|
 | **A** | sticky specs, tabs, five pills, the one-card flow, `lib/comps/format.ts`, `--color-reviewing` | `tsc` + build pass today |
-| **B** | `cant_tell_skip`, review notes, the basis-line count | needs the migration run first |
+| **B** | `cant_tell_skip`, review notes, the basis-line count, **Pending** | needs the migration run first |
+
+**Pending joined Stage B on 2026-10-21, at the owner's decision.** It was out
+of scope in rev 2 for a reason that still holds — RentCast reports only
+Active/Inactive, so a listing going under contract is something the app can
+never learn and the owner can only ever set by hand. That makes it a change to
+manual comp entry as well as to `CompStatus`, and it needs a CHECK widened.
+Since Stage B already carries a migration, it carries this one too rather than
+paying for a second.
 
 `database.types.ts` is **not** hand-edited ahead of the migration. A generated
 file edited by hand is a lie that survives until the next regeneration.
@@ -431,12 +439,32 @@ Playwright test, "no exceptions". §Stop At The Commit says "No tests. Run
 Both are in force. **Assumption used here:** write and run the Playwright
 test, let build + `tsc` be the stopping gate. Say if that is wrong.
 
+## Changes from use — 2026-10-21
+
+The owner ran Stage A and reported back. Four changes, each from watching it
+rather than reading it:
+
+1. **The answers moved into a sheet from the bottom of the screen.** Five
+   options with a line of consequence each is a lot of height for something
+   touched once per house, and the height belongs to the house. Reuses the
+   `wizard-slide-up` keyframes already in `globals.css`.
+2. **The violet "you're on this one" marker moved off the card and onto the
+   Checked rows, without its sentence.** The owner's point, and a better read
+   than the plan's: with one card on screen, marking it is tautology. Rows of
+   houses that look alike is where the place actually gets lost.
+3. **The filter left Still-to-check.** A filter narrows a list you are
+   scanning; on a one-at-a-time queue it silently shortens the work, and
+   "Showing 4 of 11" describes a list that is not on screen. Sort stays on
+   both — it decides the order you work through them. The filter stays on
+   Checked.
+4. **The Realtor pill was broken** and is now a site-scoped search.
+   realtor.com addresses a listing by its own internal id, which we do not
+   have, and the address-shaped search URL resolves to the surrounding zip —
+   so it opened a neighbourhood, not the house.
+
 ## Out of scope
 
-- **Pending as a comp status.** Verified: `lib/rentcast/types.ts:130-135`
-  documents Active/Inactive only, `fromRentCast.ts:22` maps inactive→removed.
-  The app can never learn a listing went under contract, so Pending could only
-  be hand-set — a change to manual comp entry, not to the review flow.
+- **Pending as a comp status** — **moved into Stage B**, see Sequencing.
 - Verdict levers on "Doesn't work" — the Deal tab.
 - Team sharing — needs RLS work.
 - Every other tab.
