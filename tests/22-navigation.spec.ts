@@ -247,17 +247,21 @@ test("a property deep link keeps its id", async ({ page }) => {
 
 // ─── The property page ────────────────────────────────────────────────────────
 
-test("the property page has five tabs and they switch", async ({ page }) => {
+test("the property page has six tabs and they switch", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties/e1");
 
-  for (const t of ["overview", "numbers", "comps", "rehab", "activity"]) {
+  // Was five: overview, numbers, comps, rehab, activity. Overview became
+  // Details, Comps became ARV and Deal was added (7d182fd), so this loop
+  // asked for two testids that no longer exist and missed one that does.
+  for (const t of ["details", "arv", "numbers", "deal", "rehab", "activity"]) {
     await expect(page.getByTestId(`tab-${t}`)).toBeVisible();
   }
 
+  // The Details tab's panel still carries the old testid, so this one is
+  // right as written.
   await expect(page.getByTestId("panel-overview")).toBeVisible();
 
-  // The tab was renamed Comps -> ARV and this spec was never updated.
   await page.getByTestId("tab-arv").click();
   await expect(page.getByTestId("panel-comps")).toBeVisible();
   await expect(page.getByTestId("panel-overview")).toHaveCount(0);
@@ -271,27 +275,36 @@ test("the Numbers tab lists this property's analyses", async ({ page }) => {
   await page.goto("/properties/e1");
 
   await page.getByTestId("tab-numbers").click();
-  await expect(page.getByTestId("analysis-a1")).toBeVisible();
+  // Renamed analysis-* to scenario-* in 660d84c.
+  await expect(page.getByTestId("scenario-a1")).toBeVisible();
   await expect(page.getByText("at asking")).toBeVisible();
-  // The scenario the other tabs mean when they say "the price".
-  await expect(page.getByText("primary")).toBeVisible();
+  // The one the other tabs mean when they say "the price". The badge used to
+  // read "primary" — an internal word the writing rules ban — and now says
+  // what it is for.
+  await expect(page.getByTestId("primary-badge-a1")).toContainText("Used for profit");
 });
 
-test("Rehab still says which phase fills it", async ({ page }) => {
+test("Rehab is the estimator, not a placeholder", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties/e1");
 
-  // Comps used to carry the same "arrives with the screening step" placeholder.
-  // It is a real panel now, covered by 23-comps.spec.ts; Rehab is still a
-  // placeholder until the estimating phase lands.
+  // This asserted the "arrives with the estimating step" placeholder until
+  // f9fa0d8 shipped that step and the placeholder went. The promise was kept,
+  // so the test now guards what replaced it — and this is the only Playwright
+  // cover RehabPanel has, which is why it is repointed rather than dropped.
   await page.getByTestId("tab-rehab").click();
-  await expect(page.getByTestId("panel-rehab")).toContainText(/estimating step/);
+  await expect(page.getByTestId("panel-rehab")).toBeVisible();
+  await expect(page.getByTestId("rehab-roof")).toBeVisible();
+  await expect(page.getByTestId("save-rehab")).toBeVisible();
 });
 
 test("the property page fits 390px", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties/e1");
-  await expect(page.getByTestId("tab-overview")).toBeVisible();
+  // Waited on tab-overview, which has not existed since 7d182fd — so the
+  // width check below never ran. On a phone-first app this was the most
+  // expensive of the four to have silently skipped.
+  await expect(page.getByTestId("tab-details")).toBeVisible();
 
   const overflows = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
