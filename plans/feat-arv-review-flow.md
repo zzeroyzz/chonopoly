@@ -1,15 +1,16 @@
 # Plan: review one house at a time
 
-Status: **Revised (rev 2)** — 2026-10-21. Awaiting the Approver, then the
-owner. No implementation code written.
+Status: **Revised (rev 3)** — 2026-10-21. Awaiting the owner. No
+implementation code written.
 Branch: `feat/arv-review-flow`, cut from `367ade7` (tip of main), two docs
 commits plus one authorised bug fix on it.
 RentCast requests: **0**. Nothing here fetches anything.
 Design system: https://claude.ai/artifact/AfFqeoXw92zbqvYSFpchrx — `review-flow.md`.
 
 **Revision 2 answers the self-review's items 1-4 and the independent
-Approver's items 5-13.** Where an item needed a decision the owner has not
-made, the decision is stated as an assumption and marked **OWNER**.
+Approver's items 5-13. Revision 3 answers the re-review's items 14-19.**
+Where an item needed a decision the owner has not made, the decision is stated
+as an assumption and marked **OWNER**.
 
 ## Precondition — corrected
 
@@ -155,6 +156,25 @@ it is not discovered at the gate:**
 `database.types.ts` is **not** hand-edited ahead of the migration. A generated
 file edited by hand is a lie that survives until the next regeneration.
 
+**Item 15 — how the two stages land.** Stage B waits on an owner action with
+no date on it, so the two do not share a branch:
+
+> **Stage A is this branch and its own PR.** It is a complete, shippable
+> change on its own: one card, pinned specs, tabs, five pills. It merges
+> without the migration.
+>
+> **Stage B is a second branch**, `feat/arv-cant-tell`, cut from main **after**
+> Stage A merges **and** the owner has run the migration. Its own plan, its own
+> PR.
+
+This keeps one branch at a time and one PR per feature, and it means a
+migration the owner is not ready to run cannot strand finished work. The
+alternative — holding Stage A unmerged until the migration runs — makes the
+whole feature hostage to a decision that is not about the feature.
+
+**OWNER:** this is the item most worth overruling if you would rather see it
+all land at once.
+
 ### 3. The card — `CompReviewCard.tsx`
 
 Address and "3 of 7" · price with the status pill · spec line · status
@@ -169,6 +189,17 @@ sentence · five source pills · the review choices as radio rows ·
 rows and the notes field, shown only when the choice is "it counts" and the
 status is `removed`. Without this, Save 400s on the exact case the feature
 exists for.
+
+**Item 14 — the notes field does not exist in Stage A.** It is not rendered,
+not rendered-disabled. A field that accepts typing and drops it is worse than
+no field, and a disabled box with a promise attached is clutter for an
+unknown number of days. The consequence is stated rather than hidden: **Stage
+A does not solve problem 5 of 5.** The card ships without it and Stage B adds
+it. Nothing about the layout above the footer changes when it arrives.
+
+**`Later` discards anything typed in the notes** (Stage B), because the PATCH
+route needs a valid `review` and notes cannot be saved on their own. The
+button says so: *"Later — your notes here won't be kept."*
 
 - Save is disabled until a choice is picked, with the sentence saying so.
 - `Later` returns the comp to Still to check; it is not a review state.
@@ -262,6 +293,18 @@ third new file and it is named in Scope.
 - `cant_tell_skip` joins `took_off_market_skip` under `compReviewOptions`'
   removed-only rule: an active listing's photos being gone is not a thing.
 
+**One live copy bug, fixed while the function moves.** `CompsPanel.tsx:178`
+ends the fixer-upper note with **"Untick it to leave it out."** The tick was
+replaced by the review control in `feat-comp-review`; the app is telling the
+owner to use something that no longer exists, which is exactly the
+"what to do about it" the writing rules require to be correct. `fixerUpperNote`
+is being moved anyway, so the string is in hand:
+
+> `"… which may be below what a finished house here is worth. Mark it 'Not renovated' to leave it out."`
+
+Verified: `grep -rn "Untick"` finds this one user-facing string; the other
+hits are code comments. *(Item 18.)*
+
 ## Risks — every Tier 2 action, named
 
 - **A migration is written.** Not run. Needs its own instruction.
@@ -284,6 +327,18 @@ third new file and it is named in Scope.
   `tsc` **does** catch `COMP_REVIEW_LABELS` and `REVIEW_TONE`, both
   `Record<CompReview, …>`. Rev 1's claim that the compiler finds everything was
   wrong; this is where reading is required.
+- **`defaultFilter` is deleted** (`CompControls.tsx:143`) — Tier 2 twice: a
+  block of code removed, and an exported-interface change. Its only call site
+  is `CompsPanel.tsx:455`, so it is genuinely dead once `approved` leaves the
+  filter. This is removal of code the change makes dead, not deletion as a
+  method of fixing a bug. *(Item 17 — it was stated in Approach but missing
+  from this list, which claims to name every Tier 2 action.)*
+- **`lib/comps/format.ts` will import from `components/`.** `fixerUpperNote`
+  depends on `dollars` from `@/components/mortgage/format`
+  (`CompsPanel.tsx:5`), so a `lib/` module would reach up into `components/`.
+  **Noted deliberately and accepted for this change**; moving `dollars` down
+  into `lib/` is a separate refactor touching the mortgage components and is
+  not smuggled in here. *(Item 18.)*
 - No change to auth, RLS, env, CI, lockfiles, or any Plaid path.
 
 ## Testing
@@ -316,6 +371,13 @@ moves the ARV, a skip does not.
 `viewport: 390x844` at `test.use` and already has "the Comps tab fits 390px
 without sideways scroll". That one covers it.
 
+**Item 19 — five pills at 390px.** Five 44px targets with gaps leaves roughly
+70px each, which is feasible and tight. The row **wraps to two lines rather
+than squeezing**, and hard rule 11 means this is **looked at on a 390px
+viewport before the work is called done** — not assumed from the CSS. No new
+test; the existing no-sideways-scroll case catches the failure mode that
+matters.
+
 **Item 8, case 10:** with the column absent this can only stub the route,
 which proves the field round-trips through the UI and **nothing about
 persistence**. It is named that way — "review notes reach the request" — and
@@ -325,10 +387,42 @@ the persistence test waits for Stage B.
 
 `npx playwright test tests/23-comps.spec.ts`, then `npm run build` and `tsc`.
 
-**Known today, unrelated to this work:** 8 of the 55 tests in that spec
-already fail on `main` — ARV values and refresh/lock flows. Verified by
-running the spec against the pre-fix tree. They are **not** to be "fixed" as
-part of this branch, and a pass here means those 8 and no others.
+**Item 16 — the 8 pre-existing failures, pinned by name.** "Those 8 and no
+others" is not checkable against a count, so here they are, from
+`tests/23-comps.spec.ts`:
+
+| Line | Title | Asserts an ARV figure or basis text? |
+|---|---|---|
+| 390 | the ARV is the median price per sqft times the subject size | **yes** |
+| 398 | the ARV says what it is built on | **yes** |
+| 412 | a comp set with no confirmed sales carries a warning | **yes** |
+| 503 | refresh pulls comps into an empty tab | no |
+| 553 | a failed refresh keeps the comps already held | no |
+| 829 | a crashed refresh leaves the comps and the ARV alone | **yes** |
+| 1070 | losing the lock race reports it without emptying the tab | no |
+| 1153 | the basis line returns once there is a number | **yes** |
+
+Verified pre-existing: the three changed source files were checked out at
+`e5eb59f~1` and the spec re-run — identical 8 failures, identical 44 passes.
+They are **not** to be "fixed" as part of this branch.
+
+**The overlap the re-review was right to worry about.** Five of the eight
+assert an ARV figure or basis text, and Stage B changes exactly that —
+`ArvResult` gains `unreadable` and the basis line learns to mention it. A
+Stage B regression would land on top of a failure already there and be
+indistinguishable from it.
+
+**So Stage B does not begin until the current failure text of those five is
+recorded in this file**, verbatim — the expected and received strings. A
+changed failure message on an already-failing test is then a regression, not
+noise. This is cheap to do and it is the only thing that makes the gate mean
+anything. *(Stage A does not touch ARV reporting and is unaffected.)*
+
+**OWNER:** confirm the quarantine list. I verified it by running the spec
+twice, but a completion gate built on it is your call, not the Approver's —
+and the Approver declined to run the spec itself, correctly, since it needs
+the real Supabase and the test account is not exempt from the no-production-
+data rule.
 
 **OWNER (item 1), unanswered:** `CLAUDE.md` §Testing demands a passing
 Playwright test, "no exceptions". §Stop At The Commit says "No tests. Run
@@ -735,6 +829,219 @@ work can reach its own stopping gate.
 
 None of that is deep. It is a revision, not a redesign. Revised and resent, I
 expect to approve it.
+
+**The owner makes the final call. This review is not approval to start, and
+nothing in it authorizes running the migration.**
+
+---
+
+## Independent Approver re-review (rev 2) — 2026-10-21
+
+**Verdict: Changes requested — narrowly.** Seven items, most of them a line or
+two of plan text. Nothing here is a redesign, and if the owner prefers to
+approve rev 2 with items 14-16 as written conditions rather than spend a third
+cycle, that is a reasonable call and I say so in the recommendation.
+
+Read fresh from disk at `0fcb76d`. I re-verified each answer against the code
+rather than against the plan's account of it.
+
+### Items 5-13: all genuinely addressed
+
+- **5 — the eight formatters.** Confirmed pure: I read
+  `CompsPanel.tsx:31-193` and none of them touch React, hooks or JSX
+  (`fixerUpperNote`'s `return (` is string concatenation, not an element).
+  `lib/comps/format.ts` is the right home and the circular-import reason is
+  real, not taste: `CompsPanel` will import `CompReviewCard`, so the card
+  reaching back into `CompsPanel` closes a cycle. There is precedent —
+  `components/mortgage/format.ts` already exists. **Accepted.** See item 18.
+- **6 — the sale-price step.** `SalePricePrompt` reused, placed between the
+  choice rows and the notes, gated on "it counts" + `removed`. That is exactly
+  the path `CompsPanel.tsx:984-1001` takes today and it clears the 400 at
+  `route.ts:87`. **Accepted.**
+- **7 — scope.** Nineteen files, and the five I named as missing are all
+  there: `compService.ts` with the signature change called out,
+  `database.types.ts`, `app/globals.css`, the six `Comp`-literal files,
+  `PropertyDetailPage.tsx`. **Accepted.**
+- **8 — sequencing.** The Stage A / Stage B split is a better answer than the
+  last plan's "stop and ask", because it keeps the branch moving without
+  pretending. Refusing to hand-edit `database.types.ts` is the right call for
+  the right reason. **Accepted**, with items 14 and 15.
+- **9 — the pills.** Maps survives. The Records overclaim is gone and replaced
+  with what it actually is, a county-records web search, with honest help text.
+  I verified there is still no county-records builder anywhere and that
+  `Comp.county` is null on RentCast comps, so the search is the only honest
+  mechanism absent an owner answer. Return-shape change named in Risks.
+  **Accepted.**
+- **10 — the silent sites.** Verified at `e5eb59f`: `COMP_REVIEW_SKIPS` is
+  derived from `COMP_REVIEW_ORDER` and `isSkipped` replaces both hardcoded
+  pairs. The only remaining per-state literal outside `types.ts` is
+  `REVIEW_TONE`, which is a `Record` and so compiler-checked. **Two silent
+  sites is now the correct count**, and the retraction of rev 1's "`tsc` will
+  find them" is in writing. **Accepted.**
+- **11 — the two breaking tests.** Named, reason stated up front, assertions
+  kept, no second 390px test. **Accepted** — this is the part that matters,
+  because it is what makes a deliberate rewrite distinguishable from a red
+  test being made green.
+- **12 — precondition.** Matches what I see: `367ade7` is the tip of main and
+  the branch is cut from it. **Accepted.**
+- **13 — the small things.** Label string reads *"Photos are gone — can't
+  tell. Left out of the resale price."*, which satisfies the writing rule that
+  a verdict say what it does. Migration renamed. The CHECK lookup now counts
+  and raises unless exactly one — correct, and I confirmed `property_comps`
+  really does carry three review-related CHECKs. `--color-reviewing` confirmed
+  absent, and violet confirmed unused anywhere in `globals.css`; the file has a
+  single `:root` with no light/dark split, so one definition suffices.
+  **Accepted.**
+
+Both stated assumptions are sound and I agree with them: the unreadable count
+on the ARV card alone (three places for one fact is worse), and Maps as a
+fifth pill.
+
+### 14. Does Stage A render the notes field?
+
+The split puts review notes in Stage B, but **"nowhere to write down what you
+saw" is problem 5 of 5** and §3 lists the notes field in the card's running
+order. So Stage A ships either a card with a visible gap where a named problem
+was going to be solved, or — worse — a notes field that accepts typing and
+silently drops it.
+
+Say which: hidden in Stage A, or rendered disabled with a line saying it
+arrives once the migration runs. Either is fine. Discovering it at the gate is
+not. Related and one sentence: `Later` after typing notes — are the notes
+discarded? The PATCH route needs a valid `review`, so there is no way to save
+notes alone, which means yes. Say so on the button.
+
+### 15. Stage A and Stage B need a commit and PR shape
+
+Stage B waits on the owner running a migration, which is an open-ended wait.
+The rules say one feature branch at a time, started from main only after the
+last one merges, and one PR per feature. Rev 2 does not say what that means
+here. Three readings, and they are not equivalent:
+
+- Stage A commits and sits on the branch unmerged until Stage B catches up —
+  one PR, possibly open a long time.
+- Stage A is its own PR and merges; Stage B then needs a second branch, which
+  the one-at-a-time rule allows only after A merges.
+- Both in one PR, which cannot be opened until the migration runs.
+
+Pick one in the plan. This is the Tier 2 boundary the rules care most about,
+and it is the difference between a branch that lands and one that stalls.
+
+### 16. The quarantined 8 must be pinned by name, not by count
+
+The gate is stated as *"a pass here means those 8 and no others."* That is not
+checkable against a count and a category. **List the 8 failing test titles in
+the plan.**
+
+I did not run the spec myself, and I want to be explicit about why rather than
+quietly omit it: it needs `npm run start` against the real Supabase with the
+test account's credentials, and the standing instruction here is that an
+audit-shaped task writes nothing and that the test account is not exempt from
+the no-production-data rule. So the 8 are, to me, an unverified claim — and
+the owner, not the Approver, is the right person to confirm a quarantine list
+that a completion gate depends on.
+
+**The specific worry, and it is not hypothetical:** the failures are described
+as *"ARV values and refresh/lock flows"*, and Stage B changes ARV reporting —
+`ArvResult` gains `unreadable`, and the basis line changes. A pre-existing
+failure in ARV values is sitting exactly on top of this change's blast radius.
+If any of the 8 asserts an ARV number or basis text, say how a Stage B
+regression would be told apart from the failure that was already there.
+
+### 17. The `defaultFilter` deletion is Tier 2 and is not in Risks
+
+§5 removes `defaultFilter` (`CompControls.tsx:142`). I checked: its only call
+site is `CompsPanel.tsx:455`, so it does become genuinely dead, and removing
+dead code is right. The reasoning that this is not deletion-as-bugfix is
+correct.
+
+But it is an **exported** function, so removing it is both "deleting a block
+of code" and an exported-interface change — two Tier 2 entries. The Risks
+section says it names every Tier 2 action and this one is only in Approach.
+Move it into Risks.
+
+### 18. "The eight formatters" has a ninth dependency, and one of them lies
+
+Two things about the `format.ts` move, both found by reading the functions
+being moved:
+
+- **`fixerUpperNote` depends on `dollars`, imported from
+  `@/components/mortgage/format`** (`CompsPanel.tsx:5`). So `lib/comps/
+  format.ts` will import from `components/`, which inverts the usual direction
+  — `lib` is the lower layer. It will work. Either note it deliberately or
+  move `dollars` down too; do not leave it to be noticed in review.
+- **`CompsPanel.tsx:178` ends that note with "Untick it to leave it out."**
+  The tick was replaced by the review control in `feat-comp-review`. That
+  sentence tells the owner to do something the app no longer offers — a
+  warning whose "what to do about it" is wrong, which the writing rules
+  specifically forbid. The function is being moved in this change anyway, so
+  the string is already in hand. Fix it in the move and name it in the plan as
+  copy, not scope creep: *"…which may be below what a finished house here is
+  worth. Mark it 'Not comparable' to leave it out."*
+
+### 19. Five pills at 390px needs stating as verified, not assumed
+
+Hard rule 11 requires a UI change to be visually verified at ≤390px, and the
+completion report must say what was *seen*. Five pills with 44px tap targets
+on a 390px screen leaves roughly 70px each including gaps — feasible, tight,
+and the kind of thing that wraps badly. The new test cases no longer include
+one for the pill row (case 9 covers the spec bar; the file's existing 390px
+test covers the tab as a whole, which is the right call).
+
+Not a new test — just say in the plan that the pill row is checked at 390px
+and that it is allowed to wrap to two rows rather than squeeze.
+
+### Assessment against the rules
+
+- **Scope** — fixed. Nineteen files, each named, with the reason. No leak I
+  can find.
+- **Stack** — clean. TypeScript strict, Tailwind utilities, one new CSS custom
+  property in the existing `:root` (not a stylesheet, not inline styles), no
+  new dependencies, SQL as the named exception, and the `AGENTS.md` instruction
+  to read the Next docs carried through.
+- **Refactor-first** — now the plan's strongest section. The formatters move
+  rather than duplicate, `SalePricePrompt` and `CompRow` are reused,
+  `searchUrls` extends additively, and `isSkipped` is reused rather than a
+  third hardcoded list. This is what rev 1 was missing.
+- **Risks** — one omission, item 17. Everything else I can find is named,
+  including the two sites the compiler will not catch.
+- **Testing** — honest now. Case 10 renamed to what it can prove, case 7
+  covers the 400 I flagged, the two rewrites declared in advance. Items 14 and
+  16 are what is left.
+- **Migration** — correct in structure, correctly marked written-not-run, with
+  the match-count guard.
+
+### Open questions — still the owner's
+
+1. **Which testing rule wins?** Still unanswered. Rev 2's assumption — write
+   and run the Playwright test, let build + `tsc` be the stopping gate — is
+   the reading I would take, and §Testing is the more specific rule. Your call.
+2. **Have either comps migration been applied?** Still unanswered, and Stage B
+   cannot start without it. This is the single answer that unblocks the most.
+3. **The Records destination** — a county site you use by hand, or is the
+   search acceptable?
+4. **New: Stage A and Stage B — one PR or two?** (Item 15.)
+5. **New: the 8 quarantined failures — can you pin the titles**, and does any
+   of them assert an ARV number? (Item 16.)
+
+### Recommendation
+
+Rev 2 is a real revision, not a patch over the review. Every one of items 5-13
+is answered, several better than I asked — the Stage A/B split, the Records
+retraction and the advance declaration of the two test rewrites are all
+stronger than the minimum. The plan is now accurate about its own reach, which
+is the thing rev 1 was not.
+
+What is left divides cleanly. **Items 14, 15 and 16 are substantive** — they
+decide what Stage A actually ships, how the work lands, and whether the
+completion gate means anything — and they want answering before code starts.
+**Items 17, 18 and 19 are a few lines of plan text** and could be handled in
+the implementing commits without another review round.
+
+So: **changes requested on 14, 15 and 16.** If you would rather not spend a
+third cycle, approving rev 2 with those three as written conditions — recorded
+in this file before work starts — would be a defensible call, and 17-19 can
+ride along. I would not approve it with 14-16 simply unaddressed.
 
 **The owner makes the final call. This review is not approval to start, and
 nothing in it authorizes running the migration.**
