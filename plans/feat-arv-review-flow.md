@@ -1,6 +1,6 @@
 # Plan: review one house at a time
 
-Status: **Draft** — waiting for the Approver, then the owner. No code written.
+Status: **Changes requested** — 2026-10-21. No code written.
 Branch: `feat/arv-review-flow` — **not yet cut.** See Precondition.
 RentCast requests: **0**. Nothing here fetches anything.
 Design system: https://claude.ai/artifact/AfFqeoXw92zbqvYSFpchrx — `review-flow.md`.
@@ -214,4 +214,86 @@ which rule wins.
 
 ## Approver
 
-Not yet reviewed. Outcome and date to be recorded here.
+**2026-10-21 — Changes requested.**
+
+Reviewed at the owner's explicit instruction, twice given, after the implementer
+objected. **This is a self-review and its limits must be stated:** the
+implementer wrote this plan and cannot judge whether the design is the right
+one. What follows is a verification of the plan's factual claims against the
+code, which is the part a self-review can still do honestly. An independent
+review by a separate instance was commissioned and is outstanding.
+
+### 1. BLOCKING — "`tsc` will find them" is false
+
+The Risks section claims every `switch` over `CompReview` will be caught by the
+compiler. There are no switches. There are two hardcoded membership lists:
+
+- `components/crm/CompControls.tsx:57`
+  `const SKIPPED: CompReview[] = ["not_renovated_skip", "not_comparable_skip"];`
+- `components/crm/CompsPanel.tsx:856`
+  `comp.review === "not_renovated_skip" || comp.review === "not_comparable_skip"`
+
+Both are type-correct with any number of union members missing. Adding
+`cant_tell_skip` compiles clean and behaves wrong, silently. The plan's safety
+argument for the type change does not hold and must be rewritten: these two
+sites are found by reading, not by building.
+
+### 2. BLOCKING — a pre-existing bug, found while checking item 1
+
+`took_off_market_skip` shipped in `20261020220000_comp_sale_price.sql` and is
+in `COMP_REVIEW_ORDER`, but it is absent from **both** lists above. Today, on
+`main`:
+
+- `matchesFilter(..., "skipped")` does not match it, and it is not
+  `needs_review` or `renovated_use` either — so a comp marked "Took off
+  market" appears under **no** filter except "All". It is invisible.
+- `CompsPanel:856` does not treat it as decided, so hints keep firing on a
+  settled comp.
+
+This is not introduced by this plan; it is on the branch this plan builds
+from. It must be fixed here or filed as its own fix before this work lands,
+and the plan must say which.
+
+### 3. BLOCKING — the plan contradicts itself about `arv.ts`
+
+Refactors says *"The ARV arithmetic in `lib/comps/arv.ts` is **not touched**."*
+
+Testing requires case 7: *"'Can't tell' skips the comp **and** the ARV basis
+line says how many were unreadable."*
+
+`arv.ts:613-630` is where `stillToReview`, `reviewPrompt` and the basis text
+are built. Reporting a count of unreadable comps means adding a field to
+`ArvResult` and populating it there. Both statements cannot be true. The
+arithmetic is genuinely unchanged; the *reporting* is not, and `ArvResult` is
+a public type with its own call sites.
+
+### 4. Loose end — `defaultFilter`
+
+`CompControls.tsx:143` returns `"approved"` once nothing needs review. With
+those two options leaving the filter for the tabs, this function is either
+dead or needs to point at the tab instead. The plan does not say which.
+
+### Verified as claimed
+
+- `CompLinks.tsx:71` does read `comp.notes` as a listing URL on hand-entered
+  comps. The `review_notes` column is justified; there is no existing column
+  that serves.
+- `CompsPanel.tsx` is 1,225 lines. The new-file argument holds.
+- `arv.ts` reads `review` only at lines 613-614, both equality checks. A sixth
+  skip value needs no arithmetic change — see item 3 for the caveat.
+- `compService.ts:450` is additive-safe.
+
+### Open questions for the owner
+
+1. Which rule wins on testing — §Testing's "no exceptions" Playwright
+   requirement, or §Stop At The Commit's "No tests"?
+2. Fix item 2's pre-existing bug on this branch, or file it separately?
+3. Both prior comps migrations say WRITTEN, NOT RUN while the TypeScript
+   already reads their columns. Has either been applied?
+
+**Recommendation:** revise items 1-4 and resend. The design is sound as far as
+a self-review can tell; the plan's accuracy about its own risk is not, and
+item 2 is a live bug worth knowing about regardless of what happens to this
+plan.
+
+**The owner makes the final call. This review is not approval to start.**
