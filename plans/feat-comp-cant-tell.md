@@ -158,11 +158,15 @@ carries a review other than `needs_review`:
 item 1a is pure prevention. The one reviewed comp is a removed listing that
 was skipped — unaffected by anything in this plan.
 
-Worth noticing rather than passing over: **exactly one comp has ever been
-reviewed.** Against 81 on a single house, that is the shape of a screen nobody
-could face using, which is what Stage A and §1 are both for. It also means the
-one-card flow has barely been exercised by anyone, so treat Stage A as
-built-and-compiling rather than proven.
+Worth noticing: **exactly one comp has ever been reviewed**, and it was
+reviewed since the rebuild. The owner has simply not sat down to work through
+houses yet — so this is not evidence about the old screen, and an earlier draft
+of this plan read it that way, wrongly.
+
+What it does mean stands: **the one-card flow has barely been exercised.** It
+compiles and it has been looked at; it has not been used in anger, and with the
+Playwright job switched off nothing else is watching it. Treat Stage A as
+built, not proven, while Stage B lands on top of it.
 
 **1b. `defaultTab` lands the owner on the tab §1 just emptied.**
 `CompControls.tsx:191` is
