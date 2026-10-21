@@ -57,7 +57,7 @@ function comp(pricePerSqft: number, id: string): Comp {
     status: "sold", listingType: null, listedDate: null, removedDate: null,
     lastSeenDate: null, daysOnMarket: null, distanceMiles: null, daysOld: null,
     correlation: null, buyerType: null, buyerName: null, county: null,
-    included: true, notes: null, updatedAt: "",
+    included: true, review: "renovated_use", reviewSetAt: null, salePrice: null, saleDate: null, notes: null, updatedAt: "",
   };
 }
 
@@ -78,7 +78,9 @@ function house(overrides: Partial<ScreenHouse> = {}): ScreenHouse {
     analysisLabel: "at asking",
     hasRehabEstimate: false,
     comps: [],
-    compsReviewed: false,
+    baths: null,
+    propertyType: null,
+    yearBuilt: null,
     ...overrides,
   };
 }
@@ -145,31 +147,39 @@ describe("the ARV and the deal", () => {
     expect(row.arv).toBeCloseTo(210_000 + 150 * 40, 6);
   });
 
-  it("ignores comps that are not included", () => {
-    const comps = [comp(200, "a"), comp(210, "b"), { ...comp(900, "outlier"), included: false }];
+  it("ignores comps the owner skipped", () => {
+    const comps = [
+      comp(200, "a"),
+      comp(210, "b"),
+      { ...comp(900, "outlier"), review: "not_comparable_skip" as const },
+    ];
     const row = buildScreenRow(house({ comps }), { profile: profile(), now: NOW });
 
     // Median of 200,000 and 210,000, plus the same size adjustment.
     expect(row.arv).toBeCloseTo(205_000 + 150 * 40, 6);
   });
 
-  it("marks the ARV provisional until the comps are reviewed", () => {
-    const unreviewed = buildScreenRow(house({ comps: [comp(200, "a")], compsReviewed: false }), {
+  it("has no ARV until a comp is approved", () => {
+    const unreviewed = buildScreenRow(house({ comps: [{ ...comp(200, "a"), review: "needs_review" as const }] }), {
       profile: profile(),
       now: NOW,
     });
-    const reviewed = buildScreenRow(house({ comps: [comp(200, "a")], compsReviewed: true }), {
+    const reviewed = buildScreenRow(house({ comps: [comp(200, "a")] }), {
       profile: profile(),
       now: NOW,
     });
 
-    expect(unreviewed.provisionalArv).toBe(true);
-    expect(unreviewed.deal.provisional).toBe(true);
-    expect(reviewed.provisionalArv).toBe(false);
+    expect(unreviewed.arv).toBeNull();
+    expect(unreviewed.approvedComps).toBe(0);
+    expect(reviewed.approvedComps).toBe(1);
   });
 
-  it("is never provisional when there is no ARV to qualify", () => {
-    expect(buildScreenRow(house(), { profile: profile(), now: NOW }).provisionalArv).toBe(false);
+  it("counts nothing to review on a house with no comps", () => {
+    const row = buildScreenRow(house(), { profile: profile(), now: NOW });
+
+    expect(row.arv).toBeNull();
+    expect(row.approvedComps).toBe(0);
+    expect(row.compsToReview).toBe(0);
   });
 
   it("reports max offer as a figure", () => {

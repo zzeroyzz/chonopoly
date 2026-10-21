@@ -15,9 +15,6 @@ import { type CompStatus } from "./types";
  * paid this, on this date. That is the one thing `/avm/value` could never say.
  */
 
-/** A sale under this may have been a fixer-upper rather than a finished house. */
-export const FIXER_PRICE_CEILING = 200_000;
-
 /** Companies buy to renovate. Individuals mostly buy to live in. */
 export const ORGANIZATION_BUYER = "Organization";
 
@@ -81,17 +78,9 @@ export function latestSale(
   return sales.length > 0 ? sales[sales.length - 1] : null;
 }
 
-/**
- * Whether this sale might be an investor pickup rather than a finished house.
- *
- * Flagged, never excluded. On the Sylvan response this caught 4 of 10, and
- * one of those four sat inside the ARV doing real work on the median — a
- * $145,000 sale on a street fetching $274,000 is either a fixer or the best
- * evidence in the set, and only a person can say which.
- */
-export function isPossibleFixer(price: number | null, buyerType: string | null): boolean {
-  return (price !== null && price < FIXER_PRICE_CEILING) || buyerType === ORGANIZATION_BUYER;
-}
+// The fixer-upper test moved to arv.ts, which is the only place that knows
+// what the counted comps fetched — the rule now needs that median, and a
+// sale at or above it is never flagged whatever bought it.
 
 /**
  * Null for a record with no usable address or no sale price.

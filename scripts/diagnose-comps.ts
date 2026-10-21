@@ -63,7 +63,7 @@ import {
   VALUE_ESTIMATE_ENDPOINT,
   PROPERTY_RECORDS_ENDPOINT,
 } from "../lib/rentcast/types";
-import { mapPropertyRecords, isPossibleFixer } from "../lib/comps/fromPropertyRecords";
+import { mapPropertyRecords } from "../lib/comps/fromPropertyRecords";
 
 interface PropertyRow {
   id: string;
@@ -179,6 +179,12 @@ function compsFromResponse(
     buyerName: null,
     county: null,
     included: mapped.external_id ? (includedByExternalId.get(mapped.external_id) ?? true) : true,
+    // The replay approves everything: this tool exists to show what the comps
+    // WOULD produce, not what the owner has decided about them.
+    review: "renovated_use",
+    reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
     notes: null,
     updatedAt: mapped.last_seen_date ?? "",
   }));
@@ -400,13 +406,17 @@ async function diagnoseRecordedSales(db: Db, query: string): Promise<void> {
     buyerName: sale.buyer_name,
     county: sale.county,
     included: true,
+    review: "renovated_use",
+    reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
     notes: null,
     updatedAt: sale.removed_date ?? "",
   }));
 
   const arv = calculateArv(comps, property.sqft, subjectOptions(property));
   const usedIds = new Set(arv.usedComps.map((c) => c.compId));
-  const decided = new Map(arv.excludedForFit.map((e) => [e.compId, e.reasons]));
+  const noteFor = new Map(arv.compNotes.map((n) => [n.compId, n]));
 
   console.log("");
   console.log("─".repeat(140));
@@ -424,12 +434,10 @@ async function diagnoseRecordedSales(db: Db, query: string): Promise<void> {
   console.log("  used  address                        sale price  sold on      sqft  bd  ba  built  dist   flag / why not");
 
   for (const comp of comps) {
-    const sale = sales.find((s) => (s.external_id ?? "") === (comp.externalId ?? ""));
+    const note = noteFor.get(comp.id);
     const used = usedIds.has(comp.id);
-    const flag = isPossibleFixer(comp.price, sale?.buyer_type ?? null)
-      ? `possible fixer-upper (${sale?.buyer_name ?? "?"})`
-      : "";
-    const why = used ? flag : (decided.get(comp.id) ?? []).join(", ");
+    const flag = note?.fixerUpper ? `possible fixer-upper (${comp.buyerName ?? "?"})` : "";
+    const why = used ? flag : (note?.reasons ?? []).join(", ");
     console.log(
       "  " +
         pad(used ? "YES " : "no  ", 6) +

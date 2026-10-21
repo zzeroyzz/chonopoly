@@ -27,7 +27,7 @@ const PROPERTY_ID = "prop-sylvan";
 const SUBJECT = { sqft: 1_200, beds: 3, baths: 2, property_type: "single_family", year_built: 1930 };
 
 /** Straight from the stored response body. */
-const COUNTY_RECORDS: RentCastPropertyRecord[] = [
+const COUNTY_RECORDS: (RentCastPropertyRecord & { skip?: boolean })[] = [
   {
     id: "952-Estes-Dr-SW", formattedAddress: "952 Estes Dr SW, Atlanta, GA 30310",
     county: "Fulton", propertyType: "Single Family", bedrooms: 3, bathrooms: 2,
@@ -71,6 +71,9 @@ const COUNTY_RECORDS: RentCastPropertyRecord[] = [
     squareFootage: 1_652, yearBuilt: 2003,
     lastSaleDate: "2026-05-27T00:00:00.000Z", lastSalePrice: 334_000,
     owner: { type: "Organization", names: ["ELMWOOD HOMES LLC"] },
+    // Much bigger and a 2003 build. The app only hints at that now; it takes
+    // a person to leave it out, so the fixture leaves it out.
+    skip: true,
   },
 ];
 
@@ -107,6 +110,12 @@ function recordedSaleComps(): Comp[] {
     buyerName: sale.buyer_name,
     county: sale.county,
     included: true,
+    // The app only hints that 948 Byron is much bigger and a 2003 build. It
+    // takes a person to leave it out, so the fixture leaves it out.
+    review: COUNTY_RECORDS[index]?.skip ? "not_comparable_skip" : "renovated_use",
+    reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
     notes: null,
     updatedAt: sale.removed_date ?? "",
   }));
@@ -128,7 +137,7 @@ function listingComp(): Comp {
     listingType: "Standard", listedDate: "2026-03-01", removedDate: "2026-06-01",
     lastSeenDate: "2026-06-01", daysOnMarket: 92, distanceMiles: 0.32, daysOld: 40,
     correlation: 0.9, buyerType: null, buyerName: null, county: null,
-    included: true, notes: null, updatedAt: "",
+    included: true, review: "renovated_use", reviewSetAt: null, salePrice: null, saleDate: null, notes: null, updatedAt: "",
   };
 }
 
@@ -218,9 +227,22 @@ async function stubRecordedSales(page: Page, initial: Comp[]) {
 
     if (request.method() === "PATCH") {
       const compId = new URL(request.url()).pathname.split("/").pop() ?? "";
-      const payload = JSON.parse(request.postData() ?? "{}") as { included?: boolean };
+      // Review, not included: the tick is gone and the stub has to record
+      // what the route records, or a skip changes nothing.
+      const payload = JSON.parse(request.postData() ?? "{}") as {
+        review?: Comp["review"];
+        salePrice?: number;
+        saleDate?: string;
+      };
       comps = comps.map((comp) =>
-        comp.id === compId ? { ...comp, included: payload.included ?? comp.included } : comp
+        comp.id === compId
+          ? {
+              ...comp,
+              review: payload.review ?? comp.review,
+              salePrice: payload.salePrice ?? null,
+              saleDate: payload.saleDate ?? null,
+            }
+          : comp
       );
       return route.fulfill(json(body()));
     }
@@ -249,9 +271,9 @@ test("the ARV is built from sales alone and says so", async ({ page }) => {
   await stubRecordedSales(page, recordedSaleComps());
   await openArvTab(page);
 
-  // Five eligible sales out of six; 948 Byron is much bigger and a 2003 build.
+  // Five approved sales out of six; 948 Byron was skipped by hand.
   await expect(page.getByTestId("arv-value")).toHaveText("$274,140");
-  await expect(page.getByTestId("arv-basis")).toContainText("5 sold");
+  await expect(page.getByTestId("arv-basis")).toContainText("Based on 5 comps you approved");
   await expect(page.getByTestId("arv-plain")).toContainText("that sold");
 });
 
@@ -276,21 +298,24 @@ test("a possible fixer-upper is flagged, says why, and stays ticked", async ({ p
   await expect(flag).toContainText("$145,000");
   await expect(flag).toContainText("Untick it to leave it out");
 
-  // Flagged is not excluded. It is still counted.
-  await expect(page.getByTestId("comp-include-1842-Lisbon-Dr-SW")).toBeChecked();
+  // Flagged is not skipped. It is still counted.
+  await expect(page.getByTestId("comp-review-1842-Lisbon-Dr-SW")).toContainText(
+    "Renovated: use it"
+  );
 });
 
-test("unticking the flagged sale moves the ARV", async ({ page }) => {
+test("skipping the flagged sale moves the ARV", async ({ page }) => {
   await stubRecordedSales(page, recordedSaleComps());
   await openArvTab(page);
 
   await expect(page.getByTestId("arv-value")).toHaveText("$274,140");
 
   // $145,000 adjusted to $151,080 is the bottom of the five-comp median.
-  await page.getByTestId("comp-include-1842-Lisbon-Dr-SW").click();
+  await page.getByTestId("comp-review-1842-Lisbon-Dr-SW").click();
+  await page.getByTestId("comp-review-1842-Lisbon-Dr-SW-option-not_renovated_skip").click();
 
   await expect(page.getByTestId("arv-value")).not.toHaveText("$274,140");
-  await expect(page.getByTestId("arv-basis")).toContainText("4 sold");
+  await expect(page.getByTestId("arv-basis")).toContainText("Based on 4 comps you approved");
 });
 
 test("an ordinary sale carries no fixer flag", async ({ page }) => {

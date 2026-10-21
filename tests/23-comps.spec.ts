@@ -56,6 +56,10 @@ function fixtureComps(): Comp[] {
     buyerName: null,
     county: null,
     included: true,
+    review: "renovated_use",
+    reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
     notes: null,
     updatedAt: new Date().toISOString(),
   }));
@@ -208,6 +212,10 @@ async function stubComps(page: Page, options: StubOptions = {}) {
         correlation: null,
         distanceMiles: null,
         included: true,
+    review: "renovated_use",
+    reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
         // Spreading a fixture comp carried its RentCast dates onto a manual
         // comp, which the real service never does — addManualComp writes only
         // the sale date it was given. Nulled explicitly so the stub cannot
@@ -233,9 +241,23 @@ async function stubComps(page: Page, options: StubOptions = {}) {
     const compId = new URL(request.url()).pathname.split("/").pop() ?? "";
 
     if (request.method() === "PATCH") {
-      const payload = JSON.parse(request.postData() ?? "{}") as { included?: boolean };
+      // The tick became a review, so the stub has to record the same thing
+      // the route does — otherwise a skip changes nothing and the ARV sits
+      // still while the test waits for it to move.
+      const payload = JSON.parse(request.postData() ?? "{}") as {
+        review?: Comp["review"];
+        salePrice?: number;
+        saleDate?: string;
+      };
       comps = comps.map((comp) =>
-        comp.id === compId ? { ...comp, included: payload.included ?? comp.included } : comp
+        comp.id === compId
+          ? {
+              ...comp,
+              review: payload.review ?? comp.review,
+              salePrice: payload.salePrice ?? null,
+              saleDate: payload.saleDate ?? null,
+            }
+          : comp
       );
       return route.fulfill(json(body()));
     }
@@ -407,33 +429,50 @@ test("a comp missing its size is skipped and declared", async ({ page }) => {
 
 // ─── Checking comps off ───────────────────────────────────────────────────────
 
-test("unticking a comp moves the ARV", async ({ page }) => {
+test("skipping a comp moves the ARV", async ({ page }) => {
   await stubComps(page);
   await openCompsTab(page);
 
-  await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
+  // Every fixture comp starts approved, and nothing is dropped for fit any
+  // more — the review is the only filter, so this is the whole set.
+  const before = await page.getByTestId("arv-value").textContent();
 
-  // comp-4 is the $455,000 / 2,140 sqft house at $212.62/sqft — the top of the
-  // range, so dropping it should pull the median down.
-  await page.getByTestId("comp-include-comp-4").click();
+  // comp-4 is the $455,000 / 2,140 sqft house at $212.62/sqft — the top of
+  // the range, so skipping it should pull the median down.
+  await page.getByTestId("comp-review-comp-4").click();
+  await page.getByTestId("comp-review-comp-4-option-not_comparable_skip").click();
 
-  await expect(page.getByTestId("arv-value")).not.toHaveText("$359,375");
-  const lowered = await page.getByTestId("arv-value").textContent();
-  expect(lowered).toBe("$358,981");
-
-  await expect(page.getByTestId("panel-comps")).toContainText("5 of 6 included");
+  await expect(page.getByTestId("arv-value")).not.toHaveText(before ?? "");
+  await expect(page.getByTestId("panel-comps")).toContainText("5 of 6 approved");
 });
 
-test("reticking a comp restores the ARV", async ({ page }) => {
+test("approving a comp again restores the ARV", async ({ page }) => {
   await stubComps(page);
   await openCompsTab(page);
 
-  await page.getByTestId("comp-include-comp-4").click();
-  await expect(page.getByTestId("arv-value")).toHaveText("$358,981");
+  const before = await page.getByTestId("arv-value").textContent();
 
-  await page.getByTestId("comp-include-comp-4").click();
-  await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
-  await expect(page.getByTestId("panel-comps")).toContainText("6 of 6 included");
+  await page.getByTestId("comp-review-comp-4").click();
+  await page.getByTestId("comp-review-comp-4-option-not_comparable_skip").click();
+  await expect(page.getByTestId("arv-value")).not.toHaveText(before ?? "");
+
+  // Skipping it took it out of the "Approved" view, which is the view this
+  // house opens on once nothing needs reviewing. Switch to All to reach it.
+  await page.getByTestId("comp-filter").click();
+  await page.getByTestId("comp-filter-option-all").click();
+
+  // comp-4 is a removed listing, so approving it asks what it sold for
+  // rather than quietly reusing the $455,000 it was asking. Entering that
+  // same figure as the sale price is what puts the number back.
+  await page.getByTestId("comp-review-comp-4").click();
+  await page.getByTestId("comp-review-comp-4-option-renovated_use").click();
+  await expect(page.getByTestId("comp-sale-prompt-comp-4")).toBeVisible();
+  await page.getByTestId("comp-sale-price-input-comp-4").fill("455000");
+  await page.getByTestId("comp-sale-save-comp-4").click();
+
+  // Back to exactly where it started, which is the whole claim.
+  await expect(page.getByTestId("arv-value")).toHaveText(before ?? "");
+  await expect(page.getByTestId("panel-comps")).toContainText("6 of 6 approved");
 });
 
 test("comps show Removed rather than Sold", async ({ page }) => {
@@ -560,7 +599,8 @@ test("the basis label counts the hand-entered sale", async ({ page }) => {
   await page.getByTestId("manual-comp-sqft").fill("1800");
   await page.getByTestId("manual-comp-save").click();
 
-  await expect(page.getByTestId("arv-basis")).toContainText("1 sold");
+  // A comp typed in by hand arrives approved — typing it in IS the review.
+  await expect(page.getByTestId("arv-basis")).toContainText("you approved");
 });
 
 test("only hand-entered comps can be removed", async ({ page }) => {
@@ -1104,7 +1144,10 @@ test("an empty ARV card does not say the same thing twice", async ({ page }) => 
 
   // It said "Built on no comps" directly above "No comps are included yet".
   await expect(page.getByTestId("arv-basis")).toHaveCount(0);
-  await expect(page.getByTestId("arv-warning").filter({ hasText: "No comps are included" })).toBeVisible();
+  // And it is no longer a warning: nothing is wrong, there is just nothing
+  // approved yet.
+  await expect(page.getByTestId("arv-warning")).toHaveCount(0);
+  await expect(page.getByTestId("arv-review-prompt")).toContainText("Review comps to get an ARV");
 });
 
 test("the basis line returns once there is a number", async ({ page }) => {

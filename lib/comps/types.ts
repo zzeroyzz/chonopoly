@@ -25,6 +25,63 @@ export type CompStatus = "active" | "removed" | "sold";
  */
 export type CompSource = "rentcast" | "manual" | "public_record";
 
+/**
+ * Whether this comp counts, and why not.
+ *
+ * Only `renovated_use` counts. The app never sets anything but the
+ * `needs_review` default — the whole point is that the number stops moving
+ * unless a person moves it.
+ *
+ * The two skips are arithmetically identical and deliberately separate: they
+ * record different judgements, and "why isn't this one in?" has two different
+ * answers.
+ */
+export type CompReview =
+  | "needs_review"
+  | "renovated_use"
+  | "not_renovated_skip"
+  | "took_off_market_skip"
+  | "not_comparable_skip";
+
+export const COMP_REVIEW_LABELS: Record<CompReview, string> = {
+  needs_review: "Needs review",
+  renovated_use: "Renovated: use it",
+  not_renovated_skip: "Not renovated: skip",
+  took_off_market_skip: "Took off market: skip",
+  not_comparable_skip: "Not comparable: skip",
+};
+
+/**
+ * The options a comp can be given, which depend on what it is.
+ *
+ * Only a removed listing can have been taken off the market — a recorded
+ * sale closed and an active listing has not finished yet, so offering it
+ * there would be offering an answer that cannot be true.
+ */
+export function compReviewOptions(status: CompStatus): CompReview[] {
+  return status === "removed"
+    ? [
+        "needs_review",
+        "renovated_use",
+        "not_renovated_skip",
+        "took_off_market_skip",
+        "not_comparable_skip",
+      ]
+    : ["needs_review", "renovated_use", "not_renovated_skip", "not_comparable_skip"];
+}
+
+/** Every value, for validation at the API boundary. */
+export const COMP_REVIEW_ORDER: CompReview[] = [
+  "needs_review",
+  "renovated_use",
+  "not_renovated_skip",
+  "took_off_market_skip",
+  "not_comparable_skip",
+];
+
+/** The one state that puts a comp in the number. */
+export const COMP_REVIEW_COUNTS: CompReview = "renovated_use";
+
 export interface Comp {
   id: string;
   propertyId: string;
@@ -65,8 +122,25 @@ export interface Comp {
   buyerName: string | null;
   county: string | null;
 
-  /** The include checkbox on the Comps tab. */
+  /**
+   * Dead. The ARV reads `review` instead. Kept on the row so the old tick
+   * state is not lost, and read here only so nothing that still references
+   * it breaks.
+   */
   included: boolean;
+
+  /** The owner's judgement. The only thing the ARV reads. */
+  review: CompReview;
+  reviewSetAt: string | null;
+
+  /**
+   * What the owner says a removed listing actually sold for, and when.
+   *
+   * Beside `price`, never instead of it: `price` is what was asked, this is
+   * what was paid, and the card shows both. The ARV uses this when it is set.
+   */
+  salePrice: number | null;
+  saleDate: string | null;
   notes: string | null;
 
   updatedAt: string;

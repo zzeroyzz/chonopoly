@@ -22,7 +22,8 @@ interface RowOverrides {
   hasArv?: boolean;
   arv?: number | null;
   profit?: number | null;
-  provisionalArv?: boolean;
+  approvedComps?: number;
+  compsToReview?: number;
   checklist?: Partial<{ numbers: boolean; comps: boolean; estimate: boolean; visit: boolean }>;
   needsAddressReview?: boolean;
   listingUrl?: string | null;
@@ -61,7 +62,7 @@ function row(overrides: RowOverrides = {}) {
       verdict: overrides.deal ?? "works",
       reasons: [],
       summary: overrides.dealSummary ?? "$52,000 profit at 15% margin",
-      provisional: overrides.provisionalArv ?? false,
+      provisional: false,
       hasArv: overrides.hasArv ?? true,
     },
     checklist: {
@@ -69,7 +70,22 @@ function row(overrides: RowOverrides = {}) {
       done: [checklist.numbers, checklist.comps, checklist.estimate, checklist.visit].filter(Boolean)
         .length,
     },
-    provisionalArv: overrides.provisionalArv ?? false,
+    // Required by the card, and never supplied here — so every test in this
+    // file rendered an empty list and failed on a missing testid, long before
+    // the review work touched it.
+    explanations: {
+      afford: {
+        whatsWrong: overrides.affordabilitySummary ?? "Within your ratios and cash",
+        target: "Needs $42,000 at closing, $12,000 available",
+      },
+      deal: {
+        whatsWrong: overrides.dealSummary ?? "$52,000 profit at 15% margin",
+        target: "15% margin on the resale price",
+      },
+      arv: null,
+    },
+    approvedComps: overrides.approvedComps ?? 0,
+    compsToReview: overrides.compsToReview ?? 0,
     listingUrl: overrides.listingUrl ?? null,
   };
 }
@@ -133,20 +149,20 @@ test("a house with no ARV says so instead of showing a verdict", async ({ page }
   await expect(page.getByTestId("screen-row-prop-1")).toContainText("—");
 });
 
-test("an unreviewed ARV is labelled", async ({ page }) => {
-  await stubScreen(page, [row({ provisionalArv: true })]);
+test("a house with nothing approved asks for a review", async ({ page }) => {
+  await stubScreen(page, [row({ arv: null, approvedComps: 0, compsToReview: 12 })]);
   await page.goto("/properties");
 
-  // Every comp RentCast returned is included until someone reviews them, so
-  // the verdict is real but provisional.
-  await expect(page.getByTestId("verdict-provisional-prop-1")).toHaveText("Unreviewed");
+  // This used to read "ARV not checked" on every house whose comps had never
+  // been hand-edited, because review state was guessed rather than recorded.
+  await expect(page.getByTestId("verdict-arv-prop-1")).toHaveText("Review comps");
 });
 
-test("a reviewed ARV carries no label", async ({ page }) => {
-  await stubScreen(page, [row({ provisionalArv: false })]);
+test("an approved ARV says what it rests on", async ({ page }) => {
+  await stubScreen(page, [row({ arv: 320_000, approvedComps: 4, compsToReview: 8 })]);
   await page.goto("/properties");
 
-  await expect(page.getByTestId("verdict-provisional-prop-1")).toHaveCount(0);
+  await expect(page.getByTestId("verdict-arv-prop-1")).toContainText("4 approved");
 });
 
 test("no income on file asks for it rather than judging", async ({ page }) => {

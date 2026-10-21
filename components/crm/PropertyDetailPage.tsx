@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Plus, Pencil } from "lucide-react";
+import { ArrowLeft, Check, Plus, Pencil, ExternalLink } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { VerdictTag } from "@/components/mortgage/VerdictTag";
@@ -25,6 +25,7 @@ import { Star } from "lucide-react";
 import { type BuyerProfile } from "@/lib/profile/types";
 import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
+import { searchUrls } from "./CompLinks";
 import { propertyTypeLabel } from "@/lib/property/types";
 import { useCrmContext, useShellProfile } from "./useCrmContext";
 
@@ -97,7 +98,6 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
    * the bar read "nothing is done" on every load and offered "Next: ARV" for
    * a moment on houses that were already past it.
    */
-  const [analysesLoaded, setAnalysesLoaded] = useState(false);
   const [screenLoaded, setScreenLoaded] = useState(false);
   /** Bumped to remount the Profit card when the primary moves. */
   const [dealKey, setDealKey] = useState(0);
@@ -197,7 +197,6 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
     } finally {
       // Settled either way. The step bar needs to know the difference between
       // "no analyses" and "not asked yet".
-      setAnalysesLoaded(true);
     }
   }, [propertyId, ctxParams]);
 
@@ -249,11 +248,15 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    // + Add lands here at the ARV step, which is the next thing to do.
+    // ?tab= is what the cards link to now, one per tab. ?step= stays
+    // understood so older links and + Add keep landing where they meant to.
+    const wanted = params.get("tab");
+    const direct = TABS.find((t) => t.toLowerCase() === wanted?.toLowerCase());
     const step = params.get("step");
     const match = STEPS.find((s2) => s2.id === step);
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (match) setTab(match.tab);
+    if (direct) setTab(direct);
+    else if (match) setTab(match.tab);
 
     const read = () => setNumbersTarget(new URLSearchParams(window.location.search).get("numbers"));
     read();
@@ -305,17 +308,9 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
   // Each step maps to the tab that does it, so the bar and the tabs can never
   // drift apart.
-  const stepDone: Record<string, boolean> = {
-    details: Boolean(property),
-    arv: arv !== null,
-    numbers: analyses.length > 0,
-    deal: row?.walkAwayCash !== null && row?.walkAwayCash !== undefined,
-  };
 
   // Only once both follow-up reads are in. Before that every test above is
   // false for want of data, not because the work is undone.
-  const stepsReady = analysesLoaded && screenLoaded;
-  const nextStep = stepsReady ? (STEPS.find((step) => !stepDone[step.id]) ?? null) : null;
 
   const headline = row
     ? {
@@ -408,6 +403,29 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
                     {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
                   </p>
+
+                  {/* Somewhere to go and look at the house itself. The comps
+                      have had this since they were added; the house they are
+                      being compared to did not. Built from the address the
+                      same way, by the same function. */}
+                  {property?.address_line1 && (
+                    <a
+                      href={
+                        searchUrls(
+                          [property.address_line1, property.city, property.state, property.zip]
+                            .filter(Boolean)
+                            .join(", ")
+                        ).zillow
+                      }
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="property-zillow"
+                      className="inline-flex items-center gap-1 min-h-11 text-[12px] text-(--color-accent)"
+                    >
+                      View on Zillow
+                      <ExternalLink size={11} />
+                    </a>
+                  )}
                   {/* The numbers and the two verdicts arrive on the screen
                       read, one round trip after the address. Holding their
                       space stops the header growing under your thumb. */}
@@ -470,16 +488,35 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                         action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
                         testId="header-verdict-deal"
                       />
-                      {row.provisionalArv && row.explanations.arv && (
-                        <VerdictTag
-                          label="ARV not checked"
-                          toneClassName="bg-(--color-base) text-(--color-text-tertiary)"
-                          explanation={row.explanations.arv}
-                          breakdownHref=""
-                          action={{ label: "Check the comps →", onClick: () => setTab("ARV") }}
-                          testId="header-verdict-provisional"
-                        />
-                      )}
+                      <VerdictTag
+                        label={
+                          row.arv === null
+                            ? "Review comps"
+                            : `ARV ${dollars(row.arv)} · ${row.approvedComps} approved`
+                        }
+                        toneClassName={
+                          row.arv === null
+                            ? "bg-(--color-base) text-(--color-text-tertiary)"
+                            : "bg-(--color-accent-glow) text-(--color-accent)"
+                        }
+                        explanation={{
+                          whatsWrong:
+                            row.arv === null
+                              ? `No comps approved yet${row.compsToReview > 0 ? `, and ${row.compsToReview} are waiting` : ""}.`
+                              : `Built from ${row.approvedComps} comp${row.approvedComps === 1 ? "" : "s"} you approved.`,
+                          target:
+                            row.compsToReview > 0
+                              ? `${row.compsToReview} comp${row.compsToReview === 1 ? "" : "s"} still to review.`
+                              : "Every comp has been reviewed.",
+                          fix:
+                            row.arv === null
+                              ? "Open the ARV tab and mark the comps you would use."
+                              : undefined,
+                        }}
+                        breakdownHref=""
+                        action={{ label: "Review the comps →", onClick: () => setTab("ARV") }}
+                        testId="header-verdict-arv"
+                      />
                     </div>
                   )}
                 </div>
@@ -597,53 +634,15 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
             {/* The flow, as four steps with a single next action. The tabs
                 below can be used in any order; this says which one matters. */}
-            <div
-              data-testid="step-bar"
-              className="flex items-center gap-1.5 mt-4 overflow-x-auto pb-1"
-            >
-              {STEPS.map((step) => {
-                // The pills stay tappable while the reads are in flight; only
-                // the ✓ waits, so no step claims to be done before it is known.
-                const done = stepsReady && stepDone[step.id];
-                return (
-                  <button
-                    key={step.id}
-                    type="button"
-                    onClick={() => setTab(step.tab)}
-                    data-testid={`step-${step.id}`}
-                    data-done={done ? "yes" : "no"}
-                    className={`shrink-0 h-7 px-2.5 rounded-[var(--radius-pill)] text-[11px] border transition-colors ${
-                      tab === step.tab
-                        ? "border-(--color-accent) text-(--color-accent)"
-                        : done
-                          ? "border-(--color-border-default) text-(--color-text-secondary)"
-                          : "border-(--color-border-default) text-(--color-text-tertiary)"
-                    }`}
-                  >
-                    {done ? "✓ " : ""}
-                    {step.label}
-                  </button>
-                );
-              })}
-            </div>
+            {/* The step bar that used to sit here is gone. Two rows of the
+                same four destinations, one above the other, is one row too
+                many — the tabs below do the job and have two more. */}
 
-            {/* The space is held while the step reads land, so the button does
-                not shove the tabs down when it arrives. */}
-            {!stepsReady && <Skeleton className="w-full h-10 mt-2 rounded-[var(--radius-pill)]" />}
-
-            {stepsReady && nextStep && (
-              <button
-                type="button"
-                onClick={() => setTab(nextStep.tab)}
-                data-testid="next-step"
-                className="w-full h-10 mt-2 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[13px] font-semibold"
-              >
-                Next: {nextStep.label}
-              </button>
-            )}
-
-            {/* The tabs, in the same order as the steps. */}
-            <div className="flex gap-1 border-b border-(--color-border-default) mt-4 mb-4 overflow-x-auto">
+            {/* No sideways scroll at any width. At 390px the six labels
+                overflowed by 37px and "Activity" was cut to "Act"; tighter
+                padding and a smaller label fit them with room to spare, so
+                every tab keeps its full name. */}
+            <div className="flex border-b border-(--color-border-default) mt-4 mb-4">
               {TABS.map((t) => (
                 <button
                   key={t}
@@ -651,7 +650,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   onClick={() => setTab(t)}
                   data-testid={`tab-${t.toLowerCase()}`}
                   aria-current={tab === t ? "page" : undefined}
-                  className={`px-3 py-2 text-[13px] border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                  className={`flex-1 min-w-0 px-1.5 py-2 text-[12px] sm:text-[13px] sm:px-3 border-b-2 -mb-px whitespace-nowrap transition-colors ${
                     tab === t
                       ? "text-(--color-accent) border-(--color-accent) font-medium"
                       : "text-(--color-text-secondary) border-transparent hover:text-(--color-text-primary)"

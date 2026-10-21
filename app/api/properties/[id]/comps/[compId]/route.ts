@@ -2,15 +2,33 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { resolveContext } from "@/lib/context";
 import { getProperty } from "@/lib/property/propertyService";
-import { listComps, setCompIncluded, deleteComp } from "@/lib/comps/compService";
-import { calculateArv } from "@/lib/comps/arv";
+import { listComps, setCompReview, deleteComp } from "@/lib/comps/compService";
+import { calculateArv, subjectOptions } from "@/lib/comps/arv";
+import { type CompReview, COMP_REVIEW_ORDER } from "@/lib/comps/types";
 
 /**
- * Tick, untick or remove one comp.
+ * Review or remove one comp.
  *
- * Both verbs return the recomputed ARV, so the Comps tab never has to make a
+ * Both verbs return the recomputed ARV, so the comps list never has to make a
  * second request to find out what the change did to the number.
  */
+
+function isCompReview(value: unknown): value is CompReview {
+  return typeof value === "string" && (COMP_REVIEW_ORDER as string[]).includes(value);
+}
+
+function numberOrNull(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/** Only a plain YYYY-MM-DD reaches a date column. */
+function isoDateOrNull(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) return null;
+  const trimmed = value.trim();
+  return Number.isNaN(new Date(trimmed).getTime()) ? null : trimmed;
+}
 
 async function resolve(request: Request, propertyId: string) {
   const supabase = await createClient();
@@ -30,7 +48,7 @@ async function resolve(request: Request, propertyId: string) {
     return { error: NextResponse.json({ error: "Property not found" }, { status: 404 }) };
   }
 
-  return { ctx, property };
+  return { ctx, property, userId: user.id };
 }
 
 export async function PATCH(
@@ -45,20 +63,43 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ error: "Expected a JSON body" }, { status: 400 });
   }
-  if (typeof body !== "object" || body === null || typeof (body as { included?: unknown }).included !== "boolean") {
-    return NextResponse.json({ error: "included must be a boolean" }, { status: 400 });
+  if (typeof body !== "object" || body === null) {
+    return NextResponse.json({ error: "Expected a JSON object" }, { status: 400 });
   }
-  const included = (body as { included: boolean }).included;
+  const review = (body as { review?: unknown }).review;
+  if (!isCompReview(review)) {
+    return NextResponse.json(
+      { error: `review must be one of: ${COMP_REVIEW_ORDER.join(", ")}` },
+      { status: 400 }
+    );
+  }
+
+  // A removed listing approved as sold needs the figure it sold for. The
+  // database CHECK enforces it too; this says which field and why.
+  const salePrice = numberOrNull((body as { salePrice?: unknown }).salePrice);
+  const saleDate = isoDateOrNull((body as { saleDate?: unknown }).saleDate);
 
   const resolved = await resolve(request, id);
   if ("error" in resolved) return resolved.error;
 
+  const comps = await listComps(id, resolved.ctx);
+  const target = comps.find((c) => c.id === compId);
+  if (target?.status === "removed" && review === "renovated_use" && salePrice === null) {
+    return NextResponse.json(
+      { error: "Tell us what it sold for. A removed listing's price is what was asked, not what was paid." },
+      { status: 400 }
+    );
+  }
+
   try {
-    await setCompIncluded(compId, included, resolved.ctx);
-    const comps = await listComps(id, resolved.ctx);
+    await setCompReview(compId, review, resolved.ctx, resolved.userId, {
+      price: salePrice,
+      date: saleDate,
+    });
+    const updated = await listComps(id, resolved.ctx);
     return NextResponse.json({
-      comps,
-      arv: calculateArv(comps, resolved.property.sqft ?? null, { subjectBeds: resolved.property.beds ?? null }),
+      comps: updated,
+      arv: calculateArv(updated, resolved.property.sqft ?? null, subjectOptions(resolved.property)),
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Failed to update the comp";
