@@ -34,7 +34,7 @@ export interface ExplainInput {
   /** Null for hard money, which has no income test at all. */
   backDti: number | null;
   dtiLimit: number;
-  /** True until someone has ticked the comps the ARV is built from. */
+  /** True until the sold houses behind the resale price have been answered on. */
   arvUnreviewed: boolean;
   /** From the offer-ceiling search, when one could be found. */
   priceForThin?: number | null;
@@ -64,7 +64,7 @@ export interface VerdictExplanation {
 export interface VerdictExplanations {
   afford: VerdictExplanation;
   deal: VerdictExplanation;
-  /** Only present while the comps behind the ARV are unreviewed. */
+  /** Only present while the sold houses behind the resale price are unchecked. */
   arv: VerdictExplanation | null;
 }
 
@@ -164,8 +164,9 @@ function explainDealVerdict(input: VerdictExplainInput): VerdictExplanation {
   if (deal.arv === null || deal.trueProfit === null) {
     return {
       whatsWrong: "There's no resale price yet, so there's nothing to judge.",
-      target: "A resale price worked out from comps that have been reviewed.",
-      fix: "Add comps on the ARV step.",
+      target:
+        "A resale price worked out from houses like this one that have already sold, each one checked.",
+      fix: "Open the ARV tab and add the sold houses nearby.",
     };
   }
 
@@ -226,9 +227,9 @@ export function explainVerdicts(input: VerdictExplainInput): VerdictExplanations
     arv:
       input.arvUnreviewed && input.deal.arv !== null
         ? {
-            whatsWrong: `The ${money(input.deal.arv)} resale price uses comps you haven't reviewed.`,
+            whatsWrong: `The ${money(input.deal.arv)} resale price uses sold houses you haven't checked yet.`,
             target: "Some may not be renovated, which would make it too high.",
-            fix: "Check them on the ARV step.",
+            fix: "Check them on the ARV tab.",
           }
         : null,
   };
@@ -257,7 +258,8 @@ export function explainDeal(input: ExplainInput): DealCheck[] {
       passed: false,
       actual: "Not worked out yet.",
       target: "Needed before any of this can be judged.",
-      fix: "Add comps on the ARV step and tick the ones that have been renovated.",
+      fix:
+        "Open the ARV tab, add the sold houses nearby, and answer \"Was it fixed up like yours will be?\" on each.",
     });
     return checks;
   }
@@ -267,9 +269,10 @@ export function explainDeal(input: ExplainInput): DealCheck[] {
       id: "arv-unreviewed",
       label: "Resale price (ARV) not checked",
       passed: false,
-      actual: `Using ${money(deal.arv)}, built from every comp that came back.`,
+      actual: `Using ${money(deal.arv)}, built from every sold house that came back.`,
       target: "Some of those houses may not be comparable.",
-      fix: "Open the ARV step and tick the ones that have actually been renovated.",
+      fix:
+        "Open the ARV tab and answer \"Was it fixed up like yours will be?\" on each one.",
     });
   }
 

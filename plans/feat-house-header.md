@@ -224,6 +224,23 @@ Not touched. `explainDeal.ts` is not in this plan's scope, the fix is a dozen
 strings rather than a mechanical rename, and this branch has already drifted
 twice. It wants its own pass.
 
+**Fixed 2026-10-21**, on the owner's instruction to complete the rest of this
+file. There were **six** user-facing strings, not four — `:231` and `:272`
+are the same two faults again — plus `:269` leaking the raw word *comp*, and
+two doc comments at `:37` and `:67` describing the dead tick as if it were
+still there. All nine corrected.
+
+The dead instruction is the one that mattered. The control is a question
+button reading *"Was it fixed up like yours will be?"*
+(`CompReviewCard.tsx:263`); there is no tick and has not been since the review
+control replaced it. Both strings that said *tick* now quote the button the
+owner will actually see.
+
+"ARV step" became "ARV tab", which is what the thing is called in `TABS`.
+*comps* became *sold houses* / *houses like this one that have already sold*.
+ARV itself stays where it names the tab, because renaming the tab is a
+different change.
+
 ## Out of scope
 
 - The Deal tab's verdict levers. Still unbuilt, still the biggest gap.
