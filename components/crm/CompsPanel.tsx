@@ -6,7 +6,6 @@ import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
 import {
   type Comp,
-  type CompStatus,
   type CompReview,
   COMP_STATUS_LABELS,
   COMP_REVIEW_LABELS,
@@ -14,7 +13,16 @@ import {
   isSkipped,
 } from "@/lib/comps/types";
 import { type ArvResult, type CompNote } from "@/lib/comps/arv";
-import { ORGANIZATION_BUYER } from "@/lib/comps/fromPropertyRecords";
+import {
+  compDate,
+  dollarsShort,
+  fixerUpperNote,
+  monthYear,
+  perSqft,
+  priceLabel,
+  provenanceLabel,
+  shortDate,
+} from "@/lib/comps/format";
 import { CompLinks } from "./CompLinks";
 import { Dropdown, type DropdownTone } from "@/components/ui/Dropdown";
 import {
@@ -27,11 +35,6 @@ import {
   type CompFilter,
   type CompSort,
 } from "./CompControls";
-
-/** "$380k" — the way a price range gets said out loud. */
-function dollarsShort(n: number): string {
-  return `$${Math.round(n / 1000).toLocaleString("en-US")}k`;
-}
 
 /**
  * Comparable sales for one property, and the ARV they produce.
@@ -84,11 +87,6 @@ interface RefreshStatus {
   windowDays: number;
 }
 
-/** "Oct 18" — the form the lock message reads best in. */
-function shortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
 const SOURCE_LABEL: Record<string, string> = {
   cached: "from the saved response",
   rebuilt: "rebuilt from the saved response",
@@ -118,88 +116,6 @@ const STATUS_STYLE: Record<string, string> = {
   removed: "bg-amber-500/10 text-amber-400",
   active: "bg-(--color-elevated) text-(--color-text-secondary)",
 };
-
-function perSqft(comp: Comp): string | null {
-  if (comp.price === null || comp.sqft === null || comp.sqft <= 0) return null;
-  return `$${Math.round(comp.price / comp.sqft)}/sqft`;
-}
-
-/**
- * What this comp's price actually is.
- *
- * Only a sale gets a qualifier, because only a sale's price is a fact about
- * what someone paid. Active and Removed carry their own label beside the
- * price and say enough on their own.
- */
-const PRICE_MEANING: Partial<Record<CompStatus, string>> = {
-  sold: "sold for",
-};
-
-/**
- * What the figure beside the price means on this comp.
- *
- * A removed listing the owner has marked sold shows both numbers, so the
- * first one has to say which it is: "Listed at $348,560 · Sold for $335,000".
- */
-function priceLabel(comp: Comp): string | null {
-  if (comp.salePrice !== null) return "Listed at";
-  return PRICE_MEANING[comp.status] ?? null;
-}
-
-/**
- * Where a sold comp's price came from.
- *
- * A county deed and an agent's closed-sales list are both real sales, but
- * they are not the same kind of fact, and a reader deciding whether to trust
- * a number is entitled to know which one they are looking at.
- */
-function provenanceLabel(comp: Comp): string | null {
-  if (comp.status !== "sold") return null;
-  return comp.source === "public_record" ? "county record" : "you entered this";
-}
-
-/**
- * Why this sale might be below what a finished house is worth.
- *
- * The decision is the ARV's, not this component's: it depends on what the
- * counted comps fetched, which a single card cannot see. Here we only phrase
- * it.
- */
-function fixerUpperNote(comp: Comp): string | null {
-  if (comp.price === null) return null;
-
-  const boughtBy =
-    comp.buyerType === ORGANIZATION_BUYER
-      ? `Bought by a company${comp.buyerName ? ` (${comp.buyerName})` : ""}`
-      : "Sold";
-
-  return (
-    `${boughtBy} for ${dollars(comp.price)}, which may be below what a finished ` +
-    `house here is worth. Untick it to leave it out.`
-  );
-}
-
-function monthYear(iso: string): string {
-  // Day-level precision is noise here; what matters is how stale the comp is.
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", year: "numeric" });
-}
-
-/**
- * The date that matters for this comp, and what it means.
- *
- * Which date is relevant depends on the status, so the label says which one is
- * being shown. "Jul 2026" on its own leaves the reader guessing whether the
- * house sold then or merely came to market.
- */
-function compDate(comp: Comp): string | null {
-  if (comp.status === "sold") {
-    return comp.removedDate ? `Sold ${monthYear(comp.removedDate)}` : null;
-  }
-  if (comp.status === "removed") {
-    return comp.removedDate ? `Removed ${monthYear(comp.removedDate)}` : null;
-  }
-  return comp.listedDate ? `Listed ${monthYear(comp.listedDate)}` : null;
-}
 
 /**
  * Read a response safely, whatever came back.
