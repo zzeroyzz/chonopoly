@@ -275,3 +275,283 @@ account of its own reach, not to the design. The six faults it describes are
 real and each is verified above.
 
 **Not approval to start. The owner decides.**
+
+---
+
+# Stage C: the edit opens over the page, and it can set the photo
+
+Status: **Draft** — 2026-10-21. Awaiting the owner. No code written.
+Branch: `feat/house-header` (continuing; Stage B is in at `c203eb7`).
+RentCast requests: **0**.
+Migrations run: **0**.
+
+## The problem
+
+Two faults, both reported by the owner, both verified in the code.
+
+**1. Edit scrolls instead of opening.**
+`PropertyDetailPage.tsx:739` renders `<EditHouseForm>` inline, in the page
+flow, *after* the house card, the finalist/edit row, the stage pill, the facts
+grid and the parcel disclosure. `EditHouseForm.tsx:129` carries `mt-4` — it is
+drawn as one more band of the page. So on a 390px screen, tapping **Edit** at
+the top puts the form roughly a screen and a half below the thumb, with no
+visible change where the tap happened. The page looks like it ignored you.
+
+**2. There is no box to add a photo of the house, anywhere on this page.**
+Verified at all four layers:
+
+- `EditHouseForm.tsx:19-33` — `EditableHouse` has no `photo_url` member. The
+  form cannot even read the current photo, let alone write one.
+- `propertyService.ts:260-276` — `PropertyFactsPatch` has no `photoUrl`.
+- `app/api/properties/[id]/route.ts` PATCH — parses eleven fields, none of
+  them a photo. `photo_url` appears in `propertyService.ts:153` only, which is
+  the *create* path.
+- `AddPropertyPage.tsx:215` — the **Add** page does have an "Image URL" field.
+  So a photo can be set once, at creation, and never corrected or added later.
+
+And the empty state makes a promise the app cannot keep.
+`PropertyDetailPage.tsx:433` reads *"No photo yet — add one when you edit the
+house."* The edit form has no such field. The copy is wrong today.
+
+Stage B made the photo the hero of the card — a 44px-tall band of apology
+when it is missing. That raised the cost of this gap rather than creating it.
+
+## Goal
+
+Tapping **Edit** opens the form over the page, where the tap happened. The
+form can set the house's photo. The empty state offers the thing it names.
+
+## Stack
+
+TypeScript strict, Tailwind utilities, tokens from `globals.css`. No new
+packages. No new files.
+
+## Scope
+
+Four files, all existing:
+
+| File | Change |
+|---|---|
+| `components/crm/EditHouseForm.tsx` | Modal shell around the existing form; photo field added |
+| `components/crm/PropertyDetailPage.tsx` | `EditableHouse` cast gains `photo_url`; empty state becomes a button |
+| `lib/property/propertyService.ts` | `PropertyFactsPatch.photoUrl` + one line in the fact-key loop |
+| `app/api/properties/[id]/route.ts` | `photoUrl` parsed and URL-validated |
+| `tests/22-navigation.spec.ts` | Three tests added to the existing edit-form block |
+
+No new file. The modal shell goes *inside* `EditHouseForm.tsx` wrapping its
+own `<form>`, because a dialog is that component's presentation, not a second
+component — and the three other modals in this codebase (`NumbersModal`,
+`FirstRunIncomeModal`, `CompReviewCard`) each hand-roll their own shell, so
+there is no shared `Modal` to import and inventing one here would be a
+refactor of three unrelated files that nobody asked for. Noted as a known
+duplication below rather than hidden.
+
+## Approach
+
+### C1 — the form becomes a dialog
+
+`EditHouseForm` returns the same `<form>`, with the same `data-testid`s and
+the same fields, wrapped in the shell `NumbersModal.tsx:124-145` already
+establishes in this codebase:
+
+- `fixed inset-0 z-50`, `role="dialog"`, `aria-modal="true"`,
+  `aria-label="Edit this house"`
+- a `bg-black/60` backdrop button that closes through `onCancel`
+- three rows: fixed header ("Edit this house" + ✕), scrolling body
+  (`flex-1 min-h-0 overflow-y-auto`), footer holding Save/Cancel so they stay
+  reachable on a 390px screen rather than sitting past eleven fields
+- full-bleed on a phone (`w-full h-full`), a centred card from `sm:` up
+  (`sm:max-h-[90vh] sm:max-w-lg sm:rounded-xl`)
+- Escape closes; `document.body.style.overflow = "hidden"` while open, restored
+  on unmount — both copied from `NumbersModal.tsx:62-79`
+
+Save and Cancel keep their current behaviour and their current test ids. The
+`mt-4` goes; a dialog is not a band of the page.
+
+`PropertyDetailPage.tsx:739-749` keeps its `{property && editingHouse && …}`
+render exactly as written. Nothing moves in the page's own structure — the
+component simply no longer occupies flow. `edit-house-toggle` stops saying
+"Close" when open, since the dialog's own ✕ is the close now and a button
+behind a backdrop cannot be tapped.
+
+**Not guarded on unsaved changes.** `NumbersModal` traps a tapped-away model
+behind a confirm; this form is eleven short fields that reload from the house
+in a second, and a confirm on every backdrop tap is friction for the common
+case. Called out because it is a deliberate difference from the pattern being
+copied, not an oversight.
+
+### C2 — the photo field
+
+One field, labelled **Photo link**, in the modal body after Listing link:
+
+```
+Photo link
+[ https://…                                   ]
+Paste a link to a photo — the main listing image works. Right-click
+the photo on Zillow and copy the image address.
+```
+
+Plus a live thumbnail under the box when the value parses as an `http(s)` URL,
+so a wrong paste is visible before saving rather than after.
+
+**A pasted URL, not an upload.** The upload half needs the
+`property-images` bucket from `supabase/migrations/20261019050000_property_images.sql`,
+which is **written and not run** — and that migration's own header says the
+bucket is public-read, which is a decision about what the internet can read
+and is the owner's to make, not something to slip in behind a UI change. An
+upload button over a bucket that does not exist is a dead control that fails
+at the moment of use. `AddPropertyPage.tsx:218-221` already words this
+honestly for the Add page; the same honesty applies here, in fewer words
+because this form has eleven fields and no room for a paragraph.
+
+If the owner wants the bucket run, uploads are a separate branch on top.
+
+### C3 — the write path
+
+`photoUrl?: string | null` on `PropertyFactsPatch`, and `["photoUrl",
+"photo_url"]` appended to the `factKeys` loop at `propertyService.ts:330-339`
+— that loop is typed against the generated `PropertyUpdate`, so a wrong column
+name fails to compile. `photo_url` is in the generated types already
+(`database.types.ts:1626`), so no `writeTolerating` accommodation is needed.
+
+In the PATCH route, `photoUrl` goes through the existing
+`textOrNullOrSkip` helper and then the same `^https?:\/\//i` check the route
+already applies to `listingUrl:197-202`, with its own message: *"The photo
+link must start with http:// or https://"*. Clearing it (`""` → `null`)
+removes the photo, which is how a wrong paste gets undone.
+
+Setting a photo counts as a hand-entered fact, so it rides the existing
+`touchedFacts` → `facts_source = "manual"` path. That is correct and worth
+stating: it means a RentCast refresh will not overwrite a photo the owner
+chose.
+
+### C4 — the empty state tells the truth
+
+`PropertyDetailPage.tsx:428-436` becomes a button that opens the dialog:
+
+> **No photo of this house yet.** → `Add a photo`
+
+Same band, same height, now with the control the sentence names — which is
+what the writing rules ask of an empty state, and what the current copy
+pretends to have.
+
+## Refactors
+
+- `EditHouseForm`'s existing `<form>`, fields, state and `submit` are
+  **untouched** — the shell wraps them. No field is rewritten to add the
+  modal, and the photo field is appended rather than threaded through
+  anything existing.
+- `textOrNullOrSkip` and the `listingUrl` URL check are reused, not
+  re-implemented.
+- The `factKeys` loop is extended by one row rather than a new branch.
+
+## Risks
+
+- **Tier 2 — a public interface changes shape.** `EditableHouse` gains
+  `photo_url: string | null`. One call site (`PropertyDetailPage.tsx:741`),
+  which casts the property through `as unknown as EditableHouse` and so
+  already carries the field. Checked: no other importer of `EditHouseForm`.
+- **Tier 2 — `PropertyFactsPatch` gains a member.** Optional, so no existing
+  caller breaks. One caller, checked: `app/api/properties/[id]/route.ts:130`.
+  (Corrected from the draft, which claimed two.)
+- **Three Playwright tests in `tests/22-navigation.spec.ts` touch this form**
+  (lines 316, 334, 350, 362). All four use `data-testid`, all of which
+  survive, and the 390px overflow test at `:358` is the one that matters most
+  for a full-bleed dialog. Expected to pass unchanged; if any fails that is a
+  real regression, not a stale assertion.
+- **No migration is run.** The bucket stays uncreated. Nothing in this stage
+  needs it.
+- **Known duplication, stated not hidden:** this is the fourth hand-rolled
+  modal shell in the codebase. A shared `Modal` is the right fix and is a
+  separate refactor across four files; doing it inside a UI-fix branch would
+  be the scope creep the rules forbid.
+- **Backdrop tap discards typing without a confirm** (C1). Deliberate.
+
+## Testing
+
+`npx playwright test tests/22-navigation.spec.ts`, plus `npm run build` and
+`tsc --noEmit`.
+
+Existing, must still pass: the four edit-form tests at `:316`, `:330`, `:340`,
+`:358`.
+
+Added to the same block:
+
+1. **The form opens over the page, not below it** — after tapping Edit, the
+   form's bounding box top is above the viewport fold and
+   `role="dialog"` is present. This is the reported bug, so it gets the test
+   that reproduces it.
+2. **A pasted photo link saves** — fill `edit-house-photo`, Save, assert the
+   PATCH body carries `photoUrl`.
+3. **The dialog fits 390px with Save reachable** — no document overflow, and
+   `edit-house-save` is in the viewport without scrolling. The existing
+   `:358` test checks overflow only; a footer pushed off a phone screen is
+   the specific way this shell can fail.
+
+Verified by hand at 390px before the hand-off, per the mobile-first rule, and
+reported as what was seen rather than what the code should do.
+
+## Out of scope
+
+- Running the images migration or creating the bucket. Owner's call, its own
+  line-item instruction.
+- Uploading a photo from the phone's camera roll. Needs the bucket.
+- Multiple photos per house. The column holds one.
+- A shared `Modal` component across the four hand-rolled shells.
+- The Add page's photo field and copy. Already works.
+- The four banned strings in `explainDeal` found during Stage B and
+  deliberately left.
+
+## Approver review — 2026-10-21
+
+Reviewed against `CLAUDE.md`: scope, stack, refactor-first, risks, testing,
+Tier 2. Same caveat as Stage B — the reviewer is the same hand that drew the
+plan, so this checks claims against code and cannot judge whether the design
+is right.
+
+### 1. The caller count was wrong again
+
+The draft said `PropertyFactsPatch` has "two callers checked: the PATCH route
+and the test stub." There is **one**: `route.ts:130`. No test constructs a
+patch — the Playwright tests assert the JSON body over the wire, never the
+type. Corrected in Risks. A plan that overstates its blast radius is a smaller
+fault than one that understates it, but Stage B's review caught the same class
+of error (a count claimed, not counted) and it should not have recurred.
+
+### Verified as claimed
+
+- `PropertyDetailPage.tsx:739` does render `<EditHouseForm>` inline in the
+  page flow, after the facts grid and the parcel disclosure, with `mt-4` on
+  the form at `EditHouseForm.tsx:129`. The scroll the owner reported is real.
+- `EditableHouse` (`:19-33`) has no `photo_url`. `PropertyFactsPatch`
+  (`:260-276`) has no `photoUrl`. The PATCH route parses no photo field.
+  Four layers, no photo path — as described.
+- `EditHouseForm` has exactly one importer, `PropertyDetailPage.tsx:46`, and
+  it casts `as unknown as EditableHouse` from a `DetailProperty`, which does
+  carry `photo_url` (`lib/crm/types.ts:185`). Adding the field to
+  `EditableHouse` breaks nothing.
+- `photo_url` is in the generated types (`database.types.ts:1626`), so the
+  typed `factKeys` loop takes it without a `writeTolerating` accommodation.
+  Confirmed: `writeTolerating` is used for `list_price` only (`:161`, `:184`).
+- `supabase/migrations/20261019050000_property_images.sql` is present,
+  unrun, and its own header says the bucket is public-read and needs the
+  owner's approval twice over. The plan's refusal to ship an upload button is
+  consistent with that file, not a convenience.
+- `AddPropertyPage.tsx:215-221` has the Image URL field and the honest note
+  about the bucket. The plan reuses that wording rather than inventing a
+  second explanation.
+- Four existing edit-form tests at `tests/22-navigation.spec.ts:316`, `:330`,
+  `:340`, `:358`, all keyed on `data-testid`s the plan preserves.
+
+### Open question for the owner
+
+The photo is a **pasted link only**. Uploading from the camera roll needs the
+images migration run and a public-read bucket created — the owner's call, its
+own instruction, its own branch. If the answer is "run it", this stage still
+lands first and uploads go on top of it.
+
+**Recommendation: proceed.** The two faults are verified at every layer, the
+fix touches four existing files and creates none, and the one thing it
+deliberately will not do is the one thing that needs the owner's permission.
+
+**Not approval to start. The owner decides.**
