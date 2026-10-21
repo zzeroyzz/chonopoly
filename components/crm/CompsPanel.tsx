@@ -14,6 +14,7 @@ import {
 } from "@/lib/comps/types";
 import { type ArvResult, type CompNote } from "@/lib/comps/arv";
 import {
+  comparedToSubject,
   compDate,
   dollarsShort,
   fixerUpperNote,
@@ -22,6 +23,7 @@ import {
   priceLabel,
   provenanceLabel,
   shortDate,
+  type SubjectFacts,
 } from "@/lib/comps/format";
 import { CompLinks, type CompLinkSource } from "./CompLinks";
 import { SalePricePrompt } from "./SalePricePrompt";
@@ -181,6 +183,8 @@ export function CompsPanel({
   const [status, setStatus] = useState<RefreshStatus | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [subjectBeds, setSubjectBeds] = useState<number | null>(null);
+  const [subjectBaths, setSubjectBaths] = useState<number | null>(null);
+  const [subjectYearBuilt, setSubjectYearBuilt] = useState<number | null>(null);
   const [confirmingForce, setConfirmingForce] = useState(false);
   /** Set when a lookup stopped because the house has no size or bed count. */
   const [blindLookup, setBlindLookup] = useState<{ message: string; facts: string[] } | null>(null);
@@ -211,6 +215,8 @@ export function CompsPanel({
     setDegraded(stoppedForFacts ? null : (data.message ?? null));
     setSource(data.source ?? null);
     setSubjectBeds(data.subjectBeds ?? null);
+    setSubjectBaths(data.subjectBaths ?? null);
+    setSubjectYearBuilt(data.subjectYearBuilt ?? null);
 
     // Fold the refresh metadata back into the status so the lock message
     // updates without a second round trip.
@@ -397,6 +403,14 @@ export function CompsPanel({
    * the median of the counted comps. A card cannot work that out alone.
    */
   const notes = new Map((arv?.compNotes ?? []).map((n) => [n.compId, n]));
+
+  /** The house being bought, so every comp can say how it differs from it. */
+  const subject: SubjectFacts = {
+    beds: subjectBeds,
+    baths: subjectBaths,
+    sqft: arv?.subjectSqft ?? null,
+    yearBuilt: subjectYearBuilt,
+  };
 
   const counts = filterCounts(comps, notes);
   const tabs = tabCounts(comps, notes);
@@ -798,6 +812,7 @@ export function CompsPanel({
           key={current.id}
           comp={current}
           note={notes.get(current.id)}
+          subject={subject}
           position={{ index: done + 1, total: visible.length + done }}
           onReview={(comp, next, sale) => {
             setDone((n) => n + 1);
@@ -817,6 +832,7 @@ export function CompsPanel({
               key={comp.id}
               comp={comp}
               note={notes.get(comp.id)}
+              subject={subject}
               onReview={review}
               onRemove={remove}
             />
@@ -835,12 +851,14 @@ export function CompsPanel({
 function CompRow({
   comp,
   note,
+  subject,
   onReview,
   onRemove,
 }: {
   comp: Comp;
   /** The ARV's verdict on this comp. Absent only before the first load. */
   note: CompNote | undefined;
+  subject: SubjectFacts;
   onReview: (comp: Comp, review: CompReview, sale?: { price: number; date: string | null }) => void;
   onRemove: (comp: Comp) => void;
 }) {
@@ -855,6 +873,7 @@ function CompRow({
    * a sentence on every row would be noise.
    */
   const [opened, setOpened] = useState<CompLinkSource | null>(null);
+  const against = comparedToSubject(comp, subject);
   const ppsf = perSqft(comp);
   const date = compDate(comp);
   const provenance = provenanceLabel(comp);
@@ -973,6 +992,17 @@ function CompRow({
             >
               {counted ? "Counted anyway — " : ""}
               {reasons.join(", ")}
+            </p>
+          )}
+
+          {/* The comparison, already done. "3 bed" is above; whether 3 is the
+              same as yours is the thing you were working out by hand. */}
+          {against && (
+            <p
+              data-testid={`comp-vs-${comp.id}`}
+              className="text-[11px] text-(--color-text-secondary) mt-1"
+            >
+              Next to yours: {against}
             </p>
           )}
 

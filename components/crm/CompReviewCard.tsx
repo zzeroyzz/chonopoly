@@ -11,7 +11,14 @@ import {
   compReviewOptions,
 } from "@/lib/comps/types";
 import { type CompNote } from "@/lib/comps/arv";
-import { compDate, perSqft, priceLabel, provenanceLabel } from "@/lib/comps/format";
+import {
+  comparedToSubject,
+  compDate,
+  perSqft,
+  priceLabel,
+  provenanceLabel,
+  type SubjectFacts,
+} from "@/lib/comps/format";
 import { CompLinks } from "./CompLinks";
 import { SalePricePrompt } from "./SalePricePrompt";
 
@@ -63,12 +70,15 @@ const STATUS_STYLE: Record<string, string> = {
 export function CompReviewCard({
   comp,
   note,
+  subject,
   position,
   onReview,
   onLater,
 }: {
   comp: Comp;
   note: CompNote | undefined;
+  /** The house being bought, so the card can say how this one differs. */
+  subject: SubjectFacts;
   /** "3 of 7". A review you cannot see the end of is one nobody finishes. */
   position: { index: number; total: number };
   onReview: (comp: Comp, review: CompReview, sale?: { price: number; date: string | null }) => void;
@@ -78,6 +88,7 @@ export function CompReviewCard({
   /** Set only when the answer still needs a figure before it can be saved. */
   const [pendingSale, setPendingSale] = useState(false);
 
+  const against = comparedToSubject(comp, subject);
   const ppsf = perSqft(comp);
   const label = priceLabel(comp);
   const date = compDate(comp);
@@ -144,6 +155,14 @@ export function CompReviewCard({
 
         {specs.length > 0 && (
           <p className="text-[11px] text-(--color-text-secondary)">{specs.join(" · ")}</p>
+        )}
+        {against && (
+          <p
+            data-testid="comp-review-vs"
+            className="text-[12px] text-(--color-text-primary)"
+          >
+            Next to yours: <span className="text-(--color-text-secondary)">{against}</span>
+          </p>
         )}
         {(date || provenance) && (
           <p className="text-[11px] text-(--color-text-secondary)">

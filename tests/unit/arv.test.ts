@@ -8,6 +8,7 @@ import {
   COMP_REVIEW_ORDER,
 } from "@/lib/comps/types";
 import { matchesFilter, type CompFilter } from "@/components/crm/CompControls";
+import { comparedToSubject } from "@/lib/comps/format";
 
 /**
  * The address is derived from the id so that every comp is a different house.
@@ -847,5 +848,54 @@ describe("a comp taken off the market", () => {
 
       expect({ review, matched }).toEqual({ review, matched: [expect.any(String)] });
     }
+  });
+});
+
+describe("comparedToSubject", () => {
+  /**
+   * The owner answers "is this one like mine?" eleven times in a row. Pinning
+   * their own specs to the top of the screen left them doing the subtraction
+   * by hand, eleven times, which is what this replaces.
+   */
+  const subject = { beds: 3, baths: 2, sqft: 1_200, yearBuilt: 1930 };
+
+  it("says how a comp differs from the house being bought", () => {
+    const nearby = comp({ id: "d-1", beds: 3, baths: 2, sqft: 1_350, yearBuilt: 1950 });
+
+    expect(comparedToSubject(nearby, subject)).toBe(
+      "same beds, 150 sq ft bigger, 20 years newer"
+    );
+  });
+
+  it("says smaller and older the other way round", () => {
+    const nearby = comp({ id: "d-2", beds: 2, baths: 1, sqft: 900, yearBuilt: 1910 });
+
+    expect(comparedToSubject(nearby, subject)).toBe(
+      "1 bed fewer, 1 bath fewer, 300 sq ft smaller, 20 years older"
+    );
+  });
+
+  /** A hallway is not a difference. Calling it one makes every house differ. */
+  it("treats a few dozen feet as the same size", () => {
+    const nearby = comp({ id: "d-3", beds: 3, baths: 2, sqft: 1_240, yearBuilt: 1931 });
+
+    expect(comparedToSubject(nearby, subject)).toBe(
+      "same beds, about the same size, built around the same time"
+    );
+  });
+
+  it("leaves out a fact the subject does not have", () => {
+    const nearby = comp({ id: "d-4", beds: 3, baths: 2, sqft: 1_350, yearBuilt: 1950 });
+
+    expect(comparedToSubject(nearby, { ...subject, sqft: null })).toBe(
+      "same beds, 20 years newer"
+    );
+  });
+
+  /** Nothing in common to compare is no line at all, not an empty one. */
+  it("says nothing when there is nothing to compare", () => {
+    const nearby = comp({ id: "d-5", beds: null, baths: null, sqft: null, yearBuilt: null });
+
+    expect(comparedToSubject(nearby, subject)).toBeNull();
   });
 });

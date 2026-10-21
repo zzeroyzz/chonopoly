@@ -95,6 +95,67 @@ export function fixerUpperNote(comp: Comp): string | null {
   );
 }
 
+/** The house being bought, as far as a comparison needs to know it. */
+export interface SubjectFacts {
+  beds: number | null;
+  baths: number | null;
+  sqft: number | null;
+  yearBuilt: number | null;
+}
+
+/**
+ * How this house differs from yours, in words.
+ *
+ * The question being answered eleven times in a row is "is this one like
+ * mine?", and pinning your own specs to the top of the screen left the owner
+ * to do the subtraction in their head, eleven times. This does it.
+ *
+ * Differences only. "3 bed" is already on the card above; what is not there
+ * is whether 3 is the same as yours.
+ */
+export function comparedToSubject(comp: Comp, subject: SubjectFacts): string | null {
+  const parts: string[] = [];
+
+  if (comp.beds !== null && subject.beds !== null) {
+    const diff = comp.beds - subject.beds;
+    const count = Math.abs(diff);
+    parts.push(
+      diff === 0
+        ? "same beds"
+        : `${count} ${count === 1 ? "bed" : "beds"} ${diff > 0 ? "more" : "fewer"}`
+    );
+  }
+
+  if (comp.baths !== null && subject.baths !== null && comp.baths !== subject.baths) {
+    const diff = comp.baths - subject.baths;
+    const count = Math.abs(diff);
+    parts.push(`${count} ${count === 1 ? "bath" : "baths"} ${diff > 0 ? "more" : "fewer"}`);
+  }
+
+  if (comp.sqft !== null && subject.sqft !== null && subject.sqft > 0) {
+    const diff = comp.sqft - subject.sqft;
+    // Fifty feet is a hallway. Calling it a difference makes every house
+    // look different from every other one, which tells you nothing.
+    parts.push(
+      Math.abs(diff) < 50
+        ? "about the same size"
+        : `${Math.abs(diff).toLocaleString("en-US")} sq ft ${diff > 0 ? "bigger" : "smaller"}`
+    );
+  }
+
+  if (comp.yearBuilt !== null && subject.yearBuilt !== null) {
+    const diff = comp.yearBuilt - subject.yearBuilt;
+    const years = Math.abs(diff);
+    // Two years apart is the same building stock, not a difference worth
+    // reading on every card.
+    parts.push(
+      years <= 2 ? "built around the same time" : `${years} years ${diff > 0 ? "newer" : "older"}`
+    );
+  }
+
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
 /**
  * The date that matters for this comp, and what it means.
  *
