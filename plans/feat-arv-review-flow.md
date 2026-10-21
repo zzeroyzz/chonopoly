@@ -297,3 +297,304 @@ item 2 is a live bug worth knowing about regardless of what happens to this
 plan.
 
 **The owner makes the final call. This review is not approval to start.**
+
+---
+
+## Independent Approver review — 2026-10-21
+
+**Verdict: Changes requested.**
+
+I am a separate instance from the one that wrote this plan and from the one
+that wrote the self-review above. I did not write and will not write the
+implementation. I verified every claim below against the code rather than
+against the plan's description of it.
+
+The self-review's items 1, 2 and 3 are **confirmed independently** — I found
+the same three faults before reading it. Its item 4 is also real
+(`CompControls.tsx:143` `defaultFilter` returns `"approved"`, which has no
+meaning once `approved` leaves the filter). Those four stand as requested
+changes and I do not restate them. Everything below is additional.
+
+Note on process: the self-review in the section above is, as it says, not an
+Approver review — the rules forbid acting as Approver for work you implement.
+It was useful groundwork. This review is the one the workflow requires.
+
+### Confirmed as the plan claims
+
+- `CompLinks.tsx:71` really does read `comp.notes` as a listing URL
+  (`comp.source === "manual" && comp.notes?.startsWith("http")`). There is no
+  spare column that serves. **`review_notes` is justified.**
+- `CompsPanel.tsx` is 1,225 lines. (It holds four React components —
+  `CompsPanel`, `CompRow`, `SalePricePrompt`, `ManualCompForm` — plus eight
+  private helpers, not "six components". The count is wrong; the argument
+  survives it.)
+- `lib/comps/arv.ts` touches `review` only at lines 613-614, both equality
+  checks against `COMP_REVIEW_COUNTS` and `"needs_review"`. **A sixth skip
+  value genuinely needs no arithmetic change** — the caveat is self-review
+  item 3, which is about reporting, not arithmetic.
+- **Keeping `CompRow` is correct** and is not a rules problem. The hard rule
+  bites on deletion as a method of fixing a bug; this is retention. It is
+  also the better design: the Checked tab is for scanning, not deciding.
+  Conditional on item 5 below.
+- **RentCast cannot report pending.** `lib/rentcast/types.ts:130-135`
+  documents `status` as "Active" or "Inactive"; `fromRentCast.ts:22` maps
+  `inactive → removed`, everything else → `active`; the fixtures carry only
+  Active and Inactive. Pushing Pending out of scope is **correct and well
+  reasoned.**
+- The migration follows the house structure of `20261020220000`: baseline temp
+  table, CHECK looked up by definition not by name, re-add, verify block,
+  commented-out Down. **Correctly marked written-not-run.**
+
+### 5. BLOCKING — the new file duplicates eight private helpers
+
+This is the condition on which the new-file justification actually rests, and
+the plan does not mention it. `dollarsShort`, `shortDate`, `perSqft`,
+`priceLabel`, `provenanceLabel`, `fixerUpperNote`, `monthYear` and `compDate`
+are all module-private inside `CompsPanel.tsx` (lines 31-193). The review card
+needs most of them to render "price with the status pill · the spec line · the
+status sentence". The Refactors section lists what it reuses — `searchUrls`,
+`compReviewOptions`, `matchesFilter`, `sortComps`, `filterCounts` — and these
+eight are not in it.
+
+Two outcomes, and the plan must pick one in writing: export them from
+`CompsPanel.tsx` (a module-surface change, Tier 2, and it must be named), or
+copy them (which breaks "No duplicated logic. Shared behavior lives in one
+place."). A third file for shared comp formatting is a third option and a
+third new file. **Unanswered, the new-file justification does not hold** —
+splitting a component out while cloning its helpers is not a split.
+
+### 6. BLOCKING — approving a removed listing from the new card will fail
+
+`CompsPanel.tsx:984-1001` routes `renovated_use` on a `removed` comp through
+`SalePricePrompt` first, because `app/api/.../[compId]/route.ts:87` rejects
+it with a 400 otherwise: *"Tell us what it sold for."* The database CHECK
+`property_comps_removed_sale_needs_price` enforces the same thing.
+
+The card described in §2 goes radio rows → notes → Save and next. There is no
+sale-price step. On a removed listing — which is most of them, and the exact
+case this feature is built for — Save returns a 400. `SalePricePrompt` appears
+nowhere in the plan. State that the card reuses it (not a second copy) and
+where it sits in the order.
+
+### 7. BLOCKING — the scope table is missing files the change cannot avoid
+
+Each of these is Tier 2 ("touching files not named in the approved plan") and
+none is named:
+
+- **`lib/comps/compService.ts`** — `review_notes` must enter the `CompRow`
+  interface (line 35) and `toComp` (line 122), and `setCompReview` (line 440)
+  must persist it. Its signature gains a field. That is an exported-function
+  signature change (Tier 2) and this repo's own hard rule: *never change
+  function signatures without checking all call sites.* The self-review's
+  "`compService.ts:450` is additive-safe" is true about `keepsSale` and does
+  not address that the file must change at all.
+- **`lib/supabase/database.types.ts`** — `property_comps` has no
+  `review_notes`. See item 8.
+- **`app/globals.css`** — `--color-reviewing` **does not exist.** The tokens
+  are `--color-accent` (#00D4AA), `--color-accent-glow`, `--color-warning`.
+  §3 spends a paragraph on violet that nothing defines. Either add the token
+  and name the file, or use one that exists.
+- **Every file that builds a whole `Comp` literal**, because adding
+  `reviewNotes` to the interface breaks them all:
+  `scripts/review-reset.ts:80`, `scripts/diagnose-comps.ts:408`,
+  `tests/27-recorded-sales.spec.ts:112,140`, `tests/unit/screenRow.test.ts:60`,
+  `tests/unit/arv.test.ts:42`, `tests/23-comps.spec.ts:58,214`. `tsc` does
+  catch these — they are cheap, but they are six unnamed files.
+- **`components/crm/PropertyDetailPage.tsx`** — see item 9.
+- **`tests/unit/arv.test.ts`** if item 3's `ArvResult` field lands;
+  **`PropertyDetailPage.tsx:506-509`** and
+  **`components/properties/PropertiesPage.tsx:506-509`** each compose their own
+  "Built from N comps you approved · N still to review" sentence. If the basis
+  line learns to say how many were unreadable, say whether those two cards say
+  it too or deliberately stay quiet.
+
+### 8. BLOCKING — the sequencing problem the last plan named, and this one drops
+
+`feat-comp-review.md` said it plainly: *"`database.types.ts` cannot be
+regenerated until the migration runs, so the service and UI work does not
+typecheck until then — the same sequencing problem as last time, and the same
+answer: I stop and ask."* This plan has the identical problem via
+`review_notes` and does not carry that paragraph forward. The Precondition
+notes the two prior migrations are unrun, then moves on.
+
+The consequence needs stating, because it governs the stopping gate: with the
+migration unrun, `npm run build` and `tsc` — the plan's own definition of done
+— cannot pass over code that reads `review_notes` unless `database.types.ts`
+is hand-edited ahead of the migration. Say which it is: hand-edit the
+generated file and flag it, or stop and wait for the owner to run the
+migration. Do not discover this at the gate.
+
+Related: **testing case 10, "review notes survive a reload", cannot be
+honest with the column absent.** Either it stubs the route — in which case it
+proves the field round-trips through the UI and nothing about persistence, and
+should be named that way — or it waits on the migration. Pick one in the plan.
+
+### 9. `searchUrls` loses Google Maps and gains a pill with no address behind it
+
+`searchUrls` returns `{ zillow, redfin, maps }` and is exported;
+`PropertyDetailPage.tsx:28,414` imports it (it reads `.zillow` only, so this
+will not fail `tsc`). §6's four pills are Zillow · Redfin · Realtor · Records.
+So:
+
+- **Maps disappears** from the comp card. That is removing a working link, and
+  the plan never says it means to. Say so, or keep it.
+- **The return shape changes**, which is a Tier 2 exported-interface change,
+  and the Risks section does not name it.
+- **"Records" has nothing to build a URL from.** There is no county-records
+  URL builder anywhere in `lib/` or `components/` — I looked. County record
+  sites differ per county, and `Comp.county` is documented in `types.ts` as
+  populated only on a `public_record` comp, so it is `null` on every RentCast
+  comp. §6 presents the county record as the answer to the missing-photos
+  problem — *"the county record works when every photo is gone"* — with no
+  mechanism. State exactly what that pill opens, and what it does when the
+  county is unknown. If the answer is a web search for the county assessor,
+  say that; it is a weaker claim and an honest one.
+
+### 10. Item 1's list is longer than two, and the compiler's help splits cleanly
+
+Worth recording precisely, because the plan should say where reading is
+required and where building suffices.
+
+`tsc` **does** catch: `COMP_REVIEW_LABELS` (`types.ts:46`) and `REVIEW_TONE`
+(`CompsPanel.tsx:106`) — both `Record<CompReview, …>`.
+
+`tsc` **does not** catch, in addition to the self-review's two:
+
+- `COMP_REVIEW_ORDER` (`types.ts:74`), the API's validator. Miss it and
+  `route.ts:70` returns 400 *"review must be one of: …"* for the new value,
+  with a clean build.
+- `compReviewOptions` (`types.ts:61`), which decides whether the option is
+  offered at all. Miss it and the choice never renders.
+
+Four silent sites, not two.
+
+### 11. Existing tests will break by design — say so now
+
+`tests/23-comps.spec.ts:432-477` ("skipping a comp moves the ARV", "approving
+a comp again restores the ARV") drive `comp-review-comp-4-option-*` on the
+default Needs-review view, which is exactly the view the new card replaces.
+The plan says the spec is "extended, not replaced" and lists ten additions
+without saying these must change.
+
+They must, and the record needs to show why before the work starts, because
+*"delete, weaken, or rewrite a failing test to make it pass"* is a Tier 3
+never. A test updated because the UI deliberately changed is legitimate; one
+updated at the gate because it went red is not distinguishable after the fact.
+Name them, and keep the assertions (a review moves the ARV, a skip does not).
+
+On sufficiency: the ten cases cover the flow well, and case 9 should simply
+lean on what is there — the file already sets `viewport: 390x844` at
+`test.use` and already has "the Comps tab fits 390px without sideways
+scroll". Do not add a second one. The spec is 1,159 lines and 55 tests;
+adding ten is fine, but it is near the point where the comps specs want
+splitting, which is its own plan, not this one.
+
+### 12. The Precondition is out of date
+
+`fix/comp-controls` **is merged** — `367ade7`, "Merge pull request #57", is
+the tip of `main`. And `feat/arv-review-flow` **is already cut**, from
+`367ade7`, with two docs commits on it. The branching rule was followed
+correctly. The plan still reads "not yet cut" and "assumes `fix/comp-controls`
+is merged first". Correct the text so the record matches what happened.
+
+### 13. Smaller things
+
+- **The sixth state has no on-screen label in the plan.** `COMP_REVIEW_LABELS`
+  needs one, and the writing rules require a verdict to say why and what to
+  do. "Can't tell" alone does not. Something closer to: *"Photos are gone —
+  can't tell. Left out of the resale price."* Put the string in the plan.
+- **The migration filename under-describes it.** `<ts>_comp_cant_tell.sql`
+  also adds a column. `_comp_cant_tell_and_review_notes.sql` or similar.
+- **Guard the CHECK lookup against matching more than one constraint.**
+  `property_comps` now carries three review-related CHECKs
+  (`property_comps_review_check`, `property_comps_review_has_reviewer`,
+  `property_comps_removed_sale_needs_price`). The two-predicate `SELECT conname
+  INTO` in `20261020220000` happens to match exactly one today, but `SELECT …
+  INTO` takes an arbitrary row when several match. Count them and raise if it
+  is not exactly one.
+- **Set the status line.** It still reads `Draft`; per the planning standard it
+  should be `Changes requested`. I am limited to this section.
+
+### Assessment against the rules
+
+- **Scope** — leaks, materially. Items 7 and 9. The *design* is confined to
+  the ARV tab; the *change* reaches `compService`, the generated DB types,
+  `globals.css`, two scripts, four test files and `PropertyDetailPage`.
+- **Stack** — clean. TypeScript strict, Tailwind utilities, no new
+  dependencies, no CSS files, no inline styles, `lucide-react` already
+  present. SQL for the migration is a named and legitimate exception. The
+  instruction to read `node_modules/next/dist/docs/` before writing component
+  code is correctly carried over from `AGENTS.md`.
+- **Refactor-first** — fails on item 5 and item 6, and these are the same
+  fault twice: the plan plans a new component without planning what it shares
+  with the one it sits beside.
+- **Risks** — three Tier 2 items are unnamed: the `setCompReview` signature,
+  the `searchUrls` return shape, and `globals.css`. Named correctly: the
+  migration, the two new files, the additive union member, the API shape, and
+  that nothing touches auth, RLS, env, CI, lockfiles or Plaid. That last
+  disclaimer I verified and it is true.
+- **Testing** — adequate in shape, not yet honest about items 8, 10 and 11.
+- **Migration** — correct in structure and correctly marked written-not-run,
+  with item 13's guard.
+
+### The testing contradiction is real
+
+I checked both files. `chonopoly/CLAUDE.md` §Testing: *"Every major feature
+must have a Playwright test written alongside it … The Playwright test must be
+passing before the feature is marked done … no exceptions."* §Stop At The
+Commit, under a heading that says it **overrides everything below**: *"No
+tests. Run `npm run build` and `tsc` before stopping."*
+
+Read literally, Stop At The Commit overrides what is *below* it, and §Testing
+sits *above* it in the file — so the override clause does not reach it, and
+both are in force, which is incoherent. This genuinely needs the owner. My
+own reading, offered only as a reading: write the Playwright test, run it, and
+let `npm run build` plus `tsc` be the stopping gate — "no tests" most likely
+means "do not sit running the full suite", not "ship a major feature
+untested", and §Testing is the more specific rule. But the owner says.
+
+### Open questions for the owner
+
+Carrying the self-review's three forward, since they are still unanswered:
+
+1. **Which rule wins on testing** — §Testing's Playwright requirement, or
+   §Stop At The Commit's "No tests"? (See above.)
+2. **Have either of `20261020200000_comp_review.sql` or
+   `20261020220000_comp_sale_price.sql` been applied?** Everything downstream
+   turns on this, including whether this branch can typecheck. Only you know.
+3. **The `took_off_market_skip` bug (self-review item 2) — fix here or file
+   separately?** It is live on `main` today: a comp marked "Took off market"
+   shows under no filter but All, and hints keep firing on it. I lean
+   separately — it is a `fix/` branch of about four lines, it wants its own
+   commit, and folding it in makes this PR two things. But it is cheap enough
+   here that you may prefer it done once.
+4. **The "Records" pill — what does it actually open?** (Item 9.) If there is
+   a county site you use by hand, name it and the plan can build it.
+5. **Should Google Maps survive as a fifth pill, or go?** (Item 9.)
+6. **If the basis line gains an unreadable count, do the property card and
+   the properties list say it too?** (Item 7, last bullet.)
+
+### Recommendation
+
+**Changes requested — items 5 through 13, plus the self-review's 1 through 4.**
+
+The design is the right one. One house on screen, the subject facts pinned
+above it, four ways out to go and look, and a sixth state for "the photos are
+gone and I cannot tell" is a real answer to a real problem, and the reasoning
+for keeping that state separate from the other skips is sound. Pending is
+correctly deferred for a correct reason. The migration is correctly written
+and correctly not run.
+
+What the plan is not yet is accurate about its own reach. Its scope table
+names eight files and the change needs at least fifteen. Two of its blocking
+faults — the shared helpers and the sale-price step — are the same oversight:
+a new component planned without planning its relationship to the component it
+sits next to. And the sequencing problem that the last comps plan named out
+loud is missing from this one, which matters because it decides whether the
+work can reach its own stopping gate.
+
+None of that is deep. It is a revision, not a redesign. Revised and resent, I
+expect to approve it.
+
+**The owner makes the final call. This review is not approval to start, and
+nothing in it authorizes running the migration.**
