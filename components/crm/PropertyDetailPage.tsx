@@ -426,12 +426,25 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                       dead, is the mistake this header already made twice. */}
                 </div>
               ) : (
-                /* No photo is a fact about the house, not a hole in the page. */
+                /* No photo is a fact about the house, not a hole in the page.
+                   The copy used to point at the edit form, which had no photo
+                   field — so it named something the app could not do. It is a
+                   button now, and the field exists. */
                 <div className="h-20 bg-(--color-surface) border-b border-(--color-border-subtle)
-                  flex items-center px-4">
+                  flex items-center justify-between gap-3 px-4">
                   <span className="text-[11px] text-(--color-text-secondary)">
-                    No photo yet — add one when you edit the house.
+                    No photo of this house yet.
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => setEditingHouse(true)}
+                    data-testid="add-photo"
+                    className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-(--radius-pill)
+                      border border-(--color-border-strong) text-[12px] font-medium"
+                  >
+                    <Pencil size={12} />
+                    Add a photo
+                  </button>
                 </div>
               )}
 
@@ -643,12 +656,12 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               {property && (
                 <button
                   type="button"
-                  onClick={() => setEditingHouse((v) => !v)}
+                  onClick={() => setEditingHouse(true)}
                   data-testid="edit-house-toggle"
-                  className="shrink-0 flex items-center gap-1 h-8 px-2.5 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium"
+                  className="shrink-0 flex items-center gap-1 h-8 px-2.5 rounded-(--radius-pill) border border-(--color-border-default) text-[12px] font-medium"
                 >
                   <Pencil size={12} />
-                  {editingHouse ? "Close" : "Edit"}
+                  Edit
                 </button>
               )}
             </div>
