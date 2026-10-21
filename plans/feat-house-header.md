@@ -577,3 +577,134 @@ fix touches four existing files and creates none, and the one thing it
 deliberately will not do is the one thing that needs the owner's permission.
 
 **Not approval to start. The owner decides.**
+
+---
+
+# Stage D: Playwright for journeys, Jest for functions
+
+Status: **In progress** — 2026-10-21. Owner asked for the policy and for the
+tests on this branch. First slice is in at `5c5dc6e`.
+RentCast requests: **0**. Migrations run: **0**.
+
+## Why
+
+The owner's instinct — Playwright for major features, Jest for minor ones —
+is right, and the numbers say how right:
+
+| | count | time |
+|---|---|---|
+| Jest | 486 | **1.2s** |
+| Playwright | 163 | **~10 min** |
+
+Of 148 Playwright tests that could be parsed, **27 are render-and-read**: no
+click, no layout check, no navigation. They boot a browser to assert a string
+a pure function returns. Sixteen of the 27 are in `23-comps.spec.ts`.
+
+The clearest case, now fixed: `23-comps` asserted *"the ARV is the median
+price per sqft times the subject size"* through Chromium, while
+`tests/unit/arv.test.ts` already had 86 unit tests on the same maths. The
+browser copy was failing; the unit copy passed.
+
+This is also why the suite rots. A renamed testid breaks a browser test; the
+maths stays green in Jest where it belongs.
+
+## The rule
+
+Not "major vs minor" — that is hard to adjudicate at 2am. The line is **what
+the test needs**:
+
+- **Playwright** — what only a browser can prove: a journey end to end, a
+  click producing the right request, routing, and 390px layout. **One wiring
+  test per feature, not one per case.**
+- **Jest** — anything that is a function: calculations, verdicts, label and
+  copy mapping, parsing, error-message selection. Cases and edges live here.
+- "Does X show the right value for inputs A/B/C" is a Jest test. "Does the
+  value reach the screen at all" is the Playwright one.
+
+Proposed wording for `CLAUDE.md`'s Testing section is in **Open questions**
+below — not applied yet, because it changes the rules this repo runs on.
+
+## Done so far (`5c5dc6e`)
+
+14 Jest cases for `perSqft`, `priceLabel`, `provenanceLabel`,
+`fixerUpperNote`, `compDate` — four of the five had no unit cover at all.
+Added to `tests/unit/arv.test.ts`, which already tests `format.ts`, so no new
+file. Two browser tests retired. 23-comps: 14 failing of 52 → 13 of 50.
+
+## The remaining 25, with a disposition each
+
+Not a blanket delete. Several of the 27 are **not** pure logic, and deleting
+them would lose real cover.
+
+**A — retire, logic now or already in Jest (6)**
+
+| Test | Covered by |
+|---|---|
+| 23-comps: the ARV is the median price per sqft × subject size | `calculateArv`, 86 cases |
+| 23-comps: the ARV says what it is built on | `basisLabel` cases |
+| 23-comps: a comp set with no confirmed sales carries a warning | `warnings` cases |
+| 23-comps: a comp missing its size is skipped and declared | `assessComps` |
+| 27-recorded-sales: recorded sales show as Sold, county record | `provenanceLabel` (new) |
+| 27-recorded-sales: an ordinary sale carries no fixer flag | `fixerUpperNote` (new) |
+
+All six are **currently failing** against stale fixtures. Each needs its
+failure diagnosed before retirement — the same check done on the date test,
+so a real bug is never retired as a stale one. That diagnosis is the work,
+not the deletion.
+
+**B — keep, they are not read-only in substance (13)**
+
+Conditional rendering driven by permission, quota and lock state:
+*a non-owner cannot force a refresh*, *at the monthly cap Refresh is removed*,
+*no RentCast key hides Refresh and says why*, *a locked house offers Refresh
+early*, *an unlocked house just offers Refresh*, *rebuild is hidden when
+nothing has been saved*, and the rest of the lock/cap group.
+
+The predicate belongs in Jest; **whether the control is on the screen** is an
+integration fact. Extracting these predicates is a component refactor and is
+not in this stage.
+
+**C — keep as the one wiring test (6)**
+
+*comps show Removed rather than Sold*, *an empty ARV card does not say the
+same thing twice*, *the basis line returns once there is a number*, and the
+three buyer-profile first-run tests. These are the "it reaches the screen"
+tests the rule explicitly keeps.
+
+## Risks
+
+- **Retiring a failing test can hide a bug.** Mitigated by diagnosing each
+  before it goes, and by the Jest case landing first. Done that way for the
+  date test in `5c5dc6e`; group A gets the same treatment.
+- **A policy over a red suite is unenforceable.** 36 of 165 were failing when
+  this started, and **Playwright has been commented out of CI since
+  `e386a56`, 2026-07-09** — three and a half months. The rule changes nothing
+  until something runs it.
+- Group B wants a component refactor to do properly. Deliberately deferred.
+
+## Testing
+
+`npx jest` after each slice, and the touched spec before and after, comparing
+failure counts rather than asserting green — this suite is not green.
+
+## Out of scope
+
+- Re-enabling the Playwright CI job (`.github/workflows/ci.yml:49`).
+- `devIndicators: false` in `next.config.ts`.
+- The other 36 pre-existing suite failures.
+- Extracting group B's predicates out of `CompsPanel`.
+
+## Open questions for the owner
+
+1. **The CLAUDE.md wording.** Proposed replacement for the Testing section:
+
+   > - Playwright covers journeys, not cases: a feature gets one test that it
+   >   works end to end on a phone, plus its 390px layout check.
+   > - Every other case — calculations, verdicts, labels, parsing, errors —
+   >   is a Jest unit test against the function, not the screen.
+   > - Before adding a Playwright test, ask whether a Jest test would prove
+   >   the same thing. If it would, write that instead.
+   > - A major feature is not done until its Playwright journey test passes.
+
+2. **Group A**: retire all six after diagnosing each, or leave them failing
+   and visible until the suite is green overall?
