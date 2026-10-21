@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ExternalLink, ChevronDown } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 import { type Comp } from "@/lib/comps/types";
 
 /**
@@ -9,7 +8,12 @@ import { type Comp } from "@/lib/comps/types";
  *
  * A comp is an address and a price, and neither tells you whether the house
  * was renovated — which is the one thing that decides whether it belongs in
- * the ARV at all. Every comp now carries a way to go and see it.
+ * the ARV at all. Every comp carries a way to go and see it.
+ *
+ * Five pills, all visible. This was a link plus a chevron that opened a menu
+ * of three more: two controls to reach four places, on a screen where the
+ * whole job is going out to look and coming back. The places are the content
+ * here, so they are on the card.
  *
  * The links are built from the address rather than stored, because RentCast
  * does not hand back listing URLs. A search is not as good as a deep link,
@@ -28,91 +32,86 @@ export function searchUrls(address: string) {
   return {
     zillow: `https://www.zillow.com/homes/${q}_rb/`,
     redfin: `https://www.redfin.com/search?query=${q}`,
+    /**
+     * Keeps listing photos longest, and often has them when the others don't.
+     *
+     * A site-scoped search rather than a direct link. realtor.com addresses a
+     * listing by its own internal id, which we do not have, and its
+     * address-shaped search URL resolves to the surrounding zip — so the
+     * direct-looking version landed on a neighbourhood, not the house.
+     */
+    realtor: `https://www.google.com/search?q=site%3Arealtor.com+${q}`,
+    /**
+     * A search, not a deep link, and the wording on screen says so.
+     *
+     * County record sites differ per county and we usually do not know the
+     * county: `Comp.county` is only populated on a public-record comp, so it
+     * is null on everything RentCast returns. A search for the county's own
+     * record is the honest mechanism available.
+     */
+    records: `https://www.google.com/search?q=${q}+county+property+records`,
     maps: `https://www.google.com/maps/search/?api=1&query=${q}`,
   };
 }
 
-export function CompLinks({ comp }: { comp: Comp }) {
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLSpanElement>(null);
+export type CompLinkSource = keyof ReturnType<typeof searchUrls>;
 
-  useEffect(() => {
-    if (!open) return;
-    function onPointer(e: PointerEvent) {
-      if (wrapRef.current?.contains(e.target as Node)) return;
-      setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+const SOURCES: { id: CompLinkSource; label: string; title: string }[] = [
+  { id: "zillow", label: "Zillow", title: "Photo history, usually the best" },
+  { id: "redfin", label: "Redfin", title: "Often keeps photos Zillow dropped" },
+  { id: "realtor", label: "Realtor", title: "Holds listing photos longest" },
+  {
+    id: "records",
+    label: "Records",
+    title: "Searches for the county record. Works when the photos are gone.",
+  },
+  { id: "maps", label: "Map", title: "Where it is" },
+];
 
+export function CompLinks({
+  comp,
+  opened,
+  onOpen,
+}: {
+  comp: Comp;
+  /** The source already opened for this comp: its pill stays lit. */
+  opened?: CompLinkSource | null;
+  onOpen?: (source: CompLinkSource) => void;
+}) {
   const urls = searchUrls(comp.formattedAddress);
   // A hand-entered comp's own listing beats a search for it.
-  const primaryHref = comp.source === "manual" && comp.notes?.startsWith("http")
-    ? comp.notes
-    : urls.zillow;
-  const primaryLabel = primaryHref === urls.zillow ? "View on Zillow" : "View listing";
-
-  const others: { label: string; href: string }[] = [
-    ...(primaryHref === urls.zillow ? [] : [{ label: "Zillow", href: urls.zillow }]),
-    { label: "Redfin", href: urls.redfin },
-    { label: "Google Maps", href: urls.maps },
-  ];
+  const ownListing =
+    comp.source === "manual" && comp.notes?.startsWith("http") ? comp.notes : null;
 
   return (
-    <span ref={wrapRef} className="relative inline-flex items-center gap-1.5">
-      <a
-        href={primaryHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        data-testid={`comp-link-${comp.id}`}
-        className="inline-flex items-center gap-1 text-[11px] text-(--color-accent) hover:underline"
-      >
-        <ExternalLink size={11} />
-        {primaryLabel}
-      </a>
-
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        aria-label={`More links for ${comp.formattedAddress}`}
-        data-testid={`comp-links-more-${comp.id}`}
-        className="inline-flex items-center text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors"
-      >
-        <ChevronDown size={12} />
-      </button>
-
-      {open && (
-        <span
-          role="menu"
-          data-testid={`comp-links-menu-${comp.id}`}
-          className="absolute left-0 top-full mt-1 z-30 min-w-[9rem] rounded-[var(--radius-md)]
-            border border-(--color-border-strong) bg-(--color-overlay) shadow-[var(--shadow-md)] py-1"
-        >
-          {others.map((link) => (
-            <a
-              key={link.label}
-              href={link.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              role="menuitem"
-              onClick={() => setOpen(false)}
-              className="block px-3 py-1.5 text-[12px] text-(--color-text-primary) hover:bg-(--color-elevated)"
-            >
-              {link.label}
-            </a>
-          ))}
-        </span>
-      )}
-    </span>
+    // Wraps to a second row rather than squeezing: five 44px targets do not
+    // fit one line at 390px, and a squeezed target is a missed tap.
+    <div className="flex flex-wrap items-center gap-1.5" data-testid={`comp-links-${comp.id}`}>
+      {SOURCES.map((source) => {
+        const isOpen = opened === source.id;
+        return (
+          <a
+            key={source.id}
+            href={source.id === "zillow" && ownListing ? ownListing : urls[source.id]}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={source.title}
+            onClick={() => onOpen?.(source.id)}
+            data-testid={`comp-link-${source.id}-${comp.id}`}
+            /* border-default is 8% white, which on an elevated card reads as
+               no edge at all — the pills ghosted. */
+            className={`inline-flex items-center gap-1.5 min-h-11 px-3.5 rounded-(--radius-pill)
+              border text-[12px] font-semibold transition-colors ${
+                isOpen
+                  ? "border-(--color-accent) bg-(--color-accent-glow) text-(--color-accent)"
+                  : "border-(--color-border-strong) bg-(--color-base) text-(--color-text-primary) hover:border-(--color-accent)"
+              }`}
+          >
+            <ExternalLink size={11} className="shrink-0" />
+            {isOpen ? `${source.label} — opened` : source.label}
+          </a>
+        );
+      })}
+    </div>
   );
 }

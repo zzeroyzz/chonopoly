@@ -108,6 +108,17 @@ body {
   --color-danger:         #EF4444;
   --color-info:           #3B82F6;
 
+  /*
+   * The house you are on right now.
+   *
+   * Reviewing a comp means leaving for Zillow and coming back, and every card
+   * looks the same on return. This marks the one in hand. Violet is used for
+   * nothing else anywhere in the app, which is the entire point — coming back
+   * to a violet edge is unambiguous.
+   */
+  --color-reviewing:      #A78BFA;
+  --color-reviewing-tint: rgba(167,139,250,0.12);
+
   /* Spacing scale */
   --space-1: 4px;  --space-2: 8px;   --space-3: 12px; --space-4: 16px;
   --space-5: 20px; --space-6: 24px;  --space-8: 32px; --space-10: 40px;

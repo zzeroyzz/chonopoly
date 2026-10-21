@@ -58,9 +58,15 @@ function mentionsMissingColumn(message: string, column: string): boolean {
 /**
  * Write a row, dropping a column the database has not got yet.
  *
- * `list_price` ships ahead of its migration, and a house that will not save
- * is a worse failure than a price that is not stored until the migration is
- * run. The retry is narrow on purpose: one named column, one retry.
+ * `list_price` once shipped ahead of its migration, and a house that will not
+ * save is a worse failure than a price that is not stored yet. The retry is
+ * narrow on purpose: one named column, one retry.
+ *
+ * That migration has since been applied (confirmed 2026-10-21: `list_price`
+ * is in the generated types and reads back on the house page), so this no
+ * longer fires in practice. Kept because an environment restored from an
+ * older schema should still be able to save a house; removing it is a
+ * separate decision, not a tidy-up.
  */
 interface WriteOutcome {
   data: unknown;
@@ -116,9 +122,12 @@ export async function upsertProperty(
   }
 
   // 3. New property.
-  // `list_price` is not in the generated types until its migration runs, so
-  // the row is assembled and cast once here rather than widening the table's
-  // typing everywhere. Regenerating types after the migration removes this.
+  // The row is assembled and cast once here rather than widening the table's
+  // typing everywhere.
+  //
+  // This was because `list_price` was not in the generated types. It is now
+  // (confirmed 2026-10-21), so the cast is no longer load-bearing and can go
+  // with the tolerating write above. Left together, as one decision.
   const insertRow = (withPrice: boolean) =>
     ({
       owner_type: ctx.type,
@@ -338,10 +347,10 @@ export async function updatePropertyFacts(
     }
   }
 
-  // Assigned past the typed loop above because `list_price` is not in the
-  // generated types until they are regenerated against the migration — the
-  // same accommodation upsertProperty makes. Not wrapped in
-  // writeTolerating: a price edit that silently does not save is the exact
+  // Assigned past the typed loop above, the same accommodation upsertProperty
+  // makes, and for the reason that no longer applies: `list_price` is in the
+  // generated types as of 2026-10-21. Deliberately NOT wrapped in
+  // writeTolerating — a price edit that silently does not save is the exact
   // bug this column was added to fix, so a missing column should say so.
   if (patch.listPrice !== undefined) {
     Object.assign(update, { list_price: patch.listPrice });

@@ -6,31 +6,43 @@ import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
 import {
   type Comp,
-  type CompStatus,
   type CompReview,
   COMP_STATUS_LABELS,
   COMP_REVIEW_LABELS,
   compReviewOptions,
+  isSkipped,
 } from "@/lib/comps/types";
 import { type ArvResult, type CompNote } from "@/lib/comps/arv";
-import { ORGANIZATION_BUYER } from "@/lib/comps/fromPropertyRecords";
-import { CompLinks } from "./CompLinks";
+import {
+  comparedToSubject,
+  compDate,
+  dollarsShort,
+  fixerUpperNote,
+  monthYear,
+  perSqft,
+  priceLabel,
+  provenanceLabel,
+  shortDate,
+  type SubjectFacts,
+} from "@/lib/comps/format";
+import { CompLinks, type CompLinkSource } from "./CompLinks";
+import { SalePricePrompt } from "./SalePricePrompt";
 import { Dropdown, type DropdownTone } from "@/components/ui/Dropdown";
 import {
   CompControls,
+  CompReviewTabs,
   FILTER_LABELS,
-  defaultFilter,
+  defaultTab,
   filterCounts,
   matchesFilter,
+  matchesTab,
   sortComps,
+  tabCounts,
   type CompFilter,
   type CompSort,
+  type ReviewTab,
 } from "./CompControls";
-
-/** "$380k" — the way a price range gets said out loud. */
-function dollarsShort(n: number): string {
-  return `$${Math.round(n / 1000).toLocaleString("en-US")}k`;
-}
+import { CompReviewCard, STATUS_STYLE } from "./CompReviewCard";
 
 /**
  * Comparable sales for one property, and the ARV they produce.
@@ -83,11 +95,6 @@ interface RefreshStatus {
   windowDays: number;
 }
 
-/** "Oct 18" — the form the lock message reads best in. */
-function shortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
 const SOURCE_LABEL: Record<string, string> = {
   cached: "from the saved response",
   rebuilt: "rebuilt from the saved response",
@@ -110,95 +117,6 @@ const REVIEW_TONE: Record<CompReview, DropdownTone> = {
   took_off_market_skip: "warn",
   not_comparable_skip: "warn",
 };
-
-const STATUS_STYLE: Record<string, string> = {
-  // Sold is the evidence that counts, so it gets the accent.
-  sold: "bg-(--color-accent-glow) text-(--color-accent)",
-  removed: "bg-amber-500/10 text-amber-400",
-  active: "bg-(--color-elevated) text-(--color-text-secondary)",
-};
-
-function perSqft(comp: Comp): string | null {
-  if (comp.price === null || comp.sqft === null || comp.sqft <= 0) return null;
-  return `$${Math.round(comp.price / comp.sqft)}/sqft`;
-}
-
-/**
- * What this comp's price actually is.
- *
- * Only a sale gets a qualifier, because only a sale's price is a fact about
- * what someone paid. Active and Removed carry their own label beside the
- * price and say enough on their own.
- */
-const PRICE_MEANING: Partial<Record<CompStatus, string>> = {
-  sold: "sold for",
-};
-
-/**
- * What the figure beside the price means on this comp.
- *
- * A removed listing the owner has marked sold shows both numbers, so the
- * first one has to say which it is: "Listed at $348,560 · Sold for $335,000".
- */
-function priceLabel(comp: Comp): string | null {
-  if (comp.salePrice !== null) return "Listed at";
-  return PRICE_MEANING[comp.status] ?? null;
-}
-
-/**
- * Where a sold comp's price came from.
- *
- * A county deed and an agent's closed-sales list are both real sales, but
- * they are not the same kind of fact, and a reader deciding whether to trust
- * a number is entitled to know which one they are looking at.
- */
-function provenanceLabel(comp: Comp): string | null {
-  if (comp.status !== "sold") return null;
-  return comp.source === "public_record" ? "county record" : "you entered this";
-}
-
-/**
- * Why this sale might be below what a finished house is worth.
- *
- * The decision is the ARV's, not this component's: it depends on what the
- * counted comps fetched, which a single card cannot see. Here we only phrase
- * it.
- */
-function fixerUpperNote(comp: Comp): string | null {
-  if (comp.price === null) return null;
-
-  const boughtBy =
-    comp.buyerType === ORGANIZATION_BUYER
-      ? `Bought by a company${comp.buyerName ? ` (${comp.buyerName})` : ""}`
-      : "Sold";
-
-  return (
-    `${boughtBy} for ${dollars(comp.price)}, which may be below what a finished ` +
-    `house here is worth. Untick it to leave it out.`
-  );
-}
-
-function monthYear(iso: string): string {
-  // Day-level precision is noise here; what matters is how stale the comp is.
-  return new Date(iso).toLocaleDateString("en-US", { month: "short", year: "numeric" });
-}
-
-/**
- * The date that matters for this comp, and what it means.
- *
- * Which date is relevant depends on the status, so the label says which one is
- * being shown. "Jul 2026" on its own leaves the reader guessing whether the
- * house sold then or merely came to market.
- */
-function compDate(comp: Comp): string | null {
-  if (comp.status === "sold") {
-    return comp.removedDate ? `Sold ${monthYear(comp.removedDate)}` : null;
-  }
-  if (comp.status === "removed") {
-    return comp.removedDate ? `Removed ${monthYear(comp.removedDate)}` : null;
-  }
-  return comp.listedDate ? `Listed ${monthYear(comp.listedDate)}` : null;
-}
 
 /**
  * Read a response safely, whatever came back.
@@ -258,11 +176,25 @@ export function CompsPanel({
   const [status, setStatus] = useState<RefreshStatus | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [subjectBeds, setSubjectBeds] = useState<number | null>(null);
+  const [subjectBaths, setSubjectBaths] = useState<number | null>(null);
+  const [subjectYearBuilt, setSubjectYearBuilt] = useState<number | null>(null);
   const [confirmingForce, setConfirmingForce] = useState(false);
   /** Set when a lookup stopped because the house has no size or bed count. */
   const [blindLookup, setBlindLookup] = useState<{ message: string; facts: string[] } | null>(null);
   const [sort, setSort] = useState<CompSort>("closest");
-  const [filter, setFilter] = useState<CompFilter | null>(null);
+  const [filter, setFilter] = useState<CompFilter>("all");
+  const [tab, setTab] = useState<ReviewTab | null>(null);
+  /**
+   * Comps pushed to the back of today's queue.
+   *
+   * "Later" is not a review state — it records nothing and moves nothing. It
+   * exists because "I'll come back to this" and "this house doesn't belong"
+   * are different things, and the old screen made you say them with the same
+   * control.
+   */
+  const [deferred, setDeferred] = useState<string[]>([]);
+  /** How many have been answered since this tab opened, so "3 of 7" counts. */
+  const [done, setDone] = useState(0);
 
   const apply = useCallback((data: CompsResponse) => {
     setComps(data.comps ?? []);
@@ -276,6 +208,8 @@ export function CompsPanel({
     setDegraded(stoppedForFacts ? null : (data.message ?? null));
     setSource(data.source ?? null);
     setSubjectBeds(data.subjectBeds ?? null);
+    setSubjectBaths(data.subjectBaths ?? null);
+    setSubjectYearBuilt(data.subjectYearBuilt ?? null);
 
     // Fold the refresh metadata back into the status so the lock message
     // updates without a second round trip.
@@ -450,8 +384,9 @@ export function CompsPanel({
     }
   }
 
-  // Null until the comps land, then whichever view has work in it.
-  const activeFilter: CompFilter = filter ?? defaultFilter(comps);
+  // Null until the comps land, then whichever half has work in it.
+  const activeTab: ReviewTab = tab ?? defaultTab(comps);
+  const activeFilter: CompFilter = filter;
 
   /**
    * The ARV's verdict on each comp: counted, why not, and any flag.
@@ -462,12 +397,37 @@ export function CompsPanel({
    */
   const notes = new Map((arv?.compNotes ?? []).map((n) => [n.compId, n]));
 
+  /** The house being bought, so every comp can say how it differs from it. */
+  const subject: SubjectFacts = {
+    beds: subjectBeds,
+    baths: subjectBaths,
+    sqft: arv?.subjectSqft ?? null,
+    yearBuilt: subjectYearBuilt,
+  };
+
   const counts = filterCounts(comps, notes);
+  const tabs = tabCounts(comps, notes);
   const visible = sortComps(
-    comps.filter((c) => matchesFilter(c, notes.get(c.id), activeFilter)),
+    comps.filter(
+      (c) =>
+        matchesTab(c, notes.get(c.id), activeTab) &&
+        matchesFilter(c, notes.get(c.id), activeFilter)
+    ),
     sort,
     arv?.subjectSqft ?? null
   );
+
+  /**
+   * One house at a time, and the deferred ones at the back.
+   *
+   * Reviewing a comp takes it out of this tab, so the queue shortens as the
+   * work is done and the next house arrives on its own.
+   */
+  const queue = [
+    ...visible.filter((c) => !deferred.includes(c.id)),
+    ...visible.filter((c) => deferred.includes(c.id)),
+  ];
+  const current = queue[0];
 
   return (
     <div data-testid="panel-comps" className="flex flex-col gap-4">
@@ -781,6 +741,19 @@ export function CompsPanel({
           total={comps.length}
           onSortChange={setSort}
           onFilterChange={setFilter}
+          showFilter={activeTab === "done"}
+        />
+      )}
+
+      {comps.length > 0 && (
+        <CompReviewTabs
+          tab={activeTab}
+          counts={tabs}
+          onTabChange={(next) => {
+            setTab(next);
+            setDeferred([]);
+            setDone(0);
+          }}
         />
       )}
 
@@ -791,6 +764,26 @@ export function CompsPanel({
           No comps yet. Refresh to pull them from RentCast, or add one by hand
           from an agent&apos;s closed-sales list.
         </p>
+      ) : visible.length === 0 && activeTab === "todo" && activeFilter === "all" ? (
+        /* Not a problem — the work is finished. It says what that produced,
+           because "nothing here" on a valuation screen is a number, not a
+           blank. */
+        <div data-testid="comps-all-checked" className="flex flex-col items-start gap-2">
+          <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+            All {comps.length} checked.{" "}
+            {arv && arv.value !== null
+              ? `Your resale price is ${dollars(arv.value)}, built from ${counts.approved} of them.`
+              : "Nothing is counted yet, so there is no resale price."}
+          </p>
+          <button
+            type="button"
+            onClick={() => setTab("done")}
+            data-testid="comps-see-checked"
+            className="min-h-11 px-3 rounded-(--radius-pill) border border-(--color-border-default) text-[12px] font-medium"
+          >
+            See what it is built from
+          </button>
+        </div>
       ) : visible.length === 0 ? (
         <div data-testid="comps-filter-empty" className="flex flex-col items-start gap-2">
           <p className="text-[12px] text-(--color-text-secondary) leading-relaxed">
@@ -806,9 +799,23 @@ export function CompsPanel({
             Show all
           </button>
         </div>
+      ) : activeTab === "todo" && current ? (
+        /* One house, filling the screen. The next arrives when this is saved. */
+        <CompReviewCard
+          key={current.id}
+          comp={current}
+          note={notes.get(current.id)}
+          subject={subject}
+          position={{ index: done + 1, total: visible.length + done }}
+          onReview={(comp, next, sale) => {
+            setDone((n) => n + 1);
+            void review(comp, next, sale);
+          }}
+          onLater={() => setDeferred((ids) => [...ids, current.id])}
+        />
       ) : (
-        /* A scrolling list with a ceiling, so the ARV card stays on screen
-           while you work down eighty comps. */
+        /* Checked is a scanning view, not a deciding one, so it stays a list.
+           A ceiling on it keeps the ARV card on screen through eighty comps. */
         <ul
           data-testid="comp-list"
           className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto pr-1"
@@ -818,6 +825,7 @@ export function CompsPanel({
               key={comp.id}
               comp={comp}
               note={notes.get(comp.id)}
+              subject={subject}
               onReview={review}
               onRemove={remove}
             />
@@ -836,16 +844,29 @@ export function CompsPanel({
 function CompRow({
   comp,
   note,
+  subject,
   onReview,
   onRemove,
 }: {
   comp: Comp;
   /** The ARV's verdict on this comp. Absent only before the first load. */
   note: CompNote | undefined;
+  subject: SubjectFacts;
   onReview: (comp: Comp, review: CompReview, sale?: { price: number; date: string | null }) => void;
   onRemove: (comp: Comp) => void;
 }) {
   const [askingSale, setAskingSale] = useState(false);
+  /**
+   * Which site you last opened for this house, so you can find it again.
+   *
+   * This belongs here and not on the review card: there is only one card on
+   * screen, so marking it says nothing. Here there are rows of houses that
+   * look alike, and coming back from Zillow to a list is exactly where the
+   * place gets lost. No label — the row is already named by its address, and
+   * a sentence on every row would be noise.
+   */
+  const [opened, setOpened] = useState<CompLinkSource | null>(null);
+  const against = comparedToSubject(comp, subject);
   const ppsf = perSqft(comp);
   const date = compDate(comp);
   const provenance = provenanceLabel(comp);
@@ -853,16 +874,21 @@ function CompRow({
   const counted = note?.counted ?? false;
   // Hints are suppressed on a comp already decided against: a warning about a
   // settled question is noise.
-  const skipped = comp.review === "not_renovated_skip" || comp.review === "not_comparable_skip";
+  // Was a hardcoded pair that never learned about took_off_market_skip, so
+  // hints kept firing on a comp whose question was already settled.
+  const skipped = isSkipped(comp.review);
   const fixerNote = note?.fixerUpper ? fixerUpperNote(comp) : null;
 
   return (
     <li
       data-testid={`comp-${comp.id}`}
+      data-reviewing={opened ? "true" : undefined}
       className={`rounded-xl border p-3 transition-opacity ${
-        counted
-          ? "border-(--color-accent) bg-(--color-elevated)"
-          : "border-(--color-border-default)"
+        opened
+          ? "border-(--color-reviewing) bg-(--color-reviewing-tint)"
+          : counted
+            ? "border-(--color-accent) bg-(--color-elevated)"
+            : "border-(--color-border-default)"
       }`}
     >
       <div className="flex items-start gap-3">
@@ -898,9 +924,8 @@ function CompRow({
               <span className="text-[11px] text-(--color-text-secondary)">{ppsf}</span>
             )}
             <span
-              className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded ${
-                STATUS_STYLE[comp.status] ?? STATUS_STYLE.active
-              }`}
+              className={`text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5
+              rounded-(--radius-pill) border ${STATUS_STYLE[comp.status] ?? STATUS_STYLE.active}`}
             >
               {COMP_STATUS_LABELS[comp.status]}
             </span>
@@ -962,9 +987,20 @@ function CompRow({
             </p>
           )}
 
+          {/* The comparison, already done. "3 bed" is above; whether 3 is the
+              same as yours is the thing you were working out by hand. */}
+          {against && (
+            <p
+              data-testid={`comp-vs-${comp.id}`}
+              className="text-[11px] text-(--color-text-secondary) mt-1"
+            >
+              Next to yours: {against}
+            </p>
+          )}
+
           {/* Somewhere to go and check whether this one was renovated. */}
           <div className="mt-1.5">
-            <CompLinks comp={comp} />
+            <CompLinks comp={comp} opened={opened} onOpen={setOpened} />
           </div>
 
           {/* The only control that moves the ARV. A native select, which is
@@ -1019,90 +1055,6 @@ function CompRow({
         )}
       </div>
     </li>
-  );
-}
-
-/**
- * What did it sell for?
- *
- * A removed listing has two prices and only one of them values a house. The
- * price is required — approving a removed comp without it would put an
- * asking price into the ARV, which is the whole thing this prevents. The
- * date is optional, because an agent's answer often does not carry one and a
- * sale with no date is still worth more than no sale.
- */
-function SalePricePrompt({
-  comp,
-  onSave,
-  onCancel,
-}: {
-  comp: Comp;
-  onSave: (price: number, date: string | null) => void;
-  onCancel: () => void;
-}) {
-  const [price, setPrice] = useState("");
-  const [date, setDate] = useState("");
-
-  const amount = Number(price.replace(/[^0-9.]/g, ""));
-  const valid = Number.isFinite(amount) && amount > 0;
-
-  const field =
-    "w-full min-h-11 bg-(--color-base) border border-(--color-border-default) rounded-lg px-3 text-[13px]";
-
-  return (
-    <div
-      data-testid={`comp-sale-prompt-${comp.id}`}
-      className="mt-2 rounded-lg border border-(--color-border-default) bg-(--color-base) p-3 flex flex-col gap-2"
-    >
-      <p className="text-[12px] leading-relaxed">
-        What did it sell for?{" "}
-        <span className="text-(--color-text-secondary)">
-          It was listed at {comp.price === null ? "an unknown price" : dollars(comp.price)}.
-        </span>
-      </p>
-
-      <input
-        value={price}
-        onChange={(e) => setPrice(e.target.value)}
-        placeholder="Sale price"
-        inputMode="numeric"
-        autoFocus
-        aria-label={`Sale price for ${comp.formattedAddress}`}
-        data-testid={`comp-sale-price-input-${comp.id}`}
-        className={field}
-      />
-
-      <label className="flex flex-col gap-1">
-        <span className="text-[11px] text-(--color-text-secondary)">Sale date (optional)</span>
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          data-testid={`comp-sale-date-input-${comp.id}`}
-          className={field}
-        />
-      </label>
-
-      <div className="flex gap-2">
-        <button
-          type="button"
-          disabled={!valid}
-          onClick={() => onSave(amount, date || null)}
-          data-testid={`comp-sale-save-${comp.id}`}
-          className="min-h-11 px-3 rounded-(--radius-pill) bg-(--color-accent) text-(--color-base) text-[12px] font-semibold disabled:opacity-50"
-        >
-          Use this sale
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          data-testid={`comp-sale-cancel-${comp.id}`}
-          className="min-h-11 px-3 rounded-(--radius-pill) border border-(--color-border-default) text-[12px] font-medium"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
   );
 }
 

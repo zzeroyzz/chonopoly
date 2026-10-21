@@ -1,6 +1,14 @@
 import { calculateArv, assessComps, effectivePrice } from "@/lib/comps/arv";
 import { mapCompStatus, mapComparables, mapSubjectFacts } from "@/lib/comps/fromRentCast";
-import { type Comp, type CompStatus, compReviewOptions } from "@/lib/comps/types";
+import {
+  type Comp,
+  type CompStatus,
+  compReviewOptions,
+  isSkipped,
+  COMP_REVIEW_ORDER,
+} from "@/lib/comps/types";
+import { matchesFilter, type CompFilter } from "@/components/crm/CompControls";
+import { comparedToSubject } from "@/lib/comps/format";
 
 /**
  * The address is derived from the id so that every comp is a different house.
@@ -802,5 +810,92 @@ describe("mapSubjectFacts", () => {
 
   it("returns an empty object when there is no subject property", () => {
     expect(mapSubjectFacts(undefined)).toEqual({});
+  });
+});
+
+describe("a comp taken off the market", () => {
+  /**
+   * `took_off_market_skip` shipped with the sale-price migration and never
+   * reached either of the two hardcoded arrays that decided what "skipped"
+   * meant. A comp marked that way matched no filter but All — not Needs
+   * review, not Approved, not Skipped — so it simply vanished from the tab.
+   */
+  it("counts as skipped", () => {
+    expect(isSkipped("took_off_market_skip")).toBe(true);
+  });
+
+  it("shows under the Skipped filter", () => {
+    const taken = comp({
+      id: "off-1",
+      status: "removed",
+      review: "took_off_market_skip",
+    });
+
+    expect(matchesFilter(taken, undefined, "skipped")).toBe(true);
+  });
+
+  /**
+   * The rule that keeps this from happening a third time: the three filters
+   * that divide the work are exhaustive and do not overlap, so every review
+   * state lands in exactly one of them.
+   */
+  it("leaves no review state outside the three work filters", () => {
+    const work: CompFilter[] = ["needs_review", "approved", "skipped"];
+
+    for (const review of COMP_REVIEW_ORDER) {
+      const subject = comp({ id: `work-${review}`, status: "removed", review });
+      const matched = work.filter((filter) => matchesFilter(subject, undefined, filter));
+
+      expect({ review, matched }).toEqual({ review, matched: [expect.any(String)] });
+    }
+  });
+});
+
+describe("comparedToSubject", () => {
+  /**
+   * The owner answers "is this one like mine?" eleven times in a row. Pinning
+   * their own specs to the top of the screen left them doing the subtraction
+   * by hand, eleven times, which is what this replaces.
+   */
+  const subject = { beds: 3, baths: 2, sqft: 1_200, yearBuilt: 1930 };
+
+  it("says how a comp differs from the house being bought", () => {
+    const nearby = comp({ id: "d-1", beds: 3, baths: 2, sqft: 1_350, yearBuilt: 1950 });
+
+    expect(comparedToSubject(nearby, subject)).toBe(
+      "same beds, 150 sq ft bigger, 20 years newer"
+    );
+  });
+
+  it("says smaller and older the other way round", () => {
+    const nearby = comp({ id: "d-2", beds: 2, baths: 1, sqft: 900, yearBuilt: 1910 });
+
+    expect(comparedToSubject(nearby, subject)).toBe(
+      "1 bed fewer, 1 bath fewer, 300 sq ft smaller, 20 years older"
+    );
+  });
+
+  /** A hallway is not a difference. Calling it one makes every house differ. */
+  it("treats a few dozen feet as the same size", () => {
+    const nearby = comp({ id: "d-3", beds: 3, baths: 2, sqft: 1_240, yearBuilt: 1931 });
+
+    expect(comparedToSubject(nearby, subject)).toBe(
+      "same beds, about the same size, built around the same time"
+    );
+  });
+
+  it("leaves out a fact the subject does not have", () => {
+    const nearby = comp({ id: "d-4", beds: 3, baths: 2, sqft: 1_350, yearBuilt: 1950 });
+
+    expect(comparedToSubject(nearby, { ...subject, sqft: null })).toBe(
+      "same beds, 20 years newer"
+    );
+  });
+
+  /** Nothing in common to compare is no line at all, not an empty one. */
+  it("says nothing when there is nothing to compare", () => {
+    const nearby = comp({ id: "d-5", beds: null, baths: null, sqft: null, yearBuilt: null });
+
+    expect(comparedToSubject(nearby, subject)).toBeNull();
   });
 });

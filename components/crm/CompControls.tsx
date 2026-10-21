@@ -1,6 +1,6 @@
 "use client";
 
-import { type Comp, type CompReview } from "@/lib/comps/types";
+import { type Comp, isSkipped } from "@/lib/comps/types";
 import { type CompNote } from "@/lib/comps/arv";
 import { Dropdown } from "@/components/ui/Dropdown";
 
@@ -44,17 +44,43 @@ export const FILTER_LABELS: Record<CompFilter, string> = {
   flagged: "Flagged",
 };
 
-export const FILTER_ORDER: CompFilter[] = [
-  "needs_review",
-  "approved",
-  "skipped",
-  "all",
-  "sold",
-  "listings",
-  "flagged",
-];
+/**
+ * What stays in the dropdown.
+ *
+ * "Needs review", "Approved" and "Skipped" have left it: they are the two
+ * halves of the work and they are now tabs. Burying how much is left inside a
+ * menu of seven meant opening the menu to find out. The other four narrow
+ * what is inside a tab, which is what a filter is for.
+ *
+ * They stay in `CompFilter` and in `matchesFilter` — the tabs are defined in
+ * terms of them, so there is still one definition of what "skipped" means.
+ */
+export const FILTER_ORDER: CompFilter[] = ["all", "sold", "listings", "flagged"];
 
-const SKIPPED: CompReview[] = ["not_renovated_skip", "not_comparable_skip"];
+/** The two halves of the work. */
+export type ReviewTab = "todo" | "done";
+
+export const TAB_LABELS: Record<ReviewTab, string> = {
+  todo: "Still to check",
+  done: "Checked",
+};
+
+/** Checked is both answers: what counts, and what was looked at and left out. */
+const TAB_FILTERS: Record<ReviewTab, CompFilter[]> = {
+  todo: ["needs_review"],
+  done: ["approved", "skipped"],
+};
+
+export function matchesTab(comp: Comp, note: CompNote | undefined, tab: ReviewTab): boolean {
+  return TAB_FILTERS[tab].some((filter) => matchesFilter(comp, note, filter));
+}
+
+export function tabCounts(comps: Comp[], notes: Map<string, CompNote>): Record<ReviewTab, number> {
+  return {
+    todo: comps.filter((c) => matchesTab(c, notes.get(c.id), "todo")).length,
+    done: comps.filter((c) => matchesTab(c, notes.get(c.id), "done")).length,
+  };
+}
 
 export const SORT_ORDER: CompSort[] = [
   "closest",
@@ -84,7 +110,9 @@ export function matchesFilter(comp: Comp, note: CompNote | undefined, filter: Co
     case "approved":
       return comp.review === "renovated_use";
     case "skipped":
-      return SKIPPED.includes(comp.review);
+      // Was a hardcoded pair that never learned about took_off_market_skip, so
+      // a comp taken off market matched no filter but All.
+      return isSkipped(comp.review);
     case "sold":
       return comp.status === "sold";
     case "listings":
@@ -121,12 +149,29 @@ export function sortComps(comps: Comp[], sort: CompSort, subjectSqft: number | n
     .map((entry) => entry.comp);
 }
 
+/**
+ * Every filter, which is not the same list as the dropdown's.
+ *
+ * `FILTER_ORDER` is what the menu offers. Counting only those left
+ * `counts.approved` undefined the moment the work filters moved to tabs, and
+ * it reached the screen as "undefined of 81 approved".
+ */
+const EVERY_FILTER: CompFilter[] = [
+  "needs_review",
+  "approved",
+  "skipped",
+  "all",
+  "sold",
+  "listings",
+  "flagged",
+];
+
 export function filterCounts(
   comps: Comp[],
   notes: Map<string, CompNote>
 ): Record<CompFilter, number> {
   const counts = {} as Record<CompFilter, number>;
-  for (const filter of FILTER_ORDER) {
+  for (const filter of EVERY_FILTER) {
     counts[filter] = comps.filter((c) => matchesFilter(c, notes.get(c.id), filter)).length;
   }
   return counts;
@@ -135,12 +180,15 @@ export function filterCounts(
 /**
  * Where to start: the work still to do, or the work already done.
  *
- * Opening on "Needs review" is the point — it is the list to work through.
+ * Opening on "Still to check" is the point — it is the list to work through.
  * Once nothing is left, that view is empty and useless, so it opens on what
  * the ARV is actually built from instead.
+ *
+ * This replaces `defaultFilter`, which returned a filter value that no longer
+ * appears in the dropdown.
  */
-export function defaultFilter(comps: Comp[]): CompFilter {
-  return comps.some((c) => c.review === "needs_review") ? "needs_review" : "approved";
+export function defaultTab(comps: Comp[]): ReviewTab {
+  return comps.some((c) => c.review === "needs_review") ? "todo" : "done";
 }
 
 export function CompControls({
@@ -149,6 +197,7 @@ export function CompControls({
   counts,
   shown,
   total,
+  showFilter = true,
   onSortChange,
   onFilterChange,
 }: {
@@ -157,6 +206,15 @@ export function CompControls({
   counts: Record<CompFilter, number>;
   shown: number;
   total: number;
+  /**
+   * Off while reviewing one house at a time.
+   *
+   * A filter narrows a list you are scanning. On a one-at-a-time queue it
+   * silently shortens the work instead, and "Showing 4 of 11" describes a
+   * list that is not on screen. Sort still earns its place there: it decides
+   * the order you work through them.
+   */
+  showFilter?: boolean;
   onSortChange: (sort: CompSort) => void;
   onFilterChange: (filter: CompFilter) => void;
 }) {
@@ -164,6 +222,7 @@ export function CompControls({
     <div data-testid="comp-controls" className="flex flex-col gap-2">
       {/* Wraps onto a second line rather than scrolling sideways. */}
       <div className="flex flex-wrap items-center gap-2">
+        {showFilter && (
         <Dropdown
           className="flex-1 min-w-[150px]"
           value={filter}
@@ -176,6 +235,7 @@ export function CompControls({
           label="Show which comps"
           testId="comp-filter"
         />
+        )}
 
         <Dropdown
           className="flex-1 min-w-[150px]"
@@ -187,9 +247,67 @@ export function CompControls({
         />
       </div>
 
-      <p data-testid="comp-shown" className="text-[12px] text-(--color-text-secondary)">
-        Showing {shown} of {total}
-      </p>
+      {showFilter && (
+        <p data-testid="comp-shown" className="text-[12px] text-(--color-text-secondary)">
+          Showing {shown} of {total}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The two halves of the work, under the filter and sort.
+ *
+ * Both counts are always on screen, because watching the left one go down is
+ * the only thing that tells you the job ends. They were two of seven options
+ * inside a menu, which meant opening the menu to find out how much was left.
+ *
+ * The count is the big text and the name is the small text: the number is
+ * what the eye is looking for.
+ */
+export function CompReviewTabs({
+  tab,
+  counts,
+  onTabChange,
+}: {
+  tab: ReviewTab;
+  counts: Record<ReviewTab, number>;
+  onTabChange: (tab: ReviewTab) => void;
+}) {
+  const tabs: ReviewTab[] = ["todo", "done"];
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Which half of the work"
+      data-testid="comp-tabs"
+      className="flex gap-2"
+    >
+      {tabs.map((key) => {
+        const selected = tab === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onTabChange(key)}
+            data-testid={`comp-tab-${key}`}
+            className={`flex-1 min-h-11 flex flex-col items-start justify-center gap-0.5 px-3 py-2
+              rounded-(--radius-md) border text-left transition-colors ${
+                selected
+                  ? "border-(--color-accent) bg-(--color-accent-glow) text-(--color-text-primary)"
+                  : "border-(--color-border-default) text-(--color-text-secondary)"
+              }`}
+          >
+            <span className="text-[16px] font-bold leading-none" data-testid={`comp-tab-${key}-count`}>
+              {counts[key]}
+            </span>
+            <span className="text-[11px] leading-none">{TAB_LABELS[key]}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
