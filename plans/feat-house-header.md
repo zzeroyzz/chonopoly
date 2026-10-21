@@ -582,8 +582,8 @@ deliberately will not do is the one thing that needs the owner's permission.
 
 # Stage D: Playwright for journeys, Jest for functions
 
-Status: **In progress** — 2026-10-21. Owner asked for the policy and for the
-tests on this branch. First slice is in at `5c5dc6e`.
+Status: **Done** — 2026-10-21. Policy applied to CLAUDE.md; group A
+diagnosed and migrated. Groups B and C kept, as planned.
 RentCast requests: **0**. Migrations run: **0**.
 
 ## Why
@@ -647,10 +647,29 @@ them would lose real cover.
 | 27-recorded-sales: recorded sales show as Sold, county record | `provenanceLabel` (new) |
 | 27-recorded-sales: an ordinary sale carries no fixer flag | `fixerUpperNote` (new) |
 
-All six are **currently failing** against stale fixtures. Each needs its
-failure diagnosed before retirement — the same check done on the date test,
-so a real bug is never retired as a stale one. That diagnosis is the work,
-not the deletion.
+**Corrected after diagnosing each — the draft's claim that all six were
+failing was wrong.** Four were (the 23-comps group). Of the two in
+27-recorded-sales, both were *passing*; the failing test in that file was a
+different one, *a possible fixer-upper is flagged*, which asserted
+`"Untick it to leave it out"` — wording the app dropped when the review card
+replaced the tick. The app was right and the test was holding it to retired
+copy, so that one was **updated and kept** as the fixer flag's wiring test
+rather than retired.
+
+Diagnosis per test, before anything was removed:
+
+| Test | Why it failed | Disposition |
+|---|---|---|
+| the ARV is the median price per sqft × size | expected $359,375; size-adjusted median gives $380,250 | retired — formula replaced |
+| the ARV says what it is built on | expected "median $205/sqft" basis wording | retired — `basisLabel` covered |
+| no confirmed sales carries a warning | warning wording changed with the rewrite | retired — `warnings` covered |
+| a comp missing its size is skipped | eligibility filter changed | retired — `skippedForMissingData` covered |
+| recorded sales show as Sold, county record | *was passing* | **kept** — the wiring test for recorded sales |
+| an ordinary sale carries no fixer flag | *was passing* | retired — `fixerUpper: false` covered at `arv.test.ts:670` |
+
+The four retired were each failing on arithmetic the app had deliberately
+stopped doing. None was retired before its Jest equivalent was confirmed
+passing.
 
 **B — keep, they are not read-only in substance (13)**
 

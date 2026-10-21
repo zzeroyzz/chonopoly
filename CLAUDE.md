@@ -27,13 +27,33 @@ are fine — deletion as a bugfix is not.
   pass before the feature is considered complete — no exceptions
 
 # Testing
-- Every major feature must have a Playwright test written alongside it
-- The Playwright test must be passing before the feature is marked done
-- Do not mark a feature complete or suggest committing if its Playwright
-  test is failing or missing
-- Run the relevant Playwright test after implementing any major feature:
+
+Two layers, split by what the test needs — not by how important the code is.
+"Major vs minor" is hard to judge at 2am; "does this need a browser" is not.
+
+## Playwright — journeys, not cases
+- A feature gets **one** test that it works end to end, plus its 390px layout
+  check. One wiring test per feature, not one per case.
+- Use it only for what a browser alone can prove: a journey, a click producing
+  the right request, routing, and layout at phone width.
+- A major feature is not done until its Playwright journey test passes. Do not
+  mark a feature complete, or suggest committing, while it is failing or
+  missing.
+- Run the relevant spec after implementing a major feature:
   `npx playwright test <test-file>`
-- Playwright tests live in /tests or alongside the feature — do not scatter them
+- Specs live in /tests — do not scatter them.
+
+## Jest — every case
+- Calculations, verdicts, label and copy mapping, parsing, error-message
+  selection: all of it is a unit test against the function, not the screen.
+- Edge cases and regressions belong here. "Does X show the right value for
+  inputs A/B/C" is a Jest test; "does the value reach the screen at all" is
+  the Playwright one.
+
+## Before adding a Playwright test
+Ask whether a Jest test would prove the same thing. If it would, write that
+instead. A browser test that asserts a string a pure function returns costs
+~4 seconds and breaks on every rename; the unit test costs ~2ms and does not.
 
 # Writing (all user-facing text)
 

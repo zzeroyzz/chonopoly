@@ -389,45 +389,19 @@ async function openCompsTab(page: Page) {
 
 // ─── The ARV ──────────────────────────────────────────────────────────────────
 
-test("the ARV is the median price per sqft times the subject size", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  // Five usable comps at a median of $205.357/sqft × 1,750 sqft.
-  await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
-});
-
-test("the ARV says what it is built on", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  // The fixture is four Inactive and one Active. None of them is a sale, and
-  // the label must not imply otherwise.
-  const basis = page.getByTestId("arv-basis");
-  await expect(basis).toContainText("4 removed listings");
-  await expect(basis).toContainText("1 active listing");
-  await expect(basis).not.toContainText("sold");
-  await expect(basis).toContainText("median $205/sqft");
-  await expect(basis).toContainText("1,750 sqft");
-});
-
-test("a comp set with no confirmed sales carries a warning", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  const warnings = page.getByTestId("arv-warning");
-  await expect(warnings.filter({ hasText: "No confirmed sales" })).toBeVisible();
-  await expect(warnings.filter({ hasText: "may not have sold" })).toBeVisible();
-});
-
-test("a comp missing its size is skipped and declared", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  // The fixture's last comp has no squareFootage. Six comps listed, five used.
-  await expect(page.getByTestId("arv-warning").filter({ hasText: "skipped" })).toBeVisible();
-  await expect(page.getByTestId("panel-comps")).toContainText("5 comps used");
-});
+// The four ARV tests that stood here moved to tests/unit/arv.test.ts.
+//
+// Each encoded the model that the price-per-sqft to price-adjustment rewrite
+// replaced, and each had been failing on it: the value test expected $359,375
+// where the size-adjusted median gives $380,250, the basis test expected
+// "median $205/sqft", and the warning tests expected wording that changed with
+// it. They were holding the app to arithmetic it had deliberately stopped
+// doing.
+//
+// calculateArv has 86 unit cases covering the value, basisLabel, the warnings
+// and the skip-for-missing-size count — all passing. The ARV still reaches
+// the screen here: see "skipping a comp moves the ARV" for the value and
+// "the basis line returns once there is a number" for the label.
 
 // ─── Checking comps off ───────────────────────────────────────────────────────
 
