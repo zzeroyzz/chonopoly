@@ -280,8 +280,13 @@ real and each is verified above.
 
 # Stage C: the edit opens over the page, and it can set the photo
 
-Status: **Draft** — 2026-10-21. Awaiting the owner. No code written.
+Status: **User approved** — 2026-10-21. Built.
 Branch: `feat/house-header` (continuing; Stage B is in at `c203eb7`).
+
+The owner replied "run it", which read two ways — build the stage, or run the
+images migration. Asked rather than guessed, because one of the two readings
+creates a public-read bucket. Answer: **build Stage C**. The migration stays
+unrun and uploads stay out.
 RentCast requests: **0**.
 Migrations run: **0**.
 

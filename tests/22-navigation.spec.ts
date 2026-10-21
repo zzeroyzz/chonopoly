@@ -133,6 +133,11 @@ async function stubCrm(page: Page) {
             isPrimary: true,
             property: null,
             profileSnapshot: null,
+            // listScenarios always returns `inputs`, and the property page
+            // reads the primary's renovationBudget straight off it. Without
+            // it here the page threw on every test that visited a house —
+            // the fixture was describing a response the API never sends.
+            inputs: { homeValue: 250_000, loanType: "fha", renovationBudget: 0 },
           },
         ],
       }),
@@ -366,4 +371,64 @@ test("the edit form fits 390px", async ({ page }) => {
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
   );
   expect(overflows).toBe(false);
+});
+
+test("the edit form opens over the page, not below it", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/properties/e1");
+
+  await page.getByTestId("edit-house-toggle").click();
+
+  // The reported bug: inline, the form rendered after the card, the stage
+  // pill, the facts grid and the parcel disclosure, so it opened well below
+  // the fold and the tap looked like it did nothing.
+  const form = page.getByTestId("edit-house-form");
+  await expect(form).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Edit this house" })).toBeVisible();
+
+  const box = await form.boundingBox();
+  const fold = page.viewportSize()?.height ?? 0;
+  expect(box).not.toBeNull();
+  expect(box!.y).toBeLessThan(fold);
+});
+
+test("Save stays reachable on a 390px screen", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/properties/e1");
+
+  await page.getByTestId("edit-house-toggle").click();
+
+  // A full-bleed dialog fails by pushing its footer off the bottom of a phone
+  // rather than by overflowing sideways, which is what the test above checks.
+  const save = page.getByTestId("edit-house-save");
+  await expect(save).toBeInViewport();
+});
+
+test("a pasted photo link saves", async ({ page }) => {
+  await stubCrm(page);
+
+  const patches: string[] = [];
+  await page.route("**/api/properties/*", async (route) => {
+    if (route.request().method() === "PATCH") {
+      patches.push(route.request().postData() ?? "");
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ property: { id: "prop-e1" } }),
+      });
+    }
+    return route.fallback();
+  });
+
+  await page.goto("/properties/e1");
+  await page.getByTestId("edit-house-toggle").click();
+
+  // The photo could be set on Add and never corrected. This is that path.
+  await page.getByTestId("edit-house-photo").fill("https://example.com/house.jpg");
+  await expect(page.getByTestId("edit-house-photo-preview")).toBeVisible();
+  await page.getByTestId("edit-house-save").click();
+
+  expect(patches).toHaveLength(1);
+  const sent = JSON.parse(patches[0]);
+  expect(sent.photoUrl).toBe("https://example.com/house.jpg");
 });
