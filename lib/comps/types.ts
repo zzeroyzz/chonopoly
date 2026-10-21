@@ -82,6 +82,23 @@ export const COMP_REVIEW_ORDER: CompReview[] = [
 /** The one state that puts a comp in the number. */
 export const COMP_REVIEW_COUNTS: CompReview = "renovated_use";
 
+/**
+ * Every state that means "looked at, and left out".
+ *
+ * Derived from the order rather than listed, because listing it is what broke:
+ * two separate hardcoded arrays both missed `took_off_market_skip` when it was
+ * added, so a comp marked that way matched no filter but All and kept showing
+ * hints about a question already settled. A sixth state cannot repeat that.
+ */
+export const COMP_REVIEW_SKIPS: CompReview[] = COMP_REVIEW_ORDER.filter(
+  (review) => review !== "needs_review" && review !== COMP_REVIEW_COUNTS
+);
+
+/** Whether this review means the comp was looked at and left out. */
+export function isSkipped(review: CompReview): boolean {
+  return COMP_REVIEW_SKIPS.includes(review);
+}
+
 export interface Comp {
   id: string;
   propertyId: string;

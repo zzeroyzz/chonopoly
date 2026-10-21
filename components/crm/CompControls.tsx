@@ -1,6 +1,6 @@
 "use client";
 
-import { type Comp, type CompReview } from "@/lib/comps/types";
+import { type Comp, isSkipped } from "@/lib/comps/types";
 import { type CompNote } from "@/lib/comps/arv";
 import { Dropdown } from "@/components/ui/Dropdown";
 
@@ -54,8 +54,6 @@ export const FILTER_ORDER: CompFilter[] = [
   "flagged",
 ];
 
-const SKIPPED: CompReview[] = ["not_renovated_skip", "not_comparable_skip"];
-
 export const SORT_ORDER: CompSort[] = [
   "closest",
   "recent",
@@ -84,7 +82,9 @@ export function matchesFilter(comp: Comp, note: CompNote | undefined, filter: Co
     case "approved":
       return comp.review === "renovated_use";
     case "skipped":
-      return SKIPPED.includes(comp.review);
+      // Was a hardcoded pair that never learned about took_off_market_skip, so
+      // a comp taken off market matched no filter but All.
+      return isSkipped(comp.review);
     case "sold":
       return comp.status === "sold";
     case "listings":

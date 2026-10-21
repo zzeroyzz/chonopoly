@@ -11,6 +11,7 @@ import {
   COMP_STATUS_LABELS,
   COMP_REVIEW_LABELS,
   compReviewOptions,
+  isSkipped,
 } from "@/lib/comps/types";
 import { type ArvResult, type CompNote } from "@/lib/comps/arv";
 import { ORGANIZATION_BUYER } from "@/lib/comps/fromPropertyRecords";
@@ -853,7 +854,9 @@ function CompRow({
   const counted = note?.counted ?? false;
   // Hints are suppressed on a comp already decided against: a warning about a
   // settled question is noise.
-  const skipped = comp.review === "not_renovated_skip" || comp.review === "not_comparable_skip";
+  // Was a hardcoded pair that never learned about took_off_market_skip, so
+  // hints kept firing on a comp whose question was already settled.
+  const skipped = isSkipped(comp.review);
   const fixerNote = note?.fixerUpper ? fixerUpperNote(comp) : null;
 
   return (
