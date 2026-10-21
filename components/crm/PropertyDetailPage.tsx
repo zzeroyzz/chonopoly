@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Plus, Pencil, ExternalLink } from "lucide-react";
+import {
+  ArrowLeft,
+  Bath,
+  BedDouble,
+  CalendarDays,
+  Check,
+  ExternalLink,
+  Pencil,
+  Plus,
+  Ruler,
+} from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import {
@@ -396,29 +406,43 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
         {detail && (
           <>
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex gap-3 flex-1">
-                {property?.photo_url && (
-                  // eslint-disable-next-line @next/next/no-img-element
+            {/* The house, as a card.
+                It was a column of text: a 64px thumbnail, the address, a
+                link, a price and three stacked label-and-answer rows. A photo
+                of the house is the fastest thing to recognise it by, and the
+                facts read better as one scannable strip than as a grid. */}
+            <div className="rounded-(--radius-xl) border border-(--color-border-default) bg-(--color-elevated) overflow-hidden">
+              {property?.photo_url ? (
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={property.photo_url}
                     alt=""
                     data-testid="property-photo"
-                    className="w-16 h-16 rounded-lg object-cover shrink-0 border border-(--color-border-subtle)"
+                    className="w-full h-44 sm:h-56 object-cover"
                   />
-                )}
-                <div className="min-w-0">
-                  <h1 className="text-[19px] font-semibold text-(--color-text-primary) wrap-break-word">
-                    {property?.address_line1 ?? "Address unknown"}
-                  </h1>
-                  <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
-                    {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
-                  </p>
+                  {/* No stage badge here: the stage pill below the card is the
+                      same fact and it can be changed. Two copies, one of them
+                      dead, is the mistake this header already made twice. */}
+                </div>
+              ) : (
+                /* No photo is a fact about the house, not a hole in the page. */
+                <div className="h-20 bg-(--color-surface) border-b border-(--color-border-subtle)
+                  flex items-center px-4">
+                  <span className="text-[11px] text-(--color-text-secondary)">
+                    No photo yet — add one when you edit the house.
+                  </span>
+                </div>
+              )}
 
-                  {/* Somewhere to go and look at the house itself. The comps
-                      have had this since they were added; the house they are
-                      being compared to did not. Built from the address the
-                      same way, by the same function. */}
+              <div className="p-4 flex flex-col gap-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-baseline gap-2 min-w-0">
+                    <span className="text-[26px] font-bold leading-none tracking-tight">
+                      {headline ? dollars(headline.price, 0) : "—"}
+                    </span>
+                    <span className="text-[11px] text-(--color-text-secondary)">asking</span>
+                  </div>
                   {property?.address_line1 && (
                     <a
                       href={
@@ -431,76 +455,95 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                       target="_blank"
                       rel="noopener noreferrer"
                       data-testid="property-zillow"
-                      className="inline-flex items-center gap-1 min-h-11 text-[12px] text-(--color-accent)"
+                      className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-(--radius-pill)
+                        border border-(--color-border-strong) text-[12px] font-medium
+                        text-(--color-text-primary)"
                     >
-                      View on Zillow
+                      Zillow
                       <ExternalLink size={11} />
                     </a>
                   )}
-                  {/* The numbers and the two verdicts arrive on the screen
-                      read, one round trip after the address. Holding their
-                      space stops the header growing under your thumb. */}
-                  {!screenLoaded && (
-                    <>
-                      <Skeleton className="h-3 w-48 mt-1.5" />
-                      <Skeleton className="h-4 w-32 mt-2 rounded" />
-                    </>
-                  )}
+                </div>
 
-                  {headline && (
-                    <div className="mt-3 flex flex-col gap-3">
-                      {/* The price leads. Every other figure here is derived
-                          from it, and it was rendered as a muted aside. */}
-                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                        <span className="text-[26px] font-bold leading-none tracking-tight">
-                          {dollars(headline.price, 0)}
+                <div className="min-w-0">
+                  <h1 className="text-[19px] font-semibold text-(--color-text-primary) wrap-break-word leading-snug">
+                    {property?.address_line1 ?? "Address unknown"}
+                  </h1>
+                  <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
+                    {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
+                  </p>
+                </div>
+
+                {/* One strip, read left to right, rather than a six-cell grid
+                    that gave the parcel number the weight of the bedrooms. */}
+                {property && (
+                  <div className="flex flex-wrap items-center gap-y-2 text-[12px] text-(--color-text-primary)
+                    border-t border-(--color-border-subtle) pt-3">
+                    {[
+                      [<BedDouble key="b" size={14} />, property.beds === null ? null : `${property.beds} bed`],
+                      [<Bath key="t" size={14} />, property.baths === null ? null : `${property.baths} bath`],
+                      [<Ruler key="r" size={14} />, property.sqft === null ? null : `${property.sqft.toLocaleString()} sq ft`],
+                      [<CalendarDays key="c" size={14} />, property.year_built === null ? null : `${property.year_built}`],
+                    ]
+                      .filter(([, label]) => label !== null)
+                      .map(([icon, label], index) => (
+                        <span key={String(label)} className="inline-flex items-center gap-1.5">
+                          {index > 0 && (
+                            <span className="w-px h-4 bg-(--color-border-default) mx-3" aria-hidden="true" />
+                          )}
+                          <span className="text-(--color-text-secondary)">{icon}</span>
+                          {label}
                         </span>
-                        <span className="text-[11px] text-(--color-text-secondary)">asking</span>
-                      </div>
+                      ))}
+                  </div>
+                )}
 
-                      {/* Labelled, so the eye never reads past a number to
-                          learn what it was. */}
-                      {(headline.walkAway !== null || headline.trueProfit !== null) && (
-                        <div className="flex flex-wrap gap-x-6 gap-y-2">
-                          {headline.walkAway !== null && (
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
-                                Cheque you leave with
-                              </span>
-                              <span className="text-[16px] font-semibold text-(--color-accent)">
-                                {dollars(headline.walkAway, 0)}
-                              </span>
-                            </div>
-                          )}
-                          {headline.trueProfit !== null && (
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[10px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
-                                What you actually made
-                              </span>
-                              <span
-                                className={`text-[16px] font-semibold ${
-                                  headline.trueProfit < 0
-                                    ? "text-(--color-danger)"
-                                    : "text-(--color-text-primary)"
-                                }`}
-                              >
-                                {dollars(headline.trueProfit, 0)}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                {!screenLoaded && (
+                  <>
+                    <Skeleton className="h-3 w-48" />
+                    <Skeleton className="h-4 w-32 rounded" />
+                  </>
+                )}
+
+                {headline && (headline.walkAway !== null || headline.trueProfit !== null) && (
+                  <div className="flex flex-wrap gap-x-6 gap-y-2 border-t border-(--color-border-subtle) pt-3">
+                    {headline.walkAway !== null && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
+                          Cheque you leave with
+                        </span>
+                        <span className="text-[16px] font-semibold text-(--color-accent)">
+                          {dollars(headline.walkAway, 0)}
+                        </span>
+                      </div>
+                    )}
+                    {headline.trueProfit !== null && (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
+                          What you actually made
+                        </span>
+                        <span
+                          className={`text-[16px] font-semibold ${
+                            headline.trueProfit < 0
+                              ? "text-(--color-danger)"
+                              : "text-(--color-text-primary)"
+                          }`}
+                        >
+                          {dollars(headline.trueProfit, 0)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                   {/* The two questions this page exists to answer, at the size
                       of answers and in their own colours. Both tags used to
                       take one hardcoded muted class, so Works and Doesn't work
                       were painted identically. */}
                   {headline && row && (
-                    <div className="flex flex-col gap-2 mt-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] text-(--color-text-secondary) w-[108px] shrink-0">
+                    <div className="flex flex-wrap gap-x-6 gap-y-3 border-t border-(--color-border-subtle) pt-3">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="text-[10px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
                           Can we afford it?
                         </span>
                         <VerdictTag
@@ -518,8 +561,8 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                         />
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] text-(--color-text-secondary) w-[108px] shrink-0">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="text-[10px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
                           Does the deal work?
                         </span>
                         <VerdictTag
@@ -535,8 +578,8 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                         />
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] text-(--color-text-secondary) w-[108px] shrink-0">
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="text-[10px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
                           Worth fixed up?
                         </span>
                         <VerdictTag
@@ -572,9 +615,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                       </div>
                     </div>
                   )}
-                </div>
               </div>
-
             </div>
 
             {/* Their own row. Sharing one with the address made the title wrap
