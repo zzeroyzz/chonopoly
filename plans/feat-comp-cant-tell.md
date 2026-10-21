@@ -238,11 +238,25 @@ surface for one fact.
 `tests/23-comps.spec.ts` fail on main today, five of them asserting ARV figures
 or basis text — which is exactly what §3 changes.
 
-**OWNER, and it decides what "done" means here:** write the Playwright cases
-for this feature, or carry the Stage A position forward and defer them? If they
-are written they will not run in CI until that block is uncommented, and a new
-failure cannot be told from the five already failing unless their current
-failure text is recorded first.
+**OWNER — decided 2026-10-21: deferred again**, on the grounds that the CI job
+is off regardless. Carried forward from Stage A.
+
+The cost of that, recorded so it is not a surprise later:
+
+- `tests/23-comps.spec.ts:432-477` drives `comp-review-comp-4-option-*` on the
+  default Needs-review view. **That view no longer exists** — Stage A replaced
+  it with the one-card flow. Those tests were named in the Stage A plan as
+  needing a deliberate rewrite, and the rewrite did not happen.
+- So the failure count is **no longer the 8 measured against main before Stage
+  A**. It is higher, and nobody has measured it. The number in this plan and in
+  PR #58 is stale the moment Stage A merged.
+- Each deferred feature puts more distance between the suite and the UI,
+  which makes re-enabling the CI job a bigger job than the last time anyone
+  looked at it.
+
+None of that is an argument against the decision — it is the bill, and it is
+being deferred too, not avoided. Re-enabling the job and getting the suite
+green is its own branch, named under Out of scope.
 
 **Gate:** `npm run build`, `tsc --noEmit`, `npm run test:unit`.
 
