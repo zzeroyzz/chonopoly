@@ -21,7 +21,7 @@ import { Check, ChevronDown } from "lucide-react";
  *   - aria-activedescendant, so a screen reader follows the arrow keys
  *     without focus actually leaving the button
  *   - focus returns to the button on close, or the keyboard is stranded
- *   - closing on outside pointerdown and on scroll
+ *   - closing on outside pointerdown
  *
  * Deliberately not generic beyond what is used: one list, one selection.
  */
@@ -92,15 +92,14 @@ export function Dropdown<T extends string>({
       // No focus return: the pointer has already moved somewhere else.
       close(false);
     };
-    // A list pinned under a button is wrong the moment the page scrolls.
-    const onScroll = () => close(false);
-
+    // No scroll-close. The list is absolutely positioned inside its own
+    // wrapper, so it travels with the content rather than detaching from the
+    // button — there is nothing to correct. A capture-phase scroll listener
+    // here closed the list the instant it opened: keeping the active option
+    // in view scrolls the comp list's own max-height container, which fires
+    // a scroll event that looks exactly like the page moving.
     document.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("scroll", onScroll, true);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("scroll", onScroll, true);
-    };
+    return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open, close]);
 
   // Keep the active option in view when the arrows walk past the edge.
