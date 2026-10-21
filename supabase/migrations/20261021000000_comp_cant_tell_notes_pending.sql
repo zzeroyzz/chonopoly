@@ -1,11 +1,16 @@
 -- When you cannot tell, say so. Plus somewhere to write it down, and Pending.
 --
--- WRITTEN, NOT RUN. Nothing here has been applied to any database.
+-- APPLIED 2026-10-21 via `supabase db push` to project ogkhxgpailxqirwhcsso.
 --
--- ⚠ WHOEVER RUNS THIS: change the line above in the same breath. The last two
--- comps migrations carried it long after they had been applied, and work was
--- later planned around columns that were assumed absent and were not. A stale
--- banner is worse than no banner, because it is believed.
+-- The verify block passed: 1 column, 3 constraints, 126 comps, nothing
+-- rewritten. Both CHECK lookups matched exactly one constraint
+-- (property_comps_review_check, property_comps_status_check).
+--
+-- This line read "WRITTEN, NOT RUN" until the moment it was applied, and was
+-- changed in the same breath — which is what the last two comps migrations
+-- did not do, leaving later work planned around columns that were assumed
+-- absent and were not. A stale banner is worse than no banner, because it is
+-- believed.
 --
 -- Three gaps and one accident:
 --
