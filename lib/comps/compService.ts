@@ -61,6 +61,8 @@ interface CompRow {
   correlation: number | null;
   review: string;
   review_set_at: string | null;
+  sale_price: number | null;
+  sale_date: string | null;
   buyer_type: string | null;
   buyer_name: string | null;
   county: string | null;
@@ -105,6 +107,8 @@ const COMP_FIELDS: CompColumn[] = [
   "correlation",
   "review",
   "review_set_at",
+  "sale_price",
+  "sale_date",
   "buyer_type",
   "buyer_name",
   "county",
@@ -148,6 +152,8 @@ function toComp(row: CompRow): Comp {
     correlation: row.correlation === null ? null : Number(row.correlation),
     review: row.review as CompReview,
     reviewSetAt: row.review_set_at,
+    salePrice: row.sale_price === null ? null : Number(row.sale_price),
+    saleDate: row.sale_date,
     buyerType: row.buyer_type,
     buyerName: row.buyer_name,
     county: row.county,
@@ -435,14 +441,22 @@ export async function setCompReview(
   compId: string,
   review: CompReview,
   ctx: RequestContext,
-  userId: string
+  userId: string,
+  sale: { price: number | null; date: string | null } = { price: null, date: null }
 ): Promise<void> {
+  // The sale figure belongs to the claim that it sold. Any other answer
+  // clears it, so a price can never outlive the judgement it was entered
+  // for — the database CHECK would reject the pair anyway.
+  const keepsSale = review === "renovated_use";
+
   const { error } = await db()
     .from("property_comps")
     .update({
       review,
       review_set_by: review === "needs_review" ? null : userId,
       review_set_at: review === "needs_review" ? null : new Date().toISOString(),
+      sale_price: keepsSale ? sale.price : null,
+      sale_date: keepsSale ? sale.date : null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", compId)

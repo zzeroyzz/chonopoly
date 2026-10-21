@@ -57,7 +57,7 @@ function comp(pricePerSqft: number, id: string): Comp {
     status: "sold", listingType: null, listedDate: null, removedDate: null,
     lastSeenDate: null, daysOnMarket: null, distanceMiles: null, daysOld: null,
     correlation: null, buyerType: null, buyerName: null, county: null,
-    included: true, review: "renovated_use", reviewSetAt: null, notes: null, updatedAt: "",
+    included: true, review: "renovated_use", reviewSetAt: null, salePrice: null, saleDate: null, notes: null, updatedAt: "",
   };
 }
 

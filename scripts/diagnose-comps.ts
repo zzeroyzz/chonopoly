@@ -183,6 +183,8 @@ function compsFromResponse(
     // WOULD produce, not what the owner has decided about them.
     review: "renovated_use",
     reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
     notes: null,
     updatedAt: mapped.last_seen_date ?? "",
   }));
@@ -406,6 +408,8 @@ async function diagnoseRecordedSales(db: Db, query: string): Promise<void> {
     included: true,
     review: "renovated_use",
     reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
     notes: null,
     updatedAt: sale.removed_date ?? "",
   }));

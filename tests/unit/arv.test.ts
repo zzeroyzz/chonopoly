@@ -1,6 +1,6 @@
-import { calculateArv, assessComps } from "@/lib/comps/arv";
+import { calculateArv, assessComps, effectivePrice } from "@/lib/comps/arv";
 import { mapCompStatus, mapComparables, mapSubjectFacts } from "@/lib/comps/fromRentCast";
-import { type Comp, type CompStatus } from "@/lib/comps/types";
+import { type Comp, type CompStatus, compReviewOptions } from "@/lib/comps/types";
 
 /**
  * The address is derived from the id so that every comp is a different house.
@@ -42,6 +42,8 @@ function comp(overrides: Partial<Comp> = {}): Comp {
     included: true,
     review: "renovated_use",
     reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
     notes: null,
     updatedAt: "2026-10-18T00:00:00.000Z",
     ...overrides,
@@ -668,6 +670,52 @@ describe("calculateArv", () => {
     const result = calculateArv(comps, 1_200);
 
     expect(result.compNotes.find((n) => n.compId === "f-1")!.fixerUpper).toBe(false);
+  });
+
+  // ── A removed listing's two prices ────────────────────────────────────────
+
+  it("values a removed listing at what it sold for, not what it asked", () => {
+    const comps = [
+      comp({ id: "r-1", externalId: "rc-r1", status: "removed", sqft: 1_000,
+             price: 348_560, salePrice: 335_000, saleDate: "2026-06-01" }),
+    ];
+
+    const result = calculateArv(comps, 1_000);
+
+    expect(result.usedComps[0].price).toBe(335_000);
+    expect(result.value).toBe(335_000);
+  });
+
+  it("keeps the listed price beside the sale price, never instead of it", () => {
+    // Both are facts about the house and the card shows both.
+    const c = comp({ status: "removed", price: 348_560, salePrice: 335_000 });
+
+    expect(effectivePrice(c)).toBe(335_000);
+    expect(c.price).toBe(348_560);
+  });
+
+  it("falls back to the listed price when no sale price was entered", () => {
+    expect(effectivePrice(comp({ status: "active", price: 300_000 }))).toBe(300_000);
+  });
+
+  it("offers Took off market only on a removed listing", () => {
+    // A recorded sale closed and an active listing has not finished yet, so
+    // the option would be an answer that cannot be true.
+    expect(compReviewOptions("removed")).toContain("took_off_market_skip");
+    expect(compReviewOptions("sold")).not.toContain("took_off_market_skip");
+    expect(compReviewOptions("active")).not.toContain("took_off_market_skip");
+  });
+
+  it("does not count a comp taken off the market", () => {
+    const comps = [
+      comp({ id: "k-1", externalId: "rc-k1", sqft: 1_000, price: 300_000 }),
+      comp({ id: "k-2", externalId: "rc-k2", sqft: 1_000, price: 900_000,
+             status: "removed", review: "took_off_market_skip" }),
+    ];
+
+    const result = calculateArv(comps, 1_000);
+
+    expect(result.usedComps.map((c) => c.compId)).toEqual(["k-1"]);
   });
 
   it("flags an ARV that lands outside what the street actually fetched", () => {

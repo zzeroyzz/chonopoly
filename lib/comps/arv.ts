@@ -499,6 +499,16 @@ function isNominalTransfer(comp: Comp, allSalePrices: number[]): boolean {
   return comp.price < median(others) * NOMINAL_TRANSFER_MEDIAN_FRACTION;
 }
 
+/**
+ * The price the ARV should use.
+ *
+ * A removed listing the owner marked sold carries two figures: what the
+ * seller asked and what the buyer paid. Only the second one values a house.
+ */
+export function effectivePrice(comp: Comp): number | null {
+  return comp.salePrice ?? comp.price;
+}
+
 /** "most are much bigger" — the reason in the fewest words that are true. */
 function summariseReasons(excluded: CompEligibility[]): string {
   const counts = new Map<string, number>();
@@ -642,7 +652,10 @@ export function calculateArv(
   let skipped = 0;
 
   for (const comp of unique) {
-    if (comp.price === null || comp.price <= 0 || comp.sqft === null || comp.sqft <= 0) {
+    // What it sold for, when the owner has said. `price` is what was asked,
+    // which on a removed listing is the wrong number to value a house from.
+    const price = effectivePrice(comp);
+    if (price === null || price <= 0 || comp.sqft === null || comp.sqft <= 0) {
       skipped++;
       continue;
     }
@@ -652,11 +665,11 @@ export function calculateArv(
       compId: comp.id,
       address: comp.formattedAddress,
       status: comp.status,
-      price: comp.price,
+      price,
       sqft: comp.sqft,
       sqftDifference,
       adjustment,
-      adjustedPrice: comp.price + adjustment,
+      adjustedPrice: price + adjustment,
     });
   }
 

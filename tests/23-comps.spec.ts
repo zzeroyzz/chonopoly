@@ -58,6 +58,8 @@ function fixtureComps(): Comp[] {
     included: true,
     review: "renovated_use",
     reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
     notes: null,
     updatedAt: new Date().toISOString(),
   }));
@@ -212,6 +214,8 @@ async function stubComps(page: Page, options: StubOptions = {}) {
         included: true,
     review: "renovated_use",
     reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
         // Spreading a fixture comp carried its RentCast dates onto a manual
         // comp, which the real service never does — addManualComp writes only
         // the sale date it was given. Nulled explicitly so the stub cannot

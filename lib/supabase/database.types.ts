@@ -1740,6 +1740,8 @@ export type Database = {
           review: string
           review_set_at: string | null
           review_set_by: string | null
+          sale_date: string | null
+          sale_price: number | null
           source: string
           sqft: number | null
           state: string | null
@@ -1781,6 +1783,8 @@ export type Database = {
           review?: string
           review_set_at?: string | null
           review_set_by?: string | null
+          sale_date?: string | null
+          sale_price?: number | null
           source: string
           sqft?: number | null
           state?: string | null
@@ -1822,6 +1826,8 @@ export type Database = {
           review?: string
           review_set_at?: string | null
           review_set_by?: string | null
+          sale_date?: string | null
+          sale_price?: number | null
           source?: string
           sqft?: number | null
           state?: string | null

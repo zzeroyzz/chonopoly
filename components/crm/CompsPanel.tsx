@@ -10,7 +10,7 @@ import {
   type CompReview,
   COMP_STATUS_LABELS,
   COMP_REVIEW_LABELS,
-  COMP_REVIEW_ORDER,
+  compReviewOptions,
 } from "@/lib/comps/types";
 import { type ArvResult, type CompNote } from "@/lib/comps/arv";
 import { ORGANIZATION_BUYER } from "@/lib/comps/fromPropertyRecords";
@@ -107,6 +107,7 @@ const REVIEW_TONE: Record<CompReview, DropdownTone> = {
   needs_review: "neutral",
   renovated_use: "good",
   not_renovated_skip: "warn",
+  took_off_market_skip: "warn",
   not_comparable_skip: "warn",
 };
 
@@ -132,6 +133,17 @@ function perSqft(comp: Comp): string | null {
 const PRICE_MEANING: Partial<Record<CompStatus, string>> = {
   sold: "sold for",
 };
+
+/**
+ * What the figure beside the price means on this comp.
+ *
+ * A removed listing the owner has marked sold shows both numbers, so the
+ * first one has to say which it is: "Listed at $348,560 · Sold for $335,000".
+ */
+function priceLabel(comp: Comp): string | null {
+  if (comp.salePrice !== null) return "Listed at";
+  return PRICE_MEANING[comp.status] ?? null;
+}
 
 /**
  * Where a sold comp's price came from.
@@ -391,12 +403,20 @@ export function CompsPanel({
     await refresh({ force: true });
   }
 
-  async function review(comp: Comp, next: CompReview) {
+  async function review(
+    comp: Comp,
+    next: CompReview,
+    sale?: { price: number; date: string | null }
+  ) {
     if (!ctxParams) return;
     // Optimistic: choosing an answer should feel instant, and the server's
     // recomputed ARV lands a moment later.
     setComps((current) =>
-      current.map((c) => (c.id === comp.id ? { ...c, review: next } : c))
+      current.map((c) =>
+        c.id === comp.id
+          ? { ...c, review: next, salePrice: sale?.price ?? null, saleDate: sale?.date ?? null }
+          : c
+      )
     );
     try {
       const res = await fetch(
@@ -404,7 +424,10 @@ export function CompsPanel({
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ review: next }),
+          body: JSON.stringify({
+            review: next,
+            ...(sale ? { salePrice: sale.price, saleDate: sale.date } : {}),
+          }),
         }
       );
       apply(await readResponse(res, "Failed to save your review"));
@@ -819,9 +842,10 @@ function CompRow({
   comp: Comp;
   /** The ARV's verdict on this comp. Absent only before the first load. */
   note: CompNote | undefined;
-  onReview: (comp: Comp, review: CompReview) => void;
+  onReview: (comp: Comp, review: CompReview, sale?: { price: number; date: string | null }) => void;
   onRemove: (comp: Comp) => void;
 }) {
+  const [askingSale, setAskingSale] = useState(false);
   const ppsf = perSqft(comp);
   const date = compDate(comp);
   const provenance = provenanceLabel(comp);
@@ -848,17 +872,28 @@ function CompRow({
           </p>
 
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1.5">
-            {comp.price !== null && PRICE_MEANING[comp.status] && (
+            {comp.price !== null && priceLabel(comp) && (
               <span
                 data-testid={`comp-price-meaning-${comp.id}`}
                 className="text-[11px] text-(--color-text-secondary)"
               >
-                {PRICE_MEANING[comp.status]}
+                {priceLabel(comp)}
               </span>
             )}
             <span className="text-[14px] font-semibold">
               {comp.price !== null ? dollars(comp.price) : "No price"}
             </span>
+            {/* What was asked, and what was paid. Both, never one replacing
+                the other — they are different facts about the same house. */}
+            {comp.salePrice !== null && (
+              <span
+                data-testid={`comp-sale-price-${comp.id}`}
+                className="text-[12px] font-semibold text-(--color-accent)"
+              >
+                · Sold for {dollars(comp.salePrice)}
+                {comp.saleDate ? ` ${monthYear(comp.saleDate)}` : ""}
+              </span>
+            )}
             {ppsf && (
               <span className="text-[11px] text-(--color-text-secondary)">{ppsf}</span>
             )}
@@ -937,15 +972,36 @@ function CompRow({
           <Dropdown
             className="mt-2"
             value={comp.review}
-            options={COMP_REVIEW_ORDER.map((key) => ({
+            options={compReviewOptions(comp.status).map((key) => ({
               value: key,
               label: COMP_REVIEW_LABELS[key],
               tone: REVIEW_TONE[key],
             }))}
-            onChange={(next) => onReview(comp, next)}
+            onChange={(next) => {
+              // Approving a removed listing is a claim that it sold, so it
+              // needs the figure it sold for. Asking here rather than
+              // silently feeding the asking price into the ARV.
+              if (next === "renovated_use" && comp.status === "removed") {
+                setAskingSale(true);
+                return;
+              }
+              setAskingSale(false);
+              onReview(comp, next);
+            }}
             label={`What to do with ${comp.formattedAddress}`}
             testId={`comp-review-${comp.id}`}
           />
+
+          {askingSale && (
+            <SalePricePrompt
+              comp={comp}
+              onCancel={() => setAskingSale(false)}
+              onSave={(price, date) => {
+                setAskingSale(false);
+                onReview(comp, "renovated_use", { price, date });
+              }}
+            />
+          )}
         </div>
 
         {/* Only hand-entered comps can be deleted. A RentCast comp is untick-ed,
@@ -963,6 +1019,90 @@ function CompRow({
         )}
       </div>
     </li>
+  );
+}
+
+/**
+ * What did it sell for?
+ *
+ * A removed listing has two prices and only one of them values a house. The
+ * price is required — approving a removed comp without it would put an
+ * asking price into the ARV, which is the whole thing this prevents. The
+ * date is optional, because an agent's answer often does not carry one and a
+ * sale with no date is still worth more than no sale.
+ */
+function SalePricePrompt({
+  comp,
+  onSave,
+  onCancel,
+}: {
+  comp: Comp;
+  onSave: (price: number, date: string | null) => void;
+  onCancel: () => void;
+}) {
+  const [price, setPrice] = useState("");
+  const [date, setDate] = useState("");
+
+  const amount = Number(price.replace(/[^0-9.]/g, ""));
+  const valid = Number.isFinite(amount) && amount > 0;
+
+  const field =
+    "w-full min-h-11 bg-(--color-base) border border-(--color-border-default) rounded-lg px-3 text-[13px]";
+
+  return (
+    <div
+      data-testid={`comp-sale-prompt-${comp.id}`}
+      className="mt-2 rounded-lg border border-(--color-border-default) bg-(--color-base) p-3 flex flex-col gap-2"
+    >
+      <p className="text-[12px] leading-relaxed">
+        What did it sell for?{" "}
+        <span className="text-(--color-text-secondary)">
+          It was listed at {comp.price === null ? "an unknown price" : dollars(comp.price)}.
+        </span>
+      </p>
+
+      <input
+        value={price}
+        onChange={(e) => setPrice(e.target.value)}
+        placeholder="Sale price"
+        inputMode="numeric"
+        autoFocus
+        aria-label={`Sale price for ${comp.formattedAddress}`}
+        data-testid={`comp-sale-price-input-${comp.id}`}
+        className={field}
+      />
+
+      <label className="flex flex-col gap-1">
+        <span className="text-[11px] text-(--color-text-secondary)">Sale date (optional)</span>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          data-testid={`comp-sale-date-input-${comp.id}`}
+          className={field}
+        />
+      </label>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={!valid}
+          onClick={() => onSave(amount, date || null)}
+          data-testid={`comp-sale-save-${comp.id}`}
+          className="min-h-11 px-3 rounded-(--radius-pill) bg-(--color-accent) text-(--color-base) text-[12px] font-semibold disabled:opacity-50"
+        >
+          Use this sale
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          data-testid={`comp-sale-cancel-${comp.id}`}
+          className="min-h-11 px-3 rounded-(--radius-pill) border border-(--color-border-default) text-[12px] font-medium"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
   );
 }
 

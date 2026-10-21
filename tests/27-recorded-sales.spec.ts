@@ -109,6 +109,8 @@ function recordedSaleComps(): Comp[] {
     included: true,
     review: "renovated_use",
     reviewSetAt: null,
+    salePrice: null,
+    saleDate: null,
     notes: null,
     updatedAt: sale.removed_date ?? "",
   }));
@@ -130,7 +132,7 @@ function listingComp(): Comp {
     listingType: "Standard", listedDate: "2026-03-01", removedDate: "2026-06-01",
     lastSeenDate: "2026-06-01", daysOnMarket: 92, distanceMiles: 0.32, daysOld: 40,
     correlation: 0.9, buyerType: null, buyerName: null, county: null,
-    included: true, review: "renovated_use", reviewSetAt: null, notes: null, updatedAt: "",
+    included: true, review: "renovated_use", reviewSetAt: null, salePrice: null, saleDate: null, notes: null, updatedAt: "",
   };
 }
 
