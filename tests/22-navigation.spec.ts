@@ -38,6 +38,23 @@ function entry(id: string, address: string, stage = "new_lead") {
 async function stubCrm(page: Page) {
   await stubDataEndpoints(page);
 
+  // Next's dev indicator renders into <nextjs-portal> and sits bottom-left by
+  // default — over the first bottom-bar tabs and over the edit dialog's Save.
+  // It swallowed those clicks, which is why the nav and edit tests failed
+  // only on slower runs, once it had rendered. It is framework chrome, not
+  // the app, so the tests look past it rather than designing around it.
+  // The standing fix is `devIndicators: false` in next.config.ts, which is
+  // build config and wants the owner's say-so.
+  // Applied per load rather than via addInitScript: the overlay mounts after
+  // hydration, so a style appended before parsing does not survive to meet it.
+  page.on("load", () => {
+    void page
+      .addStyleTag({ content: "nextjs-portal{display:none!important}" })
+      .catch(() => {
+        /* Navigated away mid-injection; the next load re-applies it. */
+      });
+  });
+
   await page.route("**/api/crm/pipeline**", (r) =>
     r.fulfill({
       status: 200,
