@@ -590,7 +590,10 @@ function ScreenCard({
               href={`${href}?tab=${step.tab}`}
               data-testid={`checklist-${step.label.toLowerCase()}-${row.propertyId}`}
               data-done={done ? "yes" : "no"}
-              className={`min-h-11 inline-flex items-center text-[10px] px-2 rounded border ${
+              // relative z-10: the address link stretches an ::after over the
+              // whole card, and without this these sit under it and cannot be
+              // tapped at all.
+              className={`relative z-10 min-h-11 inline-flex items-center text-[10px] px-2 rounded border ${
                 done
                   ? "border-(--color-accent) text-(--color-accent)"
                   : "border-(--color-border-default) text-(--color-text-tertiary)"
