@@ -1,6 +1,6 @@
 # Plan: when you cannot tell, say so
 
-Status: **Revised (rev 2)** — 2026-10-21. Awaiting the owner. No code written.
+Status: **Revised (rev 3)** — 2026-10-21. Awaiting the owner. Migration written, not run; no TypeScript written.
 Branch: `feat/comp-cant-tell`, cut from `1eefcd6` (the PR #58 merge, tip of main).
 RentCast requests: **0**.
 Follows: `plans/feat-arv-review-flow.md`, which called this Stage B.
@@ -104,6 +104,19 @@ raises unless exactly one.
 
 The largest change by effect and the smallest by diff.
 
+**One predicate, in one place.** `lib/comps/types.ts` gains:
+
+```ts
+/** Whether this status can be judged at all. An ask is not evidence. */
+export function isReviewable(status: CompStatus): boolean {
+  return status === "removed" || status === "sold";
+}
+```
+
+Everything that asks "is there work here?" reads it: `compReviewOptions`,
+`matchesTab`, `tabCounts`, `defaultTab`, and `arv.ts`'s `stillToReview`. Four
+call sites drifting apart is what produced the next two items.
+
 - `compReviewOptions("active")` and `compReviewOptions("pending")` return
   **no reviewable options**. There is nothing to judge: the price is an ask.
 - Those comps do not appear in **Still to check** and do not add to its count.
@@ -115,6 +128,36 @@ The largest change by effect and the smallest by diff.
 
 **This changes a number the owner has already seen.** The count will drop,
 perhaps a lot. That is the fix, not a regression, and the PR must say so.
+
+**1a. The arithmetic does not currently agree with the UI.**
+`arv.ts:613` is `comps.filter((c) => c.review === COMP_REVIEW_COUNTS)` — **no
+status filter at all**. So "active comps are not counted" is a claim about what
+the screen offers, not about the number. `activeCount` at `:695` exists
+precisely to count active comps in the basis, and that path is live today.
+
+Two consequences, both of which must be handled here:
+
+- A row already at `renovated_use` with an active status **keeps counting**,
+  invisibly, after §1 ships. So `approved` gains the same `isReviewable` guard:
+  an unreviewable status can never reach the basis, whatever its stored review.
+- Worse, it becomes **unreachable**. `CompReviewCard.tsx:258` builds its
+  options from `compReviewOptions(comp.status)`, so returning `[]` for active
+  renders an already-approved active comp with no controls — counted and
+  unchangeable. **`compReviewOptions` therefore returns `[]` only for a comp at
+  `needs_review`.** A comp someone has already answered keeps its options, so
+  any existing answer can always be changed or cleared.
+
+**Before this ships, a read-only count:** how many comps are at a review other
+than `needs_review` with status `active`? If that is zero — likely, since the
+UI only recently made such an answer easy — the migration path is empty and
+this is pure prevention. The owner runs it; nothing here writes.
+
+**1b. `defaultTab` lands the owner on the tab §1 just emptied.**
+`CompControls.tsx:191` is
+`comps.some((c) => c.review === "needs_review") ? "todo" : "done"`. Every
+active comp is at `needs_review`, so a house whose comps are all active opens
+on Still-to-check with nothing in it — on exactly the houses §1 exists to fix.
+It reads `isReviewable` too.
 
 **§5 depends on this section and cannot ship without it.** `arv.ts:692-694`
 counts the basis in three explicit branches — `sold`, `removed`, `active` — so
@@ -242,13 +285,40 @@ surface for one fact.
 - **One new file**, the migration.
 - **`setCompReview`'s signature changes.** Call sites checked before the edit.
 - **`ArvResult` gains a field** — public type.
-- **`CompStatus` gains a member.** `COMP_STATUS_LABELS` and `STATUS_STYLE` are
-  `Record<CompStatus, …>` so `tsc` finds those, but **these are silent**:
-  - `compReviewOptions` (`types.ts:61`) — a `status === "removed"` ternary
-  - `matchesFilter`'s `listings` case — `comp.status !== "sold"`, which already
-    includes pending by accident rather than intent
-  - `fromRentCast.ts:22` — maps everything not inactive to active, correctly,
-    and must keep doing so
+- **`CompStatus` gains a member, and the compiler finds less of it than rev 2
+  claimed.** That claim was wrong and is corrected here.
+
+  `tsc` **does** catch `COMP_STATUS_LABELS` (`types.ts:190`), which is a real
+  `Record<CompStatus, string>`.
+
+  `tsc` **does not** catch these, and each is a visible defect:
+  - **`STATUS_STYLE` and `STATUS_MEANING` are `Record<string, string>`**
+    (`CompReviewCard.tsx:71` and `:58`), written that way in Stage A. A pending
+    comp would render with the **Active pill** — no blue, which is the entire
+    point of §5 — and `STATUS_MEANING[comp.status]` at `:186` has no fallback,
+    so the status sentence would render `undefined`.
+    **Fix: tighten both to `Record<CompStatus, string>`.** Two words, and the
+    compiler enforces every future status for good. Better than adding two
+    entries and leaving the hole open.
+  - **`app/api/properties/[id]/comps/route.ts:19`** —
+    `value === "active" || value === "removed" ? value : "sold"`. Anything that
+    is not those two **becomes `sold`**. Posting `pending` would silently store
+    a sale. `types.ts` calls collapsing a non-sale into sold *"the single
+    easiest way to inflate an ARV"*, and this is that, by default, in a
+    ternary. **Fix: validate against the real union and reject what is not in
+    it**, the way the review value is already validated at `:17`.
+  - `compReviewOptions` (`types.ts:62`) — a `status === "removed"` ternary;
+    §1 rewrites it anyway
+  - `matchesFilter`'s `listings` case — `comp.status !== "sold"`, which
+    includes pending by accident rather than intent. Correct behaviour,
+    accidental reason: state it deliberately
+  - `PRICE_MEANING` (`format.ts:48`) is `Partial<Record<CompStatus, string>>`,
+    so pending gets no price qualifier — on the one status whose point is that
+    the price is not final. Add one: `pending: "under contract at"`
+  - `fromRentCast.ts:22` maps everything not inactive to active, correctly, and
+    **must keep doing so** — RentCast cannot report pending, and
+    `tests/unit/arv.test.ts:757` already pins `mapCompStatus("Pending")` to
+    `active`. That test stays as it is
 - **`CompReview` gains a member.** `COMP_REVIEW_ORDER` is the API validator:
   miss it and the route 400s the new value with a clean build.
 - **The review count the owner has seen will drop** (§1). Intended.
@@ -265,6 +335,9 @@ surface for one fact.
 5. `compReviewOptions` offers nothing for active or pending
 6. `cant_tell_skip` is offered on removed and nowhere else
 7. `COMP_REVIEW_SKIPS` picks the new value up without a second edit
+8. an approved comp with an unreviewable status is not counted (item 1a)
+9. `unreadable` counts `cant_tell_skip` and nothing else
+10. `defaultTab` opens on Checked when every comp is unreviewable (item 1b)
 
 **Playwright** — the suite is **commented out in `.github/workflows/ci.yml`**
 ("TEMPORARILY DISABLED — tests still being fixed"), and 8 of 55 in
@@ -744,3 +817,98 @@ Revised on 1a, 1b, 1c and 3, I expect to approve this.
 
 **The owner makes the final call. This review is not approval to start, and
 nothing in it authorizes running the migration or regenerating the types.**
+
+---
+
+### Addendum — rev 2 (`6bd02dd`), same day
+
+Rev 2 landed while I was writing the review above, so that review was made
+against `3d17389`. Re-checked against `6bd02dd`. My review text is intact and
+this is a delta, not a second review.
+
+**Answered by rev 2:**
+
+- **My 1c — `screenRow.ts`.** Now in the scope table as "reads, probably
+  unedited", with the behaviour change on the Screen table spelled out. The
+  self-review found this independently. **Closed.**
+- **`compDate` and pending.** Now a stated decision — "Listed" is true and
+  available, nothing records an under-contract date, no branch is added. That
+  is the right call and the right way to record it. **Closed.**
+- **Migration ordering.** The four changes are now explicitly ordered inside
+  the transaction, because change 4 constrains a value change 3 must admit
+  first. Correct, and it was worth saying.
+- **The §1/§5 coupling** (the self-review's item 1) is a real find and a
+  sharper version of my item 6: `arv.ts:692-694` counts the basis in three
+  status branches, so a `pending` comp in `basis` is counted in none. Writing
+  the dependency down at both ends, with "if §1 moves, §5 moves", is better
+  than adding a fourth count for a state that cannot occur. **Agreed.**
+
+**My item 2a — the migration split: I withdraw it.** The counter-argument is
+better than mine. Two migration files are two transactions, so splitting opens
+a real window in which the status CHECK admits `pending` while the
+needs-evidence constraint does not yet exist — which is precisely the failure a
+single transaction prevents. My argument was about giving the owner the option
+to ship can't-tell and notes without Pending's blast radius, and rev 2 trades
+that away knowingly. That is a legitimate trade. **Accepted as four-in-one.**
+
+**Still open — my three blocking items, none of which rev 2 touches:**
+
+1. **1a — `arv.ts:613` has no status guard.** `approved = comps.filter(c =>
+   c.review === COMP_REVIEW_COUNTS)` is unchanged. Rev 2's new §1 text says
+   `basis` is built from approved comps and §1 makes pending unapprovable —
+   true for *new* answers, and it assumes no row is **already** at
+   `renovated_use` with an active status. Nothing has established that. If one
+   exists it keeps counting, and `CompReviewCard.tsx:258` renders it with no
+   options, so no control on the screen can change it. The guard at `:613` and
+   a read-only count are both still wanted.
+2. **1b — `CompControls.tsx:191` still lands on an empty tab.**
+   `comps.some(c => c.review === "needs_review") ? "todo" : "done"` returns
+   `"todo"` for a house whose comps are all active, opening a Still-to-check
+   tab that §1 has just emptied. Unaddressed in rev 2.
+3. **3 — the Risks claim is still wrong, verbatim.** Risks still reads
+   *"`COMP_STATUS_LABELS` and `STATUS_STYLE` are `Record<CompStatus, …>` so
+   `tsc` finds those"*. `STATUS_STYLE` and `STATUS_MEANING` are
+   `Record<string, string>` (`CompReviewCard.tsx:58,71`), so a Pending comp
+   renders with the Active pill via `?? STATUS_STYLE.active` and an `undefined`
+   status sentence. `PRICE_MEANING` is `Partial<Record<CompStatus, string>>`
+   (`format.ts:48`), so Pending gets no price label. And
+   `app/api/properties/[id]/comps/route.ts:19` coerces anything not
+   active-or-removed to **`sold`**. Seven silent sites, not three. Tightening
+   the two loose `Record`s to `Record<CompStatus, string>` is a two-word diff
+   that makes the compiler enforce this permanently.
+
+Also still open and smaller: the CHECK-lookup discriminators (my 2b — the
+`%active%` predicate for status, and keeping the two-predicate trick for
+review), and `buildApprovedLabel` taking an object before it reaches three
+positional numbers (my 4).
+
+### On the testing decision, which changed under me
+
+Rev 2's §Testing now records the owner's decision — **Playwright deferred
+again** — and, to its credit, writes down the bill: the two tests at
+`23-comps.spec.ts:432-477` drive a view Stage A deleted, the rewrite the Stage
+A plan named never happened, and **the "8 of 55" figure is therefore stale and
+nobody has measured the real number.**
+
+That is the honest disclosure, and it changes my recommendation rather than
+voiding it. My item 5 asked for the five ARV/basis failures to be baselined.
+With the count now unknown, the cheaper and more useful step comes first:
+**run the spec once and write down what fails today.** One command, read-only,
+no writes, and it replaces a stale number that has now been carried into three
+consecutive plans with a real one. Without it, "a pass means those N and no
+others" is not a sentence anyone can finish.
+
+The decision to defer is the owner's and I am not arguing with it. But a
+commitment made in an approved plan — rewriting those two tests — was not
+kept, and the gap was found by the implementer reading its own old plan rather
+than by anything in the process. That is worth the owner knowing, because it is
+the same class of drift this review step exists to catch, and it is the second
+time the Playwright question has been deferred with the bill growing.
+
+**Verdict unchanged: changes requested on 1a, 1b and 3.** Rev 2 is a real
+improvement and closed two of my items plus found one of its own. The three
+that remain are the three that move numbers or ship a mislabelled pill, and
+none is more than a few lines of code once named in the plan.
+
+**The owner makes the final call. Nothing here authorizes running the
+migration, regenerating the types, or starting the code.**
