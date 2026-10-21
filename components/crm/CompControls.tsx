@@ -44,15 +44,43 @@ export const FILTER_LABELS: Record<CompFilter, string> = {
   flagged: "Flagged",
 };
 
-export const FILTER_ORDER: CompFilter[] = [
-  "needs_review",
-  "approved",
-  "skipped",
-  "all",
-  "sold",
-  "listings",
-  "flagged",
-];
+/**
+ * What stays in the dropdown.
+ *
+ * "Needs review", "Approved" and "Skipped" have left it: they are the two
+ * halves of the work and they are now tabs. Burying how much is left inside a
+ * menu of seven meant opening the menu to find out. The other four narrow
+ * what is inside a tab, which is what a filter is for.
+ *
+ * They stay in `CompFilter` and in `matchesFilter` — the tabs are defined in
+ * terms of them, so there is still one definition of what "skipped" means.
+ */
+export const FILTER_ORDER: CompFilter[] = ["all", "sold", "listings", "flagged"];
+
+/** The two halves of the work. */
+export type ReviewTab = "todo" | "done";
+
+export const TAB_LABELS: Record<ReviewTab, string> = {
+  todo: "Still to check",
+  done: "Checked",
+};
+
+/** Checked is both answers: what counts, and what was looked at and left out. */
+const TAB_FILTERS: Record<ReviewTab, CompFilter[]> = {
+  todo: ["needs_review"],
+  done: ["approved", "skipped"],
+};
+
+export function matchesTab(comp: Comp, note: CompNote | undefined, tab: ReviewTab): boolean {
+  return TAB_FILTERS[tab].some((filter) => matchesFilter(comp, note, filter));
+}
+
+export function tabCounts(comps: Comp[], notes: Map<string, CompNote>): Record<ReviewTab, number> {
+  return {
+    todo: comps.filter((c) => matchesTab(c, notes.get(c.id), "todo")).length,
+    done: comps.filter((c) => matchesTab(c, notes.get(c.id), "done")).length,
+  };
+}
 
 export const SORT_ORDER: CompSort[] = [
   "closest",
@@ -135,12 +163,15 @@ export function filterCounts(
 /**
  * Where to start: the work still to do, or the work already done.
  *
- * Opening on "Needs review" is the point — it is the list to work through.
+ * Opening on "Still to check" is the point — it is the list to work through.
  * Once nothing is left, that view is empty and useless, so it opens on what
  * the ARV is actually built from instead.
+ *
+ * This replaces `defaultFilter`, which returned a filter value that no longer
+ * appears in the dropdown.
  */
-export function defaultFilter(comps: Comp[]): CompFilter {
-  return comps.some((c) => c.review === "needs_review") ? "needs_review" : "approved";
+export function defaultTab(comps: Comp[]): ReviewTab {
+  return comps.some((c) => c.review === "needs_review") ? "todo" : "done";
 }
 
 export function CompControls({
@@ -190,6 +221,62 @@ export function CompControls({
       <p data-testid="comp-shown" className="text-[12px] text-(--color-text-secondary)">
         Showing {shown} of {total}
       </p>
+    </div>
+  );
+}
+
+/**
+ * The two halves of the work, under the filter and sort.
+ *
+ * Both counts are always on screen, because watching the left one go down is
+ * the only thing that tells you the job ends. They were two of seven options
+ * inside a menu, which meant opening the menu to find out how much was left.
+ *
+ * The count is the big text and the name is the small text: the number is
+ * what the eye is looking for.
+ */
+export function CompReviewTabs({
+  tab,
+  counts,
+  onTabChange,
+}: {
+  tab: ReviewTab;
+  counts: Record<ReviewTab, number>;
+  onTabChange: (tab: ReviewTab) => void;
+}) {
+  const tabs: ReviewTab[] = ["todo", "done"];
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Which half of the work"
+      data-testid="comp-tabs"
+      className="flex gap-2"
+    >
+      {tabs.map((key) => {
+        const selected = tab === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            onClick={() => onTabChange(key)}
+            data-testid={`comp-tab-${key}`}
+            className={`flex-1 min-h-11 flex flex-col items-start justify-center gap-0.5 px-3 py-2
+              rounded-(--radius-md) border text-left transition-colors ${
+                selected
+                  ? "border-(--color-accent) bg-(--color-accent-glow) text-(--color-text-primary)"
+                  : "border-(--color-border-default) text-(--color-text-secondary)"
+              }`}
+          >
+            <span className="text-[16px] font-bold leading-none" data-testid={`comp-tab-${key}-count`}>
+              {counts[key]}
+            </span>
+            <span className="text-[11px] leading-none">{TAB_LABELS[key]}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
