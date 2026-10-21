@@ -15,7 +15,15 @@ import {
   defaultTab,
   type CompFilter,
 } from "@/components/crm/CompControls";
-import { comparedToSubject } from "@/lib/comps/format";
+import {
+  comparedToSubject,
+  compDate,
+  fixerUpperNote,
+  perSqft,
+  priceLabel,
+  provenanceLabel,
+} from "@/lib/comps/format";
+import { ORGANIZATION_BUYER } from "@/lib/comps/fromPropertyRecords";
 
 /**
  * The address is derived from the id so that every comp is a different house.
@@ -1055,5 +1063,123 @@ describe("houses that are on the market", () => {
   it("offers no review control, because there is nothing to answer", () => {
     expect(compReviewOptions("active", "needs_review")).toHaveLength(0);
     expect(compReviewOptions("pending", "needs_review")).toHaveLength(0);
+  });
+});
+
+/**
+ * How a comp says itself out loud.
+ *
+ * These four were covered only through the browser — 23-comps and
+ * 27-recorded-sales booted Chromium, stubbed RentCast and opened a tab to
+ * assert a string a pure function returns. The cases live here now; the specs
+ * keep one rendering test each, because "is it wired to the screen" is the
+ * part a unit test cannot answer.
+ */
+
+describe("perSqft", () => {
+  it("divides the price by the size and rounds", () => {
+    // The case 23-comps asserted on screen: $345,000 over 1,680 sqft.
+    expect(perSqft(comp({ price: 345_000, sqft: 1_680 }))).toBe("$205/sqft");
+  });
+
+  it("says nothing rather than dividing by a size it does not have", () => {
+    expect(perSqft(comp({ price: 345_000, sqft: null }))).toBeNull();
+    expect(perSqft(comp({ price: null, sqft: 1_680 }))).toBeNull();
+    // Zero would be a division by zero, and a negative size is not a house.
+    expect(perSqft(comp({ price: 345_000, sqft: 0 }))).toBeNull();
+    expect(perSqft(comp({ price: 345_000, sqft: -10 }))).toBeNull();
+  });
+});
+
+describe("priceLabel", () => {
+  it("qualifies a price only when it is a fact about what someone paid", () => {
+    expect(priceLabel(comp({ status: "sold" }))).toBe("sold for");
+    expect(priceLabel(comp({ status: "pending" }))).toBe("under contract at");
+  });
+
+  it("leaves Active and Removed unqualified, since their own label says enough", () => {
+    expect(priceLabel(comp({ status: "active" }))).toBeNull();
+    expect(priceLabel(comp({ status: "removed" }))).toBeNull();
+  });
+
+  it("calls the asking price 'Listed at' when a sale price sits beside it", () => {
+    // Both numbers on one card, so the first has to say which it is.
+    expect(priceLabel(comp({ status: "removed", salePrice: 335_000 }))).toBe("Listed at");
+    expect(priceLabel(comp({ status: "sold", salePrice: 335_000 }))).toBe("Listed at");
+  });
+});
+
+describe("provenanceLabel", () => {
+  it("separates a county deed from a number the owner typed", () => {
+    // Both are real sales; they are not the same kind of fact, and someone
+    // deciding whether to trust the figure is entitled to know which.
+    expect(provenanceLabel(comp({ status: "sold", source: "public_record" }))).toBe(
+      "county record"
+    );
+    expect(provenanceLabel(comp({ status: "sold", source: "manual" }))).toBe("you entered this");
+  });
+
+  it("says nothing on anything that is not a sale", () => {
+    for (const status of ["active", "removed", "pending"] as const) {
+      expect(provenanceLabel(comp({ status, source: "public_record" }))).toBeNull();
+    }
+  });
+});
+
+describe("fixerUpperNote", () => {
+  it("names the company when one bought the house", () => {
+    const note = fixerUpperNote(
+      comp({ price: 180_000, buyerType: ORGANIZATION_BUYER, buyerName: "Acme Homes LLC" })
+    );
+    expect(note).toContain("Bought by a company (Acme Homes LLC)");
+    expect(note).toContain("$180,000");
+  });
+
+  it("still says a company bought it when the name is missing", () => {
+    const note = fixerUpperNote(comp({ price: 180_000, buyerType: ORGANIZATION_BUYER }));
+    expect(note).toContain("Bought by a company");
+    expect(note).not.toContain("(");
+  });
+
+  it("just says Sold when the buyer was a person", () => {
+    expect(fixerUpperNote(comp({ price: 180_000, buyerType: null }))).toContain(
+      "Sold for $180,000"
+    );
+  });
+
+  it("points at the review control that exists, not the tick that does not", () => {
+    // The tick stopped existing when the review card replaced it, and this
+    // string told the owner to use it for a while afterwards.
+    const note = fixerUpperNote(comp({ price: 180_000 }));
+    expect(note).toContain('Mark it "Not renovated" to leave it out.');
+    expect(note).not.toContain("ntick");
+  });
+
+  it("says nothing without a price, since there is nothing to call low", () => {
+    expect(fixerUpperNote(comp({ price: null }))).toBeNull();
+  });
+});
+
+describe("compDate", () => {
+  it("names which date it is showing, per status", () => {
+    // A bare "Jul 2026" leaves the reader guessing whether the house sold
+    // then or merely came to market. These are the two 23-comps asserted.
+    expect(compDate(comp({ status: "removed", removedDate: "2026-07-14T00:00:00.000Z" }))).toBe(
+      "Removed Jul 2026"
+    );
+    expect(compDate(comp({ status: "active", listedDate: "2026-09-02T00:00:00.000Z" }))).toBe(
+      "Listed Sep 2026"
+    );
+    expect(compDate(comp({ status: "sold", removedDate: "2026-07-14T00:00:00.000Z" }))).toBe(
+      "Sold Jul 2026"
+    );
+  });
+
+  it("shows no date rather than a borrowed one", () => {
+    // An agent's closed-sales list does not always carry the close date, and
+    // inventing one would misrepresent how stale the comp is.
+    expect(compDate(comp({ status: "sold", removedDate: null }))).toBeNull();
+    expect(compDate(comp({ status: "removed", removedDate: null }))).toBeNull();
+    expect(compDate(comp({ status: "active", listedDate: null }))).toBeNull();
   });
 });
