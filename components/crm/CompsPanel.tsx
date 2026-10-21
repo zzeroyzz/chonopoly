@@ -162,13 +162,15 @@ async function readResponse(res: Response, fallback: string): Promise<CompsRespo
 export function CompsPanel({
   propertyId,
   subjectAddress,
+  subjectPrice,
   ctx,
   ctxParams,
   onEditFacts,
 }: {
   propertyId: string;
-  /** The house being bought. Only the address: the rest arrives with the comps. */
+  /** The house being bought. Address and price: the rest arrives with the comps. */
   subjectAddress: string | null;
+  subjectPrice: number | null;
   ctx: ActiveContext | null;
   ctxParams: string | null;
   /** Opens the house facts form, which is the only way past a blocked lookup. */
@@ -433,6 +435,7 @@ export function CompsPanel({
     <div data-testid="panel-comps" className="flex flex-col gap-4">
       <SubjectSpecs
         address={subjectAddress}
+        price={subjectPrice}
         beds={subjectBeds}
         baths={subjectBaths}
         sqft={arv?.subjectSqft ?? null}
@@ -854,12 +857,14 @@ export function CompsPanel({
  */
 function SubjectSpecs({
   address,
+  price,
   beds,
   baths,
   sqft,
   yearBuilt,
 }: {
   address: string | null;
+  price: number | null;
   beds: number | null;
   baths: number | null;
   sqft: number | null;
@@ -873,7 +878,7 @@ function SubjectSpecs({
   ].filter((part): part is string => part !== null);
 
   // Nothing to pin is better than an empty bar taking the space.
-  if (!address && specs.length === 0) return null;
+  if (!address && specs.length === 0 && price === null) return null;
 
   return (
     <div
@@ -884,8 +889,19 @@ function SubjectSpecs({
       <p className="text-[9px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
         You&apos;re comparing against
       </p>
-      {address && (
-        <p className="text-[13px] font-semibold leading-snug truncate">{address}</p>
+      {(address || price !== null) && (
+        <div className="flex items-baseline justify-between gap-3">
+          {address && (
+            <p className="text-[13px] font-semibold leading-snug truncate min-w-0">{address}</p>
+          )}
+          {/* The address truncates; the price never does. It is the anchor of
+              every comparison on this tab. */}
+          {price !== null && (
+            <p data-testid="subject-price" className="text-[13px] font-semibold shrink-0">
+              {dollars(price)}
+            </p>
+          )}
+        </div>
       )}
       {specs.length > 0 ? (
         <p className="text-[11px] text-(--color-text-secondary)">{specs.join(" · ")}</p>

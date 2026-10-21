@@ -168,6 +168,16 @@ export interface PropertyLike {
   baths: number | null;
   sqft: number | null;
   year_built: number | null;
+  /**
+   * What the house is listed at.
+   *
+   * Optional on the type, not because a house may lack a price but because
+   * the column ships ahead of its migration: `detailService` selects `*`, so
+   * on a database where the migration has not run the field is simply absent
+   * from the row rather than null. Read it as `?? null` and show nothing when
+   * it is missing — a bar that says "$0" is worse than one that says nothing.
+   */
+  list_price?: number | null;
   needs_address_review: boolean;
   /** The listing, for working the rehab estimate from photos. */
   listing_url: string | null;

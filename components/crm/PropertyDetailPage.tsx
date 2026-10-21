@@ -758,6 +758,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               <CompsPanel
                 propertyId={property.id}
                 subjectAddress={property.address_line1}
+                subjectPrice={property.list_price ?? null}
                 ctx={ctx}
                 ctxParams={ctxParams}
                 // The facts form lives above the tabs, so opening it is
