@@ -9,7 +9,7 @@ import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { type ScreenRow } from "@/lib/screen/screenRow";
 import { useCrmContext } from "@/components/crm/useCrmContext";
 import { dollars } from "@/components/mortgage/format";
-import { AFFORDABILITY_LABEL, DEAL_LABEL } from "@/lib/mortgage/verdicts";
+import { AFFORDABILITY_LABEL, DEAL_LABEL, NO_RESALE_PRICE_LABEL } from "@/lib/mortgage/verdicts";
 import { LOAN_TYPE_CONFIG } from "@/lib/mortgage/loanTypes";
 import { type LoanType } from "@/lib/mortgage/types";
 
@@ -68,7 +68,7 @@ const GROUPS: { title: string; rows: RowSpec[] }[] = [
       },
       {
         label: "Deal verdict",
-        value: (r) => (r.deal.hasArv ? DEAL_LABEL[r.deal.verdict] : "No ARV"),
+        value: (r) => (r.deal.hasArv ? DEAL_LABEL[r.deal.verdict] : NO_RESALE_PRICE_LABEL),
       },
     ],
   },

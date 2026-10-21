@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { type VerdictExplanation } from "@/lib/deal/explainDeal";
+import { type AffordabilityVerdict, type DealVerdict } from "@/lib/mortgage/verdicts";
 
 /**
  * A verdict tag that explains itself.
@@ -18,6 +19,33 @@ import { type VerdictExplanation } from "@/lib/deal/explainDeal";
  * synthetic mouseenter on tap, so wiring both at once makes the panel open
  * and immediately close again.
  */
+
+/**
+ * What each verdict looks like.
+ *
+ * These lived in `PropertiesPage` and the house's own page did not use them:
+ * it passed one hardcoded muted class to both of its tags, so Works and
+ * Doesn't work were painted identically on the page that exists to tell them
+ * apart. One definition, in the component that consumes it, so the two
+ * screens cannot word or colour a verdict differently.
+ *
+ * `Record<Verdict, string>`, so a new verdict is a compile error rather than
+ * a tag quietly wearing the wrong colour.
+ */
+export const AFFORDABILITY_STYLE: Record<AffordabilityVerdict, string> = {
+  qualifies: "bg-(--color-accent-glow) text-(--color-accent)",
+  tight: "bg-amber-500/10 text-amber-400",
+  does_not_qualify: "bg-red-500/10 text-red-400",
+};
+
+export const DEAL_STYLE: Record<DealVerdict, string> = {
+  works: "bg-(--color-accent-glow) text-(--color-accent)",
+  thin: "bg-amber-500/10 text-amber-400",
+  does_not_work: "bg-red-500/10 text-red-400",
+};
+
+/** Nothing to judge yet: a state, not a verdict, and it says so quietly. */
+export const UNJUDGED_STYLE = "bg-(--color-base) text-(--color-text-secondary)";
 
 const GUTTER = 8;
 const WIDTH = 272;
@@ -38,6 +66,15 @@ interface Props {
    * there would reload the house to move a tab.
    */
   action?: { label: string; href?: string; onClick?: () => void };
+  /**
+   * How loud the tag is.
+   *
+   * `pill` is the original: 10px uppercase, right for a row in a list of
+   * fifteen houses. `answer` is for the house's own page, where this is not
+   * a label on a row — it is the question the page exists to answer, and it
+   * was rendered smaller than the parcel number.
+   */
+  size?: "pill" | "answer";
   testId?: string;
 }
 
@@ -47,6 +84,7 @@ export function VerdictTag({
   explanation,
   breakdownHref,
   action,
+  size = "pill",
   testId,
 }: Props) {
   const router = useRouter();
@@ -134,7 +172,11 @@ export function VerdictTag({
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className={`text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded cursor-help
+        className={`${
+          size === "answer"
+            ? "text-[15px] font-semibold px-2.5 py-1 rounded-(--radius-md)"
+            : "text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
+        } cursor-help
           underline decoration-dotted decoration-from-font underline-offset-2
           focus:outline-none focus-visible:ring-1 focus-visible:ring-(--color-accent) ${toneClassName}`}
       >

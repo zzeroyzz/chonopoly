@@ -5,11 +5,20 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Check, Plus, Pencil, ExternalLink } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
-import { VerdictTag } from "@/components/mortgage/VerdictTag";
+import {
+  VerdictTag,
+  AFFORDABILITY_STYLE,
+  DEAL_STYLE,
+  UNJUDGED_STYLE,
+} from "@/components/mortgage/VerdictTag";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
 import { dollars } from "@/components/mortgage/format";
 import { type ScreenRow } from "@/lib/screen/screenRow";
-import { AFFORDABILITY_LABEL, DEAL_LABEL } from "@/lib/mortgage/verdicts";
+import {
+  AFFORDABILITY_LABEL,
+  DEAL_LABEL,
+  NO_RESALE_PRICE_LABEL,
+} from "@/lib/mortgage/verdicts";
 import { STAGE_LABEL, daysInStage } from "@/lib/crm/stages";
 import { cadenceDueDate } from "@/lib/crm/cadence";
 import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/types";
@@ -320,7 +329,9 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
         affordability: row.affordability.needsProfile
           ? "Set your income"
           : AFFORDABILITY_LABEL[row.affordability.verdict],
-        deal: row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : "No ARV",
+        // Was "No ARV": banned jargon, and a verdict that says neither why
+        // nor what to do about it.
+        deal: row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : NO_RESALE_PRICE_LABEL,
       }
     : null;
 
@@ -437,86 +448,128 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   )}
 
                   {headline && (
-                    <p className="text-[12px] font-(--font-mono) mt-1">
-                      <span className="text-(--color-text-secondary)">
-                        {dollars(headline.price, 0)}
-                      </span>
-                      {headline.walkAway !== null && (
-                        <>
-                          <span className="text-(--color-text-tertiary)"> · </span>
-                          <span className="text-(--color-accent)">
-                            {dollars(headline.walkAway, 0)}
-                          </span>
-                          <span className="text-(--color-text-tertiary)"> walk-away</span>
-                        </>
+                    <div className="mt-3 flex flex-col gap-3">
+                      {/* The price leads. Every other figure here is derived
+                          from it, and it was rendered as a muted aside. */}
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <span className="text-[26px] font-bold leading-none tracking-tight">
+                          {dollars(headline.price, 0)}
+                        </span>
+                        <span className="text-[11px] text-(--color-text-secondary)">asking</span>
+                      </div>
+
+                      {/* Labelled, so the eye never reads past a number to
+                          learn what it was. */}
+                      {(headline.walkAway !== null || headline.trueProfit !== null) && (
+                        <div className="flex flex-wrap gap-x-6 gap-y-2">
+                          {headline.walkAway !== null && (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[10px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
+                                Cheque you leave with
+                              </span>
+                              <span className="text-[16px] font-semibold text-(--color-accent)">
+                                {dollars(headline.walkAway, 0)}
+                              </span>
+                            </div>
+                          )}
+                          {headline.trueProfit !== null && (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[10px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
+                                What you actually made
+                              </span>
+                              <span
+                                className={`text-[16px] font-semibold ${
+                                  headline.trueProfit < 0
+                                    ? "text-(--color-danger)"
+                                    : "text-(--color-text-primary)"
+                                }`}
+                              >
+                                {dollars(headline.trueProfit, 0)}
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       )}
-                      {headline.trueProfit !== null && (
-                        <>
-                          <span className="text-(--color-text-tertiary)"> · </span>
-                          <span
-                            className={
-                              headline.trueProfit < 0
-                                ? "text-(--color-danger)"
-                                : "text-(--color-text-primary)"
-                            }
-                          >
-                            {dollars(headline.trueProfit, 0)}
-                          </span>
-                          <span className="text-(--color-text-tertiary)"> profit</span>
-                        </>
-                      )}
-                    </p>
+                    </div>
                   )}
-                  {/* The same tags as the card, reading the same
-                      explanations, so a verdict cannot be worded one way in
-                      the list and another on the house's own page. */}
+
+                  {/* The two questions this page exists to answer, at the size
+                      of answers and in their own colours. Both tags used to
+                      take one hardcoded muted class, so Works and Doesn't work
+                      were painted identically. */}
                   {headline && row && (
-                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                      <VerdictTag
-                        label={headline.affordability}
-                        toneClassName="bg-(--color-base) text-(--color-text-secondary)"
-                        explanation={row.explanations.afford}
-                        breakdownHref=""
-                        action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
-                        testId="header-verdict-afford"
-                      />
-                      <VerdictTag
-                        label={headline.deal}
-                        toneClassName="bg-(--color-base) text-(--color-text-secondary)"
-                        explanation={row.explanations.deal}
-                        breakdownHref=""
-                        action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
-                        testId="header-verdict-deal"
-                      />
-                      <VerdictTag
-                        label={
-                          row.arv === null
-                            ? "Review comps"
-                            : `ARV ${dollars(row.arv)} · ${row.approvedComps} approved`
-                        }
-                        toneClassName={
-                          row.arv === null
-                            ? "bg-(--color-base) text-(--color-text-tertiary)"
-                            : "bg-(--color-accent-glow) text-(--color-accent)"
-                        }
-                        explanation={{
-                          whatsWrong:
+                    <div className="flex flex-col gap-2 mt-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] text-(--color-text-secondary) w-[108px] shrink-0">
+                          Can we afford it?
+                        </span>
+                        <VerdictTag
+                          label={headline.affordability}
+                          size="answer"
+                          toneClassName={
+                            row.affordability.needsProfile
+                              ? UNJUDGED_STYLE
+                              : AFFORDABILITY_STYLE[row.affordability.verdict]
+                          }
+                          explanation={row.explanations.afford}
+                          breakdownHref=""
+                          action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
+                          testId="header-verdict-afford"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] text-(--color-text-secondary) w-[108px] shrink-0">
+                          Does the deal work?
+                        </span>
+                        <VerdictTag
+                          label={headline.deal}
+                          size="answer"
+                          toneClassName={
+                            row.deal.hasArv ? DEAL_STYLE[row.deal.verdict] : UNJUDGED_STYLE
+                          }
+                          explanation={row.explanations.deal}
+                          breakdownHref=""
+                          action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
+                          testId="header-verdict-deal"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] text-(--color-text-secondary) w-[108px] shrink-0">
+                          Worth fixed up?
+                        </span>
+                        <VerdictTag
+                          label={
                             row.arv === null
-                              ? `No comps approved yet${row.compsToReview > 0 ? `, and ${row.compsToReview} are waiting` : ""}.`
-                              : `Built from ${row.approvedComps} comp${row.approvedComps === 1 ? "" : "s"} you approved.`,
-                          target:
-                            row.compsToReview > 0
-                              ? `${row.compsToReview} comp${row.compsToReview === 1 ? "" : "s"} still to review.`
-                              : "Every comp has been reviewed.",
-                          fix:
+                              ? "Check houses nearby"
+                              : `${dollars(row.arv)} · from ${row.approvedComps} ${row.approvedComps === 1 ? "house" : "houses"}`
+                          }
+                          size="answer"
+                          toneClassName={
                             row.arv === null
-                              ? "Open the ARV tab and mark the comps you would use."
-                              : undefined,
-                        }}
-                        breakdownHref=""
-                        action={{ label: "Review the comps →", onClick: () => setTab("ARV") }}
-                        testId="header-verdict-arv"
-                      />
+                              ? UNJUDGED_STYLE
+                              : "bg-(--color-accent-glow) text-(--color-accent)"
+                          }
+                          explanation={{
+                            whatsWrong:
+                              row.arv === null
+                                ? `No houses approved yet${row.compsToReview > 0 ? `, and ${row.compsToReview} are waiting` : ""}.`
+                                : `Built from ${row.approvedComps} house${row.approvedComps === 1 ? "" : "s"} you approved.`,
+                            target:
+                              row.compsToReview > 0
+                                ? `${row.compsToReview} house${row.compsToReview === 1 ? "" : "s"} still to check.`
+                                : "Every house has been checked.",
+                            fix:
+                              row.arv === null
+                                ? "Open the ARV tab and pick the houses that were fixed up like yours will be."
+                                : undefined,
+                          }}
+                          breakdownHref=""
+                          action={{ label: "Check houses nearby →", onClick: () => setTab("ARV") }}
+                          testId="header-verdict-arv"
+                        />
+                      </div>
                     </div>
                   )}
                 </div>
@@ -603,12 +656,10 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
             {property && (
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 text-[12px]">
                 {[
-                  ["Parcel", property.parcel_number],
-                  ["County", property.county],
-                  ["Type", propertyTypeLabel(property.property_type)],
                   ["Beds / baths", property.beds || property.baths ? `${property.beds ?? "—"} / ${property.baths ?? "—"}` : null],
                   ["Sqft", property.sqft ? property.sqft.toLocaleString() : null],
                   ["Year built", property.year_built],
+                  ["Type", propertyTypeLabel(property.property_type)],
                 ]
                   .filter(([, v]) => v !== null && v !== undefined && v !== "")
                   .map(([label, value]) => (
@@ -618,6 +669,30 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     </div>
                   ))}
               </dl>
+            )}
+
+            {/* Kept, not deleted. A parcel number is the thing you need
+                exactly once and cannot guess, which is a different job from
+                the facts above and does not deserve the same weight. */}
+            {property && (property.parcel_number || property.county) && (
+              <details className="mt-3">
+                <summary className="text-[11px] text-(--color-text-secondary) cursor-pointer min-h-11 flex items-center">
+                  Parcel and county
+                </summary>
+                <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2 text-[12px]">
+                  {[
+                    ["Parcel", property.parcel_number],
+                    ["County", property.county],
+                  ]
+                    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+                    .map(([label, value]) => (
+                      <div key={String(label)}>
+                        <dt className="text-(--color-text-tertiary)">{label}</dt>
+                        <dd className="text-(--color-text-primary)">{String(value)}</dd>
+                      </div>
+                    ))}
+                </dl>
+              </details>
             )}
 
             {property && editingHouse && (

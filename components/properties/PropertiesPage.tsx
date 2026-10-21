@@ -6,14 +6,17 @@ import Link from "next/link";
 import { Home, AlertTriangle, ExternalLink, Star } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
-import { VerdictTag } from "@/components/mortgage/VerdictTag";
+import {
+  VerdictTag,
+  AFFORDABILITY_STYLE,
+  DEAL_STYLE,
+} from "@/components/mortgage/VerdictTag";
 import { useCrmContext } from "@/components/crm/useCrmContext";
 import { dollars } from "@/components/mortgage/format";
 import {
   AFFORDABILITY_LABEL,
   DEAL_LABEL,
-  type AffordabilityVerdict,
-  type DealVerdict,
+  NO_RESALE_PRICE_LABEL,
 } from "@/lib/mortgage/verdicts";
 import { type ScreenRow } from "@/lib/screen/screenRow";
 
@@ -29,18 +32,6 @@ import { type ScreenRow } from "@/lib/screen/screenRow";
  * scroll sideways, which hides the verdicts, or shrink past legibility. Each
  * card leads with the two verdicts, because they are the reason to look.
  */
-
-const AFFORDABILITY_STYLE: Record<AffordabilityVerdict, string> = {
-  qualifies: "bg-(--color-accent-glow) text-(--color-accent)",
-  tight: "bg-amber-500/10 text-amber-400",
-  does_not_qualify: "bg-red-500/10 text-red-400",
-};
-
-const DEAL_STYLE: Record<DealVerdict, string> = {
-  works: "bg-(--color-accent-glow) text-(--color-accent)",
-  thin: "bg-amber-500/10 text-amber-400",
-  does_not_work: "bg-red-500/10 text-red-400",
-};
 
 /**
  * The same four steps the property page shows, in the same order, so the card
@@ -476,7 +467,7 @@ function ScreenCard({
         />
 
         <VerdictTag
-          label={row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : "No ARV"}
+          label={row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : NO_RESALE_PRICE_LABEL}
           toneClassName={DEAL_STYLE[row.deal.verdict]}
           explanation={row.explanations.deal}
           breakdownHref={`${href}?step=deal`}

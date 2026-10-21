@@ -27,6 +27,17 @@ export const AFFORDABILITY_LABEL: Record<AffordabilityVerdict, string> = {
   does_not_qualify: "Doesn't qualify",
 };
 
+/**
+ * What the deal verdict reads when there is no resale price to judge against.
+ *
+ * One definition because it was written out three times — the house page, the
+ * properties list and the compare table — as the literal "No ARV". That is
+ * banned from the interface twice over: ARV is jargon, and a verdict has to
+ * say what to do about itself. Three copies also meant three places to word
+ * the same answer differently, which the tag's own rule forbids.
+ */
+export const NO_RESALE_PRICE_LABEL = "No resale price yet";
+
 export const DEAL_LABEL: Record<DealVerdict, string> = {
   works: "Works",
   thin: "Thin",

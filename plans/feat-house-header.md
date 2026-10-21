@@ -181,6 +181,49 @@ screen and the PR must say so.
   at 390px** — six faults above are visual and the last two branches both
   shipped layout bugs that only a screenshot caught.
 
+## Drift from the approved plan — 2026-10-21
+
+Two departures, both recorded rather than quietly taken.
+
+**1. Three more files than the plan named, for one reason.** `"No ARV"` was
+written out as a literal in **three** places: the house page, `PropertiesPage`
+`:469` and `ComparePage` `:71`. Changing only the one in scope would have left
+three screens wording the same verdict three ways, which is what `VerdictTag`'s
+own doc comment forbids. So there is now a single `NO_RESALE_PRICE_LABEL` in
+`lib/mortgage/verdicts.ts` — a file the plan called read-only — and all three
+read it.
+
+That also means `tests/24-screen.spec.ts:147` **does** break, as the plan
+predicted, but via the list rather than the header: rev 2 said the header would
+break it, and the header does not use that testid. Updated, with the reason in
+a comment above the assertion.
+
+**2. The tone maps already existed.** The plan proposed writing
+`Record<AffordabilityVerdict, string>` and `Record<DealVerdict, string>`. They
+were already in `PropertiesPage` and correct; the house page simply never used
+them. They moved to `VerdictTag` — the component both pages import — rather
+than being written a second time.
+
+## Found and NOT fixed — needs its own decision
+
+`lib/deal/explainDeal.ts` is full of the same banned words, in the popover this
+change makes more prominent:
+
+| Line | Text |
+|---|---|
+| 167 | "A resale price worked out from **comps** that have been reviewed." |
+| 168 | "Add **comps** on the **ARV** step." |
+| 229 | "The $X resale price uses **comps** you haven't reviewed." |
+| 260 | "Add **comps** on the **ARV** step and **tick** the ones that have been renovated." |
+
+Line 260 is worse than jargon: **the tick stopped existing** when the review
+control replaced it, so it tells the owner to use something that is gone — the
+same defect found in `fixerUpperNote` last branch.
+
+Not touched. `explainDeal.ts` is not in this plan's scope, the fix is a dozen
+strings rather than a mechanical rename, and this branch has already drifted
+twice. It wants its own pass.
+
 ## Out of scope
 
 - The Deal tab's verdict levers. Still unbuilt, still the biggest gap.

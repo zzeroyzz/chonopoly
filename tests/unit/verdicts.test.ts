@@ -1,6 +1,14 @@
 import {
+  AFFORDABILITY_STYLE,
+  DEAL_STYLE,
+  UNJUDGED_STYLE,
+} from "@/components/mortgage/VerdictTag";
+import {
   assessAffordability,
   assessDeal,
+  NO_RESALE_PRICE_LABEL,
+  type AffordabilityVerdict,
+  type DealVerdict,
   AFFORDABILITY_LABEL,
   DEAL_LABEL,
 } from "@/lib/mortgage/verdicts";
@@ -331,5 +339,42 @@ describe("labels", () => {
   it("reads as plain English", () => {
     expect(AFFORDABILITY_LABEL.does_not_qualify).toBe("Doesn't qualify");
     expect(DEAL_LABEL.does_not_work).toBe("Doesn't work");
+  });
+});
+
+describe("what a verdict looks like", () => {
+  /**
+   * The house's own page passed one hardcoded muted class to both of its
+   * verdict tags, so Works and Doesn't work were painted identically on the
+   * page that exists to tell them apart. These maps were already right; they
+   * were just defined in the properties list and not used anywhere else.
+   */
+  it("gives every affordability verdict its own ink", () => {
+    const verdicts: AffordabilityVerdict[] = ["qualifies", "tight", "does_not_qualify"];
+    const inks = verdicts.map((v) => AFFORDABILITY_STYLE[v]);
+
+    expect(inks.every((ink) => ink.length > 0)).toBe(true);
+    expect(new Set(inks).size).toBe(verdicts.length);
+  });
+
+  it("gives every deal verdict its own ink", () => {
+    const verdicts: DealVerdict[] = ["works", "thin", "does_not_work"];
+    const inks = verdicts.map((v) => DEAL_STYLE[v]);
+
+    expect(inks.every((ink) => ink.length > 0)).toBe(true);
+    expect(new Set(inks).size).toBe(verdicts.length);
+  });
+
+  /** A house with nothing to judge is a state, not a failing verdict. */
+  it("keeps the unjudged ink apart from the three verdicts", () => {
+    expect(UNJUDGED_STYLE).not.toBe(DEAL_STYLE.does_not_work);
+    expect(UNJUDGED_STYLE).not.toBe(DEAL_STYLE.works);
+  });
+
+  it("says what to do instead of naming the thing that is missing", () => {
+    // "No ARV" was jargon twice over: the word, and a verdict that said
+    // neither why nor what to do.
+    expect(NO_RESALE_PRICE_LABEL).not.toMatch(/ARV/i);
+    expect(NO_RESALE_PRICE_LABEL).toBe("No resale price yet");
   });
 });
