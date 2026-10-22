@@ -414,22 +414,64 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 grouped and the three uppercase questions shouted over the
                 answers they labelled. Three sections now, two rules. */}
             <div className="rounded-(--radius-xl) border border-(--color-border-default) bg-(--color-elevated) overflow-hidden">
-              {property?.photo_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={property.photo_url}
-                  alt=""
-                  data-testid="property-photo"
-                  className="w-full h-44 sm:h-56 object-cover"
-                />
-              ) : (
-                /* No photo is a fact about the house, not a hole in the page. */
-                <div className="h-16 bg-(--color-surface) border-b border-(--color-border-subtle) flex items-center px-4">
-                  <span className="text-[11px] text-(--color-text-secondary)">
-                    No photo yet — add one when you edit the house.
-                  </span>
-                </div>
-              )}
+              {/* The two things you do to a house sit on its corners, the way
+                  the save and share buttons do on a listing card. Both carry
+                  their own dark ground so they stay legible over a bright
+                  photo as well as over the empty band. */}
+              <div className="relative">
+                {property?.photo_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={property.photo_url}
+                    alt=""
+                    data-testid="property-photo"
+                    className="w-full h-44 sm:h-56 object-cover"
+                  />
+                ) : (
+                  /* No photo is a fact about the house, not a hole in the page. */
+                  <div className="h-16 bg-(--color-surface) border-b border-(--color-border-subtle) flex items-center px-4">
+                    <span className="text-[11px] text-(--color-text-secondary)">
+                      No photo yet — add one when you edit the house.
+                    </span>
+                  </div>
+                )}
+
+                {property && (
+                  <button
+                    type="button"
+                    onClick={() => void toggleFinalist()}
+                    disabled={finalistBusy}
+                    data-testid="finalist-toggle"
+                    aria-pressed={isFinalist}
+                    aria-label={isFinalist ? "Remove from finalists" : "Mark as a finalist"}
+                    className={`absolute left-3 top-3 flex items-center gap-1.5 h-9 px-3
+                      rounded-(--radius-pill) border backdrop-blur text-[12px] font-medium
+                      disabled:opacity-40 transition-colors ${
+                        isFinalist
+                          ? "bg-(--color-accent) border-transparent text-(--color-base)"
+                          : "bg-black/60 border-white/25 text-white"
+                      }`}
+                  >
+                    <Star size={13} fill={isFinalist ? "currentColor" : "none"} />
+                    Finalist
+                  </button>
+                )}
+
+                {property && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingHouse((v) => !v)}
+                    data-testid="edit-house-toggle"
+                    aria-label={editingHouse ? "Close the house form" : "Edit this house"}
+                    className="absolute right-3 top-3 flex items-center gap-1.5 h-9 px-3
+                      rounded-(--radius-pill) bg-black/60 border border-white/25 backdrop-blur
+                      text-[12px] font-medium text-white transition-colors"
+                  >
+                    <Pencil size={13} />
+                    {editingHouse ? "Close" : "Edit"}
+                  </button>
+                )}
+              </div>
 
               <div className="p-4 flex flex-col gap-4">
                 {/* 1. What it is. */}
@@ -603,98 +645,63 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   </div>
                 )}
 
-                {/* 3. The controls that belong to this house. One quiet row. */}
-                <div className="flex flex-wrap items-center gap-2 border-t border-(--color-border-subtle) pt-3">
-                  {detail.entry ? (
-                    <>
-                      <div className="relative">
-                        <button
-                          type="button"
-                          data-testid="detail-stage-badge"
-                          disabled={busy}
-                          onClick={() => setMenuOpen((v) => !v)}
-                          className="text-[12px] px-2.5 py-1 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors disabled:opacity-50"
-                        >
-                          {STAGE_LABEL[detail.entry.stage]}
-                        </button>
-                        {menuOpen && detail.entry && (
-                          <StageMenu
-                            current={detail.entry.stage}
-                            onPick={(s: Stage) =>
-                              void post("/api/crm/stage", {
-                                entry_id: detail.entry?.id,
-                                to_stage: s,
-                              })
-                            }
-                            onClose={() => setMenuOpen(false)}
-                          />
-                        )}
-                      </div>
-                      <span className="text-[11px] text-(--color-text-tertiary)">
-                        {daysInStage(detail.entry.stage_since)}d
+                {/* 3. Where it is in the pipeline, and the number you need
+                    exactly once. Finalist and Edit moved onto the photo's
+                    corners, where the things you do to a house belong. */}
+                <div className="flex flex-col gap-2 border-t border-(--color-border-subtle) pt-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {detail.entry ? (
+                      <>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            data-testid="detail-stage-badge"
+                            disabled={busy}
+                            onClick={() => setMenuOpen((v) => !v)}
+                            className="text-[12px] px-2.5 py-1 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors disabled:opacity-50"
+                          >
+                            {STAGE_LABEL[detail.entry.stage]}
+                          </button>
+                          {menuOpen && detail.entry && (
+                            <StageMenu
+                              current={detail.entry.stage}
+                              onPick={(s: Stage) =>
+                                void post("/api/crm/stage", {
+                                  entry_id: detail.entry?.id,
+                                  to_stage: s,
+                                })
+                              }
+                              onClose={() => setMenuOpen(false)}
+                            />
+                          )}
+                        </div>
+                        {/* Was "3d", which says nothing on its own. */}
+                        <span className="text-[11px] text-(--color-text-secondary)">
+                          {daysInStage(detail.entry.stage_since)} days in this stage
+                        </span>
+                      </>
+                    ) : (
+                      <span
+                        data-testid="not-on-pipeline"
+                        className="text-[11px] text-(--color-text-tertiary)"
+                      >
+                        Not on the pipeline — screening only.
                       </span>
-                    </>
-                  ) : (
-                    <span
-                      data-testid="not-on-pipeline"
-                      className="text-[11px] text-(--color-text-tertiary)"
-                    >
-                      Not on the pipeline — screening only.
-                    </span>
-                  )}
+                    )}
+                  </div>
 
-                  {property && (
-                    <button
-                      type="button"
-                      onClick={() => void toggleFinalist()}
-                      disabled={finalistBusy}
-                      data-testid="finalist-toggle"
-                      aria-pressed={isFinalist}
-                      aria-label={isFinalist ? "Remove from finalists" : "Mark as a finalist"}
-                      className={`flex items-center gap-1 h-8 px-2.5 rounded-(--radius-pill) border text-[12px] font-medium disabled:opacity-40 ${
-                        isFinalist
-                          ? "border-(--color-accent) text-(--color-accent)"
-                          : "border-(--color-border-default) text-(--color-text-secondary)"
-                      }`}
-                    >
-                      <Star size={12} fill={isFinalist ? "currentColor" : "none"} />
-                      {isFinalist ? "Finalist" : "Finalist"}
-                    </button>
-                  )}
-
-                  {property && (
-                    <button
-                      type="button"
-                      onClick={() => setEditingHouse((v) => !v)}
-                      data-testid="edit-house-toggle"
-                      className="flex items-center gap-1 h-8 px-2.5 rounded-(--radius-pill) border border-(--color-border-default) text-[12px] font-medium text-(--color-text-secondary)"
-                    >
-                      <Pencil size={12} />
-                      {editingHouse ? "Close" : "Edit"}
-                    </button>
-                  )}
-
-                  {/* Kept, not deleted: a parcel number is the thing you need
-                      exactly once and cannot guess. */}
+                  {/* On screen, not behind a disclosure. A parcel number is
+                      the one thing here you cannot guess or look up quickly,
+                      and it was costing a tap to see. */}
                   {property && (property.parcel_number || property.county) && (
-                    <details className="w-full">
-                      <summary className="text-[11px] text-(--color-text-tertiary) cursor-pointer min-h-11 flex items-center">
-                        Parcel and county
-                      </summary>
-                      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-1 text-[12px]">
-                        {[
-                          ["Parcel", property.parcel_number],
-                          ["County", property.county],
-                        ]
-                          .filter(([, v]) => v !== null && v !== undefined && v !== "")
-                          .map(([label, value]) => (
-                            <div key={String(label)}>
-                              <dt className="text-(--color-text-tertiary)">{label}</dt>
-                              <dd className="text-(--color-text-primary)">{String(value)}</dd>
-                            </div>
-                          ))}
-                      </dl>
-                    </details>
+                    <p className="text-[11px] text-(--color-text-secondary)">
+                      {[
+                        property.parcel_number ? `Parcel ${property.parcel_number}` : null,
+                        property.county ? `${property.county} County` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
                   )}
                 </div>
               </div>
