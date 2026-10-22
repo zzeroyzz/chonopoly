@@ -62,8 +62,9 @@ rewritten in place.
 | File | Change |
 |---|---|
 | `components/shell/sections.tsx` | Pipeline renamed; Settings removed from `NAV_DESTINATIONS` |
-| `components/ProfileDropdown.tsx` | rewritten in place: tokens, no self-positioning, the real destinations |
-| `components/shell/MobileTopBar.tsx` | renders the dropdown instead of calling back |
+| `app/settings/account/page.tsx` | grows into the profile screen: stats row, section rows |
+| `components/settings/SettingsShell.tsx` | its nav list becomes those rows |
+| `components/shell/MobileTopBar.tsx` | avatar navigates, stops calling back |
 | `components/shell/ShellSidebar.tsx` | same, for the desktop sidebar |
 | `components/shell/AppShell.tsx` | `onProfileClick` becomes optional; the shell owns the menu |
 | `components/crm/PipelinePage.tsx` | the heading, and the missing plain sentence |
@@ -161,44 +162,58 @@ houses and what they have. It is also a feature, not a label:
 route, its page and — for now — its name. Renaming it to something that is
 about to be replaced is churn.
 
-## What the menu holds
+## Not a menu — a profile screen
 
-The owner's structure: the avatar takes the Settings slot, and everything
-about *you* lives behind it — your financial settings (debt, salary), the
-admin settings, and your team.
+The owner's references are two profile screens, not dropdowns: an identity
+header, a row of stats, then grouped sections whose rows carry an icon, a
+title, **a one-line subtitle** and a chevron.
+
+The subtitle is the part that matters here. It dissolves the naming problem
+this branch started with: "Defaults" stops needing a better name the moment
+the row underneath it reads *"Income, debts and the loan numbers every house
+is run against."* A label has to carry the whole meaning; a label with a
+subtitle does not.
+
+**So there is no dropdown.** The avatar in the bar navigates to a screen.
+
+### It is mostly built already
+
+`app/settings/account/page.tsx` is 213 lines and already holds the entire
+identity header from the reference: avatar, name as an `<h1>`, an ADMIN/USER
+role badge, the email, a username field that saves, and sign out. This grows
+that page rather than adding another — §Code Cleanliness, search before you
+write.
 
 ```
-[ your photo ]
-  ──────────────────────────────
-  Your money      /settings/defaults       income, debts, loan defaults
-  Your team       /team                    NOT BUILT — see below
-  ──────────────────────────────
-  Integrations    /settings/integrations
-  Account         /settings/account
-  ──────────────────────────────
-  Sign out
+Profile
+┌──────────────────────────────────────┐
+│  ( photo ✎ )  Kato Hernandez         │   ← exists today
+│               kato@…        [ADMIN]  │
+├──────────────────────────────────────┤
+│    12          3            1        │   ← new, see the open question
+│  Houses    Finalists   Under contract│
+├──────────────────────────────────────┤
+│  YOUR NUMBERS                        │
+│  ⊞  Your money                     › │   /settings/defaults
+│     Income, debts and the loan       │
+│     numbers every house is run against│
+├──────────────────────────────────────┤
+│  THE APP                             │
+│  ⚡ Integrations                    › │   /settings/integrations
+│     RentCast, and what it costs you  │
+├──────────────────────────────────────┤
+│  ⏻  Sign out                         │   exists today
+└──────────────────────────────────────┘
 ```
 
-Two things this turned up.
+`SettingsShell`'s sidebar list (Defaults, Integrations, Account) becomes these
+rows. One definition of where the settings are, not two.
 
-**"Defaults" is the same defect as "Pipeline".** `/settings/defaults` is where
-income and the loan numbers live — `DefaultsForm` has "Set income", down
-payment, rate, term, DPA — but it is named for what it is to the code. §Writing
-bans exactly this. The menu says **Your money**; the route does not move.
+### ProfileDropdown
 
-**The team API already exists and the screens do not.** `app/api/teams/route.ts`
-(GET, POST), `/api/teams/mine`, and invite accept / decline are all there.
-`find app -path '*team*' -name page.tsx` returns nothing. So teammates is UI
-over working routes, not a feature from scratch.
-
-**But a menu item pointing at a page that does not exist is worse than a
-missing one** — `sections.tsx` says so itself, about cash flow and markets:
-
-> A nav item pointing at a 404 is worse than a missing one, which is why cash
-> flow and markets are absent rather than present and disabled.
-
-So **Your team is left out of this branch** and gets its own, once there is a
-page to open. Everything else in the menu points at a page that exists today.
+With no dropdown, `components/ProfileDropdown.tsx` stays dead — it has no
+callers today either. It is **not** deleted in this branch without the owner's
+word: deleting files is Tier 2. Flagged for a decision, not acted on.
 
 ## Out of scope
 
