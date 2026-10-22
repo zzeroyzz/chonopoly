@@ -832,7 +832,7 @@ export function CompsPanel({
           </p>
           <ul
             data-testid="comp-list"
-            className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto pr-1"
+            className="flex flex-col gap-2"
           >
             {visible.map((comp) => (
               <CompRow
@@ -862,10 +862,12 @@ export function CompsPanel({
         />
       ) : (
         /* Checked is a scanning view, not a deciding one, so it stays a list.
-           A ceiling on it keeps the ARV card on screen through eighty comps. */
+           It used to cap its own height to keep the ARV card on screen; the
+           sheet owns the scrolling now, and a scroll area inside a scrolling
+           sheet is a thumb swiping the list while the sheet refuses to move. */
         <ul
           data-testid="comp-list"
-          className="flex flex-col gap-2 max-h-[60vh] overflow-y-auto pr-1"
+          className="flex flex-col gap-2"
         >
           {visible.map((comp) => (
             <CompRow

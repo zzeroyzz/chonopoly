@@ -58,7 +58,6 @@ export type CompLinkSource = keyof ReturnType<typeof searchUrls>;
 
 const SOURCES: { id: CompLinkSource; label: string; title: string }[] = [
   { id: "zillow", label: "Zillow", title: "Photo history, usually the best" },
-  { id: "redfin", label: "Redfin", title: "Often keeps photos Zillow dropped" },
   { id: "realtor", label: "Realtor", title: "Holds listing photos longest" },
   {
     id: "records",

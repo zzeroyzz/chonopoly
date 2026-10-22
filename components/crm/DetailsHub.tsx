@@ -3,6 +3,12 @@
 import { ArrowRight } from "lucide-react";
 import { dollars } from "@/components/mortgage/format";
 import { type ScreenRow } from "@/lib/screen/screenRow";
+import {
+  AFFORDABILITY_LABEL,
+  DEAL_LABEL,
+  type AffordabilityVerdict,
+  type DealVerdict,
+} from "@/lib/mortgage/verdicts";
 import { type Task } from "@/lib/crm/types";
 import { type ResolvedRehab } from "@/lib/rehab/resolveRehab";
 import { Skeleton } from "@/components/ui/Skeleton";
@@ -27,7 +33,29 @@ export interface TileCopy {
   state: string;
   /** What to do next. Always present — a tile with nothing to do is finished, and says so. */
   next: string;
+  /** The verdict's colour, on the answer itself. Absent means say it plainly. */
+  tone?: string;
 }
+
+/**
+ * A verdict's colour, as text rather than as a chip.
+ *
+ * The chip styles in VerdictTag carry a background and a border because they
+ * sit on a card. Here the tile is the card, so only the word is coloured.
+ * Written as Record<Verdict, string> so a new verdict fails the build instead
+ * of quietly rendering in the default colour.
+ */
+const AFFORD_TONE: Record<AffordabilityVerdict, string> = {
+  qualifies: "text-(--color-accent)",
+  tight: "text-amber-400",
+  does_not_qualify: "text-red-400",
+};
+
+const DEAL_TONE: Record<DealVerdict, string> = {
+  works: "text-(--color-accent)",
+  thin: "text-amber-400",
+  does_not_work: "text-red-400",
+};
 
 /** Whole dollars. No figure on this screen is decided by cents. */
 const money = (n: number) => dollars(n, 0);
@@ -53,6 +81,25 @@ export function arvTile(row: ScreenRow): TileCopy {
   };
 }
 
+export function affordTile(row: ScreenRow): TileCopy {
+  const title = "Can we afford it?";
+
+  // No income on file is not a "no" — there is simply nothing to judge yet.
+  if (row.affordability.needsProfile) {
+    return { title, state: "Nothing to judge yet", next: "Add your income and debts first" };
+  }
+  // Hard money and DSCR are underwritten on the house, not on you.
+  if (!row.affordability.ratiosApply) {
+    return { title, state: "Judged on the house", next: row.affordability.summary };
+  }
+  return {
+    title,
+    state: AFFORDABILITY_LABEL[row.affordability.verdict],
+    next: row.affordability.summary,
+    tone: AFFORD_TONE[row.affordability.verdict],
+  };
+}
+
 export function numbersTile(row: ScreenRow): TileCopy {
   return {
     title: "The numbers",
@@ -62,21 +109,21 @@ export function numbersTile(row: ScreenRow): TileCopy {
 }
 
 export function dealTile(row: ScreenRow): TileCopy {
+  const title = "Does the deal work?";
+
   if (!row.deal.hasArv || row.trueProfit === null) {
-    return {
-      title: "The deal",
-      state: "No resale price yet",
-      next: "Check the houses nearby first",
-    };
+    return { title, state: "No resale price yet", next: "Check the houses nearby first" };
   }
   return {
-    title: "The deal",
-    state: `${money(row.trueProfit)} profit`,
-    // "Margin" alone means nothing. Say what the percentage is a percentage of.
+    title,
+    state: DEAL_LABEL[row.deal.verdict],
+    // The answer is the verdict; the figures are why. "Margin" alone means
+    // nothing, so say what the percentage is a percentage of.
     next:
       row.marginPct === null
-        ? "What you'd make on this one"
-        : `${row.marginPct.toFixed(0)}% of the resale price`,
+        ? `${money(row.trueProfit)} profit`
+        : `${money(row.trueProfit)} profit · ${row.marginPct.toFixed(0)}% of the resale price`,
+    tone: DEAL_TONE[row.deal.verdict],
   };
 }
 
@@ -130,29 +177,22 @@ export function activityTile(tasks: Task[], now: Date = new Date()): TileCopy {
  * The whole thing is the target, not the arrow: a 44px arrow on a card this
  * size is a smaller thing to hit than the card itself.
  */
-function Tile({
-  copy,
-  onOpen,
-  testId,
-  span = false,
-}: {
-  copy: TileCopy;
-  onOpen: () => void;
-  testId: string;
-  /** Take the whole row, so an odd tile count leaves no hole beside the last one. */
-  span?: boolean;
-}) {
+function Tile({ copy, onOpen, testId }: { copy: TileCopy; onOpen: () => void; testId: string }) {
   return (
     <button
       type="button"
       onClick={onOpen}
       data-testid={testId}
-      className={`flex flex-col items-start gap-1 min-h-11 p-3 text-left rounded-(--radius-lg)
+      className="flex flex-col items-start gap-1 min-h-11 p-3 text-left rounded-(--radius-lg)
         border border-(--color-border-default) bg-(--color-surface)
-        hover:border-(--color-border-strong) transition-colors ${span ? "col-span-2" : ""}`}
+        hover:border-(--color-border-strong) transition-colors"
     >
       <span className="text-[11px] text-(--color-text-secondary)">{copy.title}</span>
-      <span className="text-[15px] font-semibold text-(--color-text-primary) leading-snug">
+      <span
+        className={`text-[15px] font-semibold leading-snug ${
+          copy.tone ?? "text-(--color-text-primary)"
+        }`}
+      >
         {copy.state}
       </span>
       <span className="flex items-center gap-1 text-[11px] text-(--color-text-secondary)">
@@ -188,19 +228,11 @@ export function DetailsHub({
   tasks: Task[];
   onOpenTab: (tab: "ARV" | "Numbers" | "Deal" | "Rehab" | "Activity") => void;
 }) {
-  /**
-   * Whether the last tile takes the whole row, which is a counting question.
-   *
-   * Five single tiles in two columns leave the fifth alone beside a hole, so
-   * it spans. On a failed screen request the count changes — one full-width
-   * message, then work and activity — and those two pair off, so it does not.
-   */
-  const screenFailed = screenLoaded && row === null;
-
   return (
     <div data-testid="details-hub" className="grid grid-cols-2 gap-2 mt-4">
       {!screenLoaded ? (
         <>
+          <TileSkeleton />
           <TileSkeleton />
           <TileSkeleton />
           <TileSkeleton />
@@ -225,9 +257,14 @@ export function DetailsHub({
         </button>
       ) : (
         <>
+          <Tile copy={affordTile(row)} onOpen={() => onOpenTab("Deal")} testId="hub-tile-afford" />
+          <Tile
+            copy={dealTile(row)}
+            onOpen={() => onOpenTab(row.deal.hasArv ? "Deal" : "ARV")}
+            testId="hub-tile-deal"
+          />
           <Tile copy={arvTile(row)} onOpen={() => onOpenTab("ARV")} testId="hub-tile-arv" />
           <Tile copy={numbersTile(row)} onOpen={() => onOpenTab("Numbers")} testId="hub-tile-numbers" />
-          <Tile copy={dealTile(row)} onOpen={() => onOpenTab("Deal")} testId="hub-tile-deal" />
         </>
       )}
 
@@ -237,7 +274,6 @@ export function DetailsHub({
         copy={activityTile(tasks)}
         onOpen={() => onOpenTab("Activity")}
         testId="hub-tile-activity"
-        span={!screenFailed}
       />
     </div>
   );

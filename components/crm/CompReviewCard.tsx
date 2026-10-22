@@ -259,7 +259,7 @@ export function CompReviewCard({
               rounded-(--radius-pill) bg-(--color-accent) text-(--color-base)
               text-[13px] font-semibold"
           >
-            Was it fixed up like yours will be?
+            Status
             <ChevronUp size={14} className="shrink-0" />
           </button>
           <button

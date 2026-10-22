@@ -334,3 +334,69 @@ Two things are open and neither is mine to settle:
 2. The new dependency. `leaflet` + `react-leaflet` with CartoDB dark tiles is
    the recommendation: no key, no billing, and it does not punch a white hole
    in a dark page. It needs its own word under Tier 2.
+
+## Rev 4 — 2026-10-22, written during the build
+
+Stage 1 is built. Five things went differently from rev 3, each from
+something found on the screen rather than in the plan.
+
+### 1. The page never scrolled in its own container — AppShell had to change
+
+Rev 2's self-review said the page "already scrolls in its own container" and
+read that off the class list. Measured, it was false:
+
+```
+html   clientHeight 812   scrollHeight 1056   ← the DOCUMENT scrolled
+container  clientH 1000       scrollH 1000    ← and this never did
+```
+
+`AppShell` was `min-h-screen`, so the shell grew with its content, `<main>`
+grew, and every page's own `overflow-y-auto` container was stretched to fit
+instead of being capped. A `sticky` inside it had a scroll box that could not
+scroll, so **both the hero and the tab bar were inert** — the layout looked
+right and nothing stayed put.
+
+`components/shell/AppShell.tsx` is **not in rev 3's scope table.** It was
+changed anyway because there is no fix on this page alone: the clipping
+ancestor is `<main>`, which AppShell owns. One word, `min-h-screen` → `h-dvh`.
+All ten pages that render inside AppShell already carry their own
+`overflow-y-auto`, which is what they were written for, and the full Playwright
+suite passed after the change: **131 passed, 0 failed.**
+
+### 2. The verdicts became tiles
+
+"Can we afford it?" and "Does the deal work?" were a label-and-chip row sitting
+above the tab bar. They are the two questions the page exists to answer and
+they read as leftovers. They are now the first two tiles of the hub, answered
+in words — "Tight", "No resale price yet" — in the verdict's own colour, with
+the reason on the third line where it is read rather than behind a tap.
+
+`VerdictTag`'s explanation popover is gone from this page as a result. The
+reason it carried is now on the tile face, which is the better place for it.
+Walk-away cash left with the row; it is on the Deal tab, which the tile opens.
+
+### 3. The parcel number moved into the hero
+
+Asked for directly: it belongs with what the house *is*, not under the
+verdicts.
+
+### 4. Finalist, Edit and Zillow are icons
+
+Three word-pills across a photograph competed with the house. All three are
+36px circles now, with `aria-label` and `title` carrying the words. Zillow is
+the external-link icon, **not Zillow's logo** — that is their trademark and
+this repo does not hold the asset.
+
+### 5. The ARV card is NOT sticky
+
+Rev 3 said the caps come off and the card goes sticky in their place. The caps
+are off and the nested scrolling is gone — measured, zero scroll areas left
+inside the sheet. The sticky card was not built: it is a tall block (value,
+prompt, plain line, basis, nearby, counted-twice, warnings) and pinning it at
+390px would spend most of the screen holding one figure. The figure is at the
+top of the tab and in the hub tile, so scrolling back to it is cheap.
+
+**Open:** the hero's `sticky top-0` pins flush now only because the scroll
+container's `py-4` became `pb-24` with the padding moved onto Back. A sticky
+element pins below its scrollport's top padding, which left a 16px strip of
+scrolling content above the tab bar.

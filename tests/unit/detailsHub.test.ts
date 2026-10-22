@@ -1,4 +1,5 @@
 import {
+  affordTile,
   arvTile,
   numbersTile,
   dealTile,
@@ -111,19 +112,50 @@ describe("what each tile says", () => {
     expect(copy.next).toBe("Check the houses nearby first");
   });
 
-  /** "Margin" alone means nothing. Say what the percentage is a percentage of. */
-  it("says what the percentage is a percentage of", () => {
+  /**
+   * The tile answers the question it asks. "$42,180 profit" is a figure, not
+   * an answer to "does the deal work?" — the verdict is, and the figures are
+   * the reason. "Margin" alone means nothing, so say what it is a percentage of.
+   */
+  it("answers the question, with the figures as the reason", () => {
     const copy = dealTile(
       row({
         arv: 318_500,
         trueProfit: 42_180,
         marginPct: 13.2,
-        deal: { ...row().deal, hasArv: true },
+        deal: { ...row().deal, hasArv: true, verdict: "thin" },
       })
     );
 
-    expect(copy.state).toBe("$42,180 profit");
-    expect(copy.next).toBe("13% of the resale price");
+    expect(copy.title).toBe("Does the deal work?");
+    expect(copy.state).toBe("Thin");
+    expect(copy.next).toBe("$42,180 profit · 13% of the resale price");
+    expect(copy.tone).toBe("text-amber-400");
+  });
+
+  it("says the verdict in its own colour", () => {
+    const copy = affordTile(row());
+
+    expect(copy.title).toBe("Can we afford it?");
+    expect(copy.state).toBe("Tight");
+    expect(copy.next).toBe("$1,915 left after closing");
+    expect(copy.tone).toBe("text-amber-400");
+  });
+
+  /** No income on file is not a "no" — there is nothing to judge against. */
+  it("does not call a missing profile a failure", () => {
+    const copy = affordTile(row({ affordability: { ...row().affordability, needsProfile: true } }));
+
+    expect(copy.state).toBe("Nothing to judge yet");
+    expect(copy.next).toBe("Add your income and debts first");
+    expect(copy.tone).toBeUndefined();
+  });
+
+  /** Hard money and DSCR are underwritten on the house, not on you. */
+  it("says when the house is what was judged", () => {
+    const copy = affordTile(row({ affordability: { ...row().affordability, ratiosApply: false } }));
+
+    expect(copy.state).toBe("Judged on the house");
   });
 
   /** A budget is a guess you set; an estimate is one made from the house. */
@@ -202,6 +234,8 @@ describe("what each tile says", () => {
     const rehab = { total: 0, source: "budget" as const, label: "Budget only", budgetOnly: true };
 
     for (const copy of [
+      affordTile(row()),
+      affordTile(row({ affordability: { ...row().affordability, needsProfile: true } })),
       arvTile(row()),
       arvTile(row({ arv: 318_500, approvedComps: 1 })),
       numbersTile(row()),
