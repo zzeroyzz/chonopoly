@@ -103,6 +103,9 @@ below rather than something to decide while building.
 | `components/crm/AddCompanyForm.tsx` | **new** — the create flow that does not exist |
 | `app/(shell)/companies/*` | **new** — the routes |
 | `components/shell/sections.tsx` | the second slot becomes Companies |
+| `app/(shell)/pipeline/**` | **deleted** — three routes |
+| `components/crm/{PipelinePage,DashboardPage,MyTasksPage}.tsx` | **deleted** |
+| `components/properties/AddPropertyPage.tsx` | carries a company through, so a portfolio house is added the same way |
 | `tests/unit/companies.test.ts` | **new** — wording and derivations |
 | `tests/28-companies.spec.ts` | **new** — one journey |
 
@@ -150,45 +153,51 @@ looked at at 390px.
 Note: `tests/23-comps.spec.ts` cannot be run alone — 13 failures in isolation
 on clean `main`, 0 in a full run. Not a regression.
 
-## Open questions — for the owner
+## Decided by the owner, 2026-10-22
 
-**1. What happens to the stage pipeline?** Removing the tab orphans three
-working screens:
+**Pipeline is removed.** Not folded, not kept behind a link — removed. The
+owner: *"I want what I said and that is for pipeline to be removed.. it's not
+useful for me and I want the tab changed to company crm."*
 
-- `/pipeline` — leads grouped by stage (New lead → Under contract)
-- `/pipeline/dashboard` — stage counts, and the "nobody is chasing this one"
-  defect list
-- `/pipeline/tasks` — your open tasks across every house
+Three screens and their routes go: `/pipeline` (stages), `/pipeline/dashboard`
+(stage counts and the no-follow-up list) and `/pipeline/tasks` (open tasks
+across every house), with `PipelinePage`, `DashboardPage` and `MyTasksPage`.
 
-The stages themselves are safe: they live on the house, on its Activity tab.
-But those three screens are the only place the *cross-house* view exists, and
-`SettingsShell` already states the principle — *"a destination you can enter
-but not leave is a trap."* Three options: fold the stage view into Properties
-as a filter; keep the screens and reach them from the Properties page; or
-delete them (Tier 2, and the tasks list goes with it).
+**What that does NOT touch is the data.** `pipeline_entries` holds each
+house's stage and `stage_since`, and the house page reads it directly — the
+stage menu, "days in this stage", and the Activity tab all keep working.
+`activities` and `tasks` hang off those entries and are untouched. What is
+lost is the *cross-house* view of them: nothing will show every open task in
+one list any more. That is the cost of the decision, stated here so it is on
+the record and not discovered later.
 
-**Recommendation:** keep `/pipeline/tasks` and reach it from the hub — it is
-the only place that answers "what do I owe anyone today" — and fold the stage
-grouping into Properties. The dashboard's defect list goes with the grouping.
+**A company is:** a name, a phone, an address, and the houses in their
+portfolio. The owner's words. That maps exactly onto a `contact` —
+`company`, `contact_phones`, `mailing_address_line1/city/state/zip` — which
+settles question 2 in favour of `kind = 'company'` without needing a parallel
+table for four fields.
 
-**2. Company as a contact kind, or its own table?** Recommended above, with
-the trade-off stated. It is a one-way door once rows exist.
+**Portfolio houses are entered exactly like houses in Properties.** The
+owner: *"we should be able to enter the houses in their portfolio just like
+the houses under properties."* So a portfolio house is a **real property row**
+— same table, same screening, same ARV and deal tabs — that happens to be
+linked to a company. Not a second, lesser kind of house. The add-house flow is
+reused with the company carried through, rather than written again.
 
-**3. Can you log a call to a company, or only to a house?** Today, only to a
-house — both `activities` and `tasks` require a `pipeline_entry_id`, which is
-per-property. A CRM for lenders where you cannot record a call to the lender
-is half a CRM. Making that column nullable is a small migration with a wide
-blast radius: every query and every screen that assumes an activity has a
-house would need to cope with one that does not.
+That also makes the feature worth more than a list: you can run the numbers on
+a lender's whole inventory the same way you run them on anything else.
 
-**Recommendation: leave it NOT NULL for now and ship the inventory**, which is
-what the owner actually asked for — the business name and the houses it holds.
-Decide the call log once there is a company page to look at.
+**The call log stays per-house for now.** `activities` and `tasks` both
+require a `pipeline_entry_id`, which is per-property, so there is nowhere to
+record "rang them about what else they have" that is not about one house.
+Left as-is rather than widening this branch; the inventory is what was asked
+for.
 
 ## Out of scope
 
 - Importing a company's inventory automatically. This captures what you type.
-- Deleting the pipeline screens, until question 1 is answered.
+- `pipeline_entries`, `activities` and `tasks` — the tables stay and the house
+  page keeps reading them. Only the three cross-house screens go.
 - The stats row on the profile hub, and the team screens.
 
 ## Approver
