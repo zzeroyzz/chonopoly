@@ -1,9 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { ChevronRight, LogOut } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 import { SETTINGS_SECTIONS } from "@/components/settings/SettingsShell";
 import { useShellProfile } from "@/components/shell/useShellProfile";
 import { getAvatarColors } from "@/lib/avatar";
@@ -23,18 +21,12 @@ import { Skeleton } from "@/components/ui/Skeleton";
  * are not new — they are what those pages already showed at the top.
  */
 export default function SettingsHubPage() {
-  const router = useRouter();
   const profile = useShellProfile();
   const colors = getAvatarColors(profile?.avatarColor ?? null);
   const initials = (profile?.name ?? "").trim().slice(0, 2).toUpperCase();
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={profile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-4 pb-24 lg:px-8 lg:pb-8 max-w-3xl">
         <h1 className="text-[18px] font-semibold text-(--color-text-primary) mt-4 mb-4">You</h1>
 
@@ -123,6 +115,6 @@ export default function SettingsHubPage() {
           </button>
         </form>
       </div>
-    </AppShell>
+    </>
   );
 }

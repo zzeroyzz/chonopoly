@@ -8,66 +8,29 @@ import { BottomTabBar } from "./BottomTabBar";
 import { NAV_DESTINATIONS, destinationForPath } from "./sections";
 import { type ShellUserProfile } from "./types";
 
+/** The one name this app has. It was passed in from eleven places, identically. */
+const APP_NAME = "Park Hawkins Capital";
+
 interface Props {
-  /** Sidebar heading. Defaults to the current section's label. */
-  sectionLabel?: string;
-  /** App name in the mobile top bar. */
-  appName: string;
-  /** Optional pill under the app name on mobile — the active team, when one is selected. */
-  mobileBadge?: string | null;
-  /** Feature-specific mobile top-bar actions, e.g. the refresh button. */
-  mobileActions?: ReactNode;
-
+  /** Read once by the layout that owns this, not by each page. */
   userProfile: ShellUserProfile | null;
-  onboardingCompleted: number | null;
-  onProfileClick: () => void;
-
-  /**
-   * Context switcher slot. Passed by routes that scope data; omitted by routes
-   * that don't have any, so nothing dead renders.
-   */
-  contextSwitcher?: ReactNode;
-
-  /**
-   * False inside /finances, where its four destinations are views the page
-   * switches internally via `?tab=`. True everywhere else, where they have to
-   * be real links.
-   */
-
-
-  /** Feature-specific sidebar body — e.g. the finances bank-account tree. */
-  sidebarContent?: ReactNode;
-  /** Feature-specific sidebar footer — e.g. refresh + Plaid connect. */
-  sidebarFooter?: ReactNode;
-
   children: ReactNode;
-  /** Modals and wizards that sit above the shell. */
-  overlays?: ReactNode;
 }
 
 /**
  * App frame: desktop sidebar, mobile top bar, mobile bottom tab bar, and the
  * safe-area padding they need.
  *
- * The bottom bar is scoped to the module you're in — which module is derived
- * from the route and nowhere else, so it can't disagree with the URL — and its
- * fifth slot goes home to the hub. Desktop ignores the scoping and lists every
- * module in the sidebar.
+ * Rendered once, by `app/(shell)/layout.tsx`, and not re-rendered on
+ * navigation. Which destination is active is derived from the route inside
+ * the client components below, so it still follows the URL.
+ *
+ * Seven per-page slots used to hang off this — mobileActions, contextSwitcher,
+ * sidebarContent, sidebarFooter, overlays, mobileBadge, sectionLabel. Not one
+ * of them was passed by any page. They are gone rather than carried up into
+ * the layout, where they would have needed portals to feed props nobody sends.
  */
-export function AppShell({
-  sectionLabel,
-  appName,
-  mobileBadge,
-  mobileActions,
-  userProfile,
-  onboardingCompleted,
-  onProfileClick,
-  contextSwitcher,
-  sidebarContent,
-  sidebarFooter,
-  children,
-  overlays,
-}: Props) {
+export function AppShell({ userProfile, children }: Props) {
   const pathname = usePathname();
 
   // Derived from the route and nothing else. A state variable can disagree with
@@ -83,7 +46,7 @@ export function AppShell({
    * min-h-screen let the shell grow with its content, so <main> grew too and
    * the document scrolled — which meant every page's own overflow-y-auto
    * container never scrolled, and every sticky inside one was inert, having a
-   * scroll box that could not scroll. All ten pages already carry that
+   * scroll box that could not scroll. All eleven pages already carry that
    * container, so capping the shell at the viewport is what they were written
    * for. dvh rather than vh because the owner is on a phone, where 100vh is
    * taller than the visible area under the browser toolbar.
@@ -92,26 +55,15 @@ export function AppShell({
     <div className="flex h-dvh overflow-x-hidden bg-(--color-base) text-(--color-text-primary)">
 
       <ShellSidebar
-        sectionLabel={sectionLabel ?? active?.label ?? appName}
+        sectionLabel={active?.label ?? APP_NAME}
         userProfile={userProfile}
-        onboardingCompleted={onboardingCompleted}
-        onProfileClick={onProfileClick}
-        contextSwitcher={contextSwitcher}
         destinations={NAV_DESTINATIONS}
         activeDestinationId={active?.id ?? null}
-        sidebarContent={sidebarContent}
-        sidebarFooter={sidebarFooter}
       />
 
       {/* Main content — min-w-0 prevents flex child from overflowing on mobile */}
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden pt-14 lg:pt-0">
-        <MobileTopBar
-          appName={appName}
-          badge={mobileBadge}
-          actions={mobileActions}
-          userProfile={userProfile}
-          onProfileClick={onProfileClick}
-        />
+        <MobileTopBar appName={APP_NAME} userProfile={userProfile} />
         {children}
       </main>
 
@@ -120,8 +72,6 @@ export function AppShell({
         activeDestinationId={active?.id ?? null}
         userProfile={userProfile}
       />
-
-      {overlays}
     </div>
   );
 }

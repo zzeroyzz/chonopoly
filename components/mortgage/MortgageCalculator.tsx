@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AppShell } from "@/components/shell/AppShell";
 import { ToolSwitch } from "./ToolSwitch";
 import { loadProfile } from "@/lib/supabase/profile";
 import { clearInputs } from "@/lib/mortgage/storage";
@@ -21,7 +20,6 @@ import { ScenarioBar } from "./ScenarioBar";
  * CalculatorCore, so there is one calculator and not two.
  */
 export default function MortgageCalculator() {
-  const router = useRouter();
 
   const [userProfile, setUserProfile] = useState<{
     name: string;
@@ -55,13 +53,7 @@ export default function MortgageCalculator() {
   const [resetKey, setResetKey] = useState(0);
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={userProfile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
-      // No contextSwitcher: the calculator has no scoped data, so nothing to scope.
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-5 py-4 pb-24 lg:pb-8">
         <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">
           Mortgage calculator
@@ -94,6 +86,6 @@ export default function MortgageCalculator() {
           )}
         />
       </div>
-    </AppShell>
+    </>
   );
 }

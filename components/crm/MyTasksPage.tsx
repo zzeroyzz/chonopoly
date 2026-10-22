@@ -3,12 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import { todayKey } from "@/lib/crm/sort";
 import { type Task } from "@/lib/crm/types";
 import { useCrmContext } from "./useCrmContext";
-import { useShellProfile } from "@/components/shell/useShellProfile";
 
 /**
  * Open tasks for whoever is signed in, soonest first.
@@ -19,7 +17,6 @@ import { useShellProfile } from "@/components/shell/useShellProfile";
  */
 export function MyTasksPage() {
   const router = useRouter();
-  const profile = useShellProfile();
   const { ctx, ctxParams } = useCrmContext();
 
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -74,12 +71,7 @@ export function MyTasksPage() {
   ];
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={profile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8 max-w-2xl">
         <h1 className="text-[18px] font-semibold text-(--color-text-primary)">My tasks</h1>
         {loading ? (
@@ -162,6 +154,6 @@ export function MyTasksPage() {
             </section>
           ))}
       </div>
-    </AppShell>
+    </>
   );
 }

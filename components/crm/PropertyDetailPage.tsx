@@ -15,7 +15,6 @@ import {
   X,
   Plus,
 } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
 import { dollars } from "@/components/mortgage/format";
@@ -45,7 +44,6 @@ import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
 import { searchUrls } from "./CompLinks";
 import { propertyTypeLabel } from "@/lib/property/types";
 import { useCrmContext } from "./useCrmContext";
-import { useShellProfile } from "@/components/shell/useShellProfile";
 
 const ACTIVITY_LABEL: Record<ActivityType, string> = {
   call: "Call",
@@ -127,7 +125,6 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   const [isFinalist, setIsFinalist] = useState(false);
   const [finalistBusy, setFinalistBusy] = useState(false);
   const router = useRouter();
-  const profile = useShellProfile();
   const { ctx, ctxParams } = useCrmContext();
 
   const [detail, setDetail] = useState<PropertyDetail | null>(null);
@@ -347,12 +344,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   const openTasks = (detail?.tasks ?? []).filter((t) => t.status === "open");
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={profile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-4 pb-24 lg:px-8 lg:pb-8 max-w-3xl">
         {/* Back to wherever you came from. Always sending people to the
             pipeline was wrong the moment Properties became home. */}
@@ -1011,6 +1003,6 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
           }}
         />
       )}
-    </AppShell>
+    </>
   );
 }

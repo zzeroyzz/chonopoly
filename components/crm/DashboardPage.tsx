@@ -3,13 +3,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import { STAGES, STAGE_LABEL, isTerminal } from "@/lib/crm/stages";
 import { nextTask, todayKey } from "@/lib/crm/sort";
 import { type PipelineRow, type Stage } from "@/lib/crm/types";
 import { useCrmContext } from "./useCrmContext";
-import { useShellProfile } from "@/components/shell/useShellProfile";
 
 /**
  * Count by stage, tasks due, and the no-open-task defect list. Nothing else.
@@ -20,7 +18,6 @@ import { useShellProfile } from "@/components/shell/useShellProfile";
  */
 export function DashboardPage() {
   const router = useRouter();
-  const profile = useShellProfile();
   const { ctxParams } = useCrmContext();
 
   const [rows, setRows] = useState<PipelineRow[]>([]);
@@ -64,12 +61,7 @@ export function DashboardPage() {
   const noFollowUp = rows.filter((r) => r.openTasks.length === 0);
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={profile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8 max-w-2xl">
         <h1 className="text-[18px] font-semibold text-(--color-text-primary) mb-4">Dashboard</h1>
 
@@ -157,6 +149,6 @@ export function DashboardPage() {
           </>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }

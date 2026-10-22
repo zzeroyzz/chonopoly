@@ -1,11 +1,9 @@
 "use client";
 
-import { useShellProfile } from "@/components/shell/useShellProfile";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Home, AlertTriangle, ExternalLink, Star } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import {
   VerdictTag,
@@ -47,8 +45,6 @@ const FLOW_STEPS = [
 ] as const;
 
 export function PropertiesPage() {
-  const router = useRouter();
-  const profile = useShellProfile();
   const { ctxParams } = useCrmContext();
   const [rows, setRows] = useState<ScreenRow[]>([]);
   const [filter, setFilter] = useState<"all" | "finalists">("all");
@@ -123,12 +119,7 @@ export function PropertiesPage() {
   const visible = filter === "finalists" ? rows.filter((r) => r.isFinalist) : rows;
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={profile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-5 py-4 pb-24 lg:pb-8">
         <h1 className="text-[18px] font-semibold text-(--color-text-primary)">Properties</h1>
         <p className="text-[12px] text-(--color-text-secondary) mt-1 mb-4 leading-relaxed">
@@ -309,7 +300,7 @@ export function PropertiesPage() {
           </ul>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }
 

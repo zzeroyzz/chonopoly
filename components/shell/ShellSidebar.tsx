@@ -1,7 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 "use client";
 
-import { type ReactNode } from "react";
 import Link from "next/link";
 import { getAvatarColors } from "@/lib/avatar";
 import { type ShellUserProfile } from "./types";
@@ -11,34 +10,18 @@ interface Props {
   /** Label shown at the top of the sidebar, e.g. "Finances". */
   sectionLabel: string;
   userProfile: ShellUserProfile | null;
-  /** Onboarding steps completed, or null when unknown. Progress bar shows while < 5. */
-  onboardingCompleted: number | null;
-  onProfileClick: () => void;
-  /**
-   * Context switcher slot. Routes that scope data (finances, CRM) pass one in;
-   * routes that have no data (the mortgage calculator) pass nothing and render none.
-   */
-  contextSwitcher?: ReactNode;
+
   /** The five destinations, the same list the mobile bar renders. */
   destinations: NavDestination[];
   /** Which one the current route belongs to; null outside the shell. */
   activeDestinationId: string | null;
-  /** Feature-specific sidebar body — e.g. the finances bank-account tree. */
-  sidebarContent?: ReactNode;
-  /** Feature-specific sidebar footer — e.g. refresh + Plaid connect. */
-  sidebarFooter?: ReactNode;
 }
 
 export function ShellSidebar({
   sectionLabel,
   userProfile,
-  onboardingCompleted,
-  onProfileClick,
-  contextSwitcher,
   destinations,
   activeDestinationId,
-  sidebarContent,
-  sidebarFooter,
 }: Props) {
   return (
     <aside
@@ -57,10 +40,9 @@ export function ShellSidebar({
       {userProfile && (() => {
         const c = getAvatarColors(userProfile.avatarColor);
         const initials = userProfile.name ? userProfile.name.slice(0, 2).toUpperCase() : "··";
-        const showProgress = onboardingCompleted !== null && onboardingCompleted < 5;
         return (
           <button
-            onClick={onProfileClick}
+            onClick={() => { window.location.href = "/settings"; }}
             className="group w-full text-left px-4 py-3 hover:bg-(--color-border-subtle) rounded-[var(--radius-md)] transition-colors"
           >
             <div className="flex items-center gap-2.5">
@@ -72,19 +54,10 @@ export function ShellSidebar({
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-[13px] font-semibold text-(--color-text-primary) font-(--font-body) truncate leading-tight">{userProfile.name || "You"}</p>
-                {showProgress ? (
-                  <div className="mt-1.5">
-                    <div className="w-12 h-[3px] rounded-full bg-(--color-border-default) overflow-hidden mb-1">
-                      <div className="h-full bg-(--color-accent) rounded-full transition-all" style={{ width: `${((onboardingCompleted ?? 0) / 5) * 100}%` }} />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-[5px] h-[5px] rounded-full bg-(--color-accent) pulse-dot shrink-0" />
-                      <span className="text-[10px] text-(--color-text-tertiary)">{onboardingCompleted} of 5 complete</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-(--color-text-secondary) mt-0.5 group-hover:opacity-0 transition-opacity">All set up</p>
-                )}
+                {/* The onboarding progress bar that used to sit here is gone.
+                    It rendered only when onboardingCompleted was non-null, and
+                    every one of the eleven pages passed null, so it never did. */}
+                <p className="text-[11px] text-(--color-text-secondary) mt-0.5 group-hover:opacity-0 transition-opacity">All set up</p>
               </div>
               <span className="text-[10px] text-(--color-text-tertiary) opacity-0 group-hover:opacity-100 transition-opacity shrink-0">→</span>
             </div>
@@ -93,7 +66,6 @@ export function ShellSidebar({
       })()}
 
       {/* TODO: mobile — context switcher not accessible on mobile nav; needs a home in ProfilePanel or a mobile sheet */}
-      {contextSwitcher}
 
       {/* The same five destinations the mobile bar shows. Desktop has the room
           for labels, so nothing is abbreviated or hidden behind a drawer. */}
@@ -123,12 +95,10 @@ export function ShellSidebar({
 
       {/* Feature-specific body — always flex-1 so the footer stays anchored */}
       <div className="px-4 flex-1 min-h-0 overflow-y-auto">
-        {sidebarContent}
       </div>
 
       {/* Bottom actions */}
       <div className="mt-auto px-4 py-4 border-t border-(--color-border-subtle) space-y-1">
-        {sidebarFooter}
       </div>
     </aside>
   );

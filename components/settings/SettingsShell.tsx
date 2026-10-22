@@ -1,11 +1,9 @@
 "use client";
 
-import { useShellProfile } from "@/components/shell/useShellProfile";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { type ReactNode } from "react";
 import { Wallet, SlidersHorizontal, Plug, CircleUser } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 
 export interface SettingsSection {
   href: string;
@@ -78,18 +76,11 @@ export function SettingsShell({
   description?: string;
   children: ReactNode;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
-  const profile = useShellProfile();
   const section = SETTINGS_SECTIONS.find((s) => s.href === pathname);
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={profile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-5 py-6 pb-24 lg:pb-8">
         <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">
           {title ?? section?.label ?? "Settings"}
@@ -121,6 +112,6 @@ export function SettingsShell({
 
         {children}
       </div>
-    </AppShell>
+    </>
   );
 }
