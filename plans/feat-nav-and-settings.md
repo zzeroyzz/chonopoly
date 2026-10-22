@@ -127,18 +127,39 @@ suite (shared shell), and looked at at 390px.
 Note: `tests/23-comps.spec.ts` cannot be run on its own — it fails 13 in
 isolation and passes in a full run. Do not read it as a regression.
 
-## Open questions — for the owner
+## Decided by the owner, 2026-10-22
 
-**1. What does "Pipeline" become?** Recommendation: **"Leads"**, because the
-page already says "3 active leads" in its own subtitle. The alternative is
-"Deals", which fits the later stages (Offer, Under contract) but not
-`new_lead` or `contacted`, where most rows sit.
+**The bar.** The avatar takes the freed slot: Properties · ? · Add · Tools ·
+You. The menu opens from the bar, in thumb reach, rather than the top corner.
+`MobileTopBar` keeps its avatar on routes that show it; the bar's is the one
+that opens the menu on a phone.
 
-**2. How does the bar rebalance?** Removing Settings leaves Properties ·
-Leads · (+) · Tools, and the plus is no longer centred. Recommendation: let
-the bar hold the three places — Properties · Leads · Tools — and lift Add out
-as a floating button above it. It is an action, not a place, which the current
-code already half-admits with `isAction: true`.
+**The second tab is OPEN, and bigger than a rename.** "Leads" was rejected,
+correctly: every house in Properties is a lead, so the word names the rows
+rather than the tab. The owner's answer is that the tab may become a CRM for
+**companies** — the example is Ground Floor LLC, a hard money lender whose
+inventory they went through — capturing the business and the houses it holds.
+
+That is a different noun, which is why it earns a tab where "Pipeline" did
+not: Properties is houses and whether the numbers work; Sources is who has
+houses and what they have. It is also a feature, not a label:
+
+- `contacts.company` already exists, and the migration says why: *"Entity-owned
+  property is common; the LLC is the owner, not a person."* `property_contacts`
+  is already many-to-many with a `relationship` enum, so one company to many
+  houses is possible **today**.
+- But `company` is **text, not a row**. Twenty houses sourced from one lender
+  are twenty contact rows holding the same string, and there is nothing to
+  open. A `companies` table plus a backfill is what buys the inventory page —
+  a migration, needing its own plan and its own explicit go-ahead.
+- **The stages need a home either way.** New lead → Under contract is already
+  on each house, but the grouped view feeds the dashboard's "nobody is chasing
+  this one" defect list. Folding it into Properties as a filter, or dropping
+  it, is a decision this plan does not make.
+
+**So this branch does the avatar and settings only.** The second tab keeps its
+route, its page and — for now — its name. Renaming it to something that is
+about to be replaced is churn.
 
 ## Out of scope
 
