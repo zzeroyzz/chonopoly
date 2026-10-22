@@ -4,9 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
+  Bath,
+  BedDouble,
+  CalendarDays,
   Check,
   ExternalLink,
+  Home,
   Pencil,
+  Ruler,
   Plus,
 } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
@@ -465,20 +470,32 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
                   </p>
 
-                  {/* One plain line. Icons and vertical rules on four facts was
-                      more furniture than fact. */}
+                  {/* An icon per fact, read left to right. The icons are what
+                      makes this scannable at a glance rather than a sentence
+                      to be read, which is why they came back. */}
                   {property && (
-                    <p className="text-[12px] text-(--color-text-primary) mt-0.5">
+                    <div className="flex flex-wrap items-center gap-y-2 mt-1 text-[12px] text-(--color-text-primary)">
                       {[
-                        property.beds === null ? null : `${property.beds} bed`,
-                        property.baths === null ? null : `${property.baths} bath`,
-                        property.sqft === null ? null : `${property.sqft.toLocaleString()} sq ft`,
-                        property.year_built === null ? null : `${property.year_built}`,
-                        propertyTypeLabel(property.property_type),
+                        [<BedDouble key="b" size={14} />, property.beds === null ? null : `${property.beds} bed`],
+                        [<Bath key="t" size={14} />, property.baths === null ? null : `${property.baths} bath`],
+                        [<Ruler key="r" size={14} />, property.sqft === null ? null : `${property.sqft.toLocaleString()} sq ft`],
+                        [<CalendarDays key="c" size={14} />, property.year_built === null ? null : `${property.year_built}`],
+                        [<Home key="h" size={14} />, propertyTypeLabel(property.property_type)],
                       ]
-                        .filter((part): part is string => Boolean(part))
-                        .join(" · ")}
-                    </p>
+                        .filter(([, label]) => Boolean(label))
+                        .map(([icon, label], index) => (
+                          <span key={String(label)} className="inline-flex items-center gap-1.5">
+                            {index > 0 && (
+                              <span
+                                className="w-px h-4 bg-(--color-border-default) mx-3"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <span className="text-(--color-text-secondary)">{icon}</span>
+                            {label}
+                          </span>
+                        ))}
+                    </div>
                   )}
                 </div>
 
