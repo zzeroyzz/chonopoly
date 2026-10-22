@@ -3,14 +3,59 @@
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { type ReactNode } from "react";
+import { Wallet, SlidersHorizontal, Plug, CircleUser } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 
-const SETTINGS_TABS = [
-  { href: "/settings/profile", label: "Income & debts" },
-  { href: "/settings/defaults", label: "Defaults" },
-  { href: "/settings/integrations", label: "Integrations" },
-  { href: "/settings/account", label: "Account" },
-] as const;
+export interface SettingsSection {
+  href: string;
+  /** What it is called, everywhere it is called anything. */
+  label: string;
+  /** One line saying what is behind it, in the owner's words. */
+  description: string;
+  icon: ReactNode;
+}
+
+/**
+ * The four areas, defined once.
+ *
+ * This list used to be labels only, and each page passed its own title and
+ * description to this shell. So the tab read "Defaults" while the page it
+ * opened was titled "Loan & cost defaults" — two names for one thing, in two
+ * files, already drifted. The pages now take both from here.
+ *
+ * The descriptions are not new copy. Three of them are the sentences those
+ * pages were already showing; only Account's is written here, because that
+ * page never used this shell and so never had one.
+ */
+export const SETTINGS_SECTIONS: SettingsSection[] = [
+  {
+    href: "/settings/profile",
+    label: "Income & debts",
+    description:
+      "Entered once and used for every house you screen. Nothing re-runs on its own — saved analyses tell you when these numbers have moved.",
+    icon: <Wallet size={16} />,
+  },
+  {
+    href: "/settings/defaults",
+    label: "Loan & cost defaults",
+    description:
+      "Where every screening starts. A scenario can still override any of these — this is what saves you retyping the same rate for every house.",
+    icon: <SlidersHorizontal size={16} />,
+  },
+  {
+    href: "/settings/integrations",
+    label: "Integrations",
+    description:
+      "Outside data the app pulls in, and what's left of this month's allowance. Screening one property spends one RentCast request.",
+    icon: <Plug size={16} />,
+  },
+  {
+    href: "/settings/account",
+    label: "Account",
+    description: "Your name, your photo, and the way you sign in.",
+    icon: <CircleUser size={16} />,
+  },
+];
 
 /**
  * The frame every settings screen sits in.
@@ -27,28 +72,32 @@ export function SettingsShell({
   description,
   children,
 }: {
-  title: string;
-  description: string;
+  /** Both default to the section this route belongs to, which is the point of the list. */
+  title?: string;
+  description?: string;
   children: ReactNode;
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const section = SETTINGS_SECTIONS.find((s) => s.href === pathname);
 
   return (
     <AppShell
       appName="Park Hawkins Capital"
       userProfile={null}
       onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
+      onProfileClick={() => router.push("/settings")}
     >
       <div className="overflow-y-auto flex-1 w-full px-5 py-6 pb-24 lg:pb-8">
-        <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">{title}</h1>
+        <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">
+          {title ?? section?.label ?? "Settings"}
+        </h1>
         <p className="text-[12px] text-(--color-text-secondary) mb-4 leading-relaxed">
-          {description}
+          {description ?? section?.description}
         </p>
 
         <div className="flex gap-1 border-b border-(--color-border-default) mb-5 overflow-x-auto">
-          {SETTINGS_TABS.map((t) => {
+          {SETTINGS_SECTIONS.map((t) => {
             const active = pathname === t.href;
             return (
               <Link

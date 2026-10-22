@@ -186,11 +186,53 @@ test("the nav reaches every section", async ({ page }) => {
   await page.getByTestId("nav-tools").click();
   await expect(page).toHaveURL(/\/tools\/mortgage$/);
 
+  // The last slot opens the hub, not one of the four areas behind it.
   await page.getByTestId("nav-settings").click();
-  await expect(page).toHaveURL(/\/settings\/profile$/);
+  await expect(page).toHaveURL(/\/settings$/);
 
   await page.getByTestId("nav-pipeline").click();
   await expect(page).toHaveURL(/\/pipeline$/);
+});
+
+/**
+ * The last slot is you.
+ *
+ * It carries no caption, so its accessible name is the only thing naming it —
+ * which makes that name load-bearing rather than decorative.
+ */
+test("the last slot is your avatar, named without a caption", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/pipeline");
+
+  const you = page.getByTestId("nav-settings");
+  await expect(you).toHaveAttribute("aria-label", "You");
+  await expect(you).not.toContainText("Settings");
+});
+
+test("the hub opens each of the four areas and says what is behind them", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/settings");
+
+  // Every row says what it holds. "Defaults" alone never did.
+  await expect(page.getByTestId("hub-profile")).toContainText("Income & debts");
+  await expect(page.getByTestId("hub-defaults")).toContainText("Where every screening starts");
+  await expect(page.getByTestId("hub-integrations")).toContainText("RentCast request");
+  await expect(page.getByTestId("hub-account")).toBeVisible();
+  await expect(page.getByTestId("hub-sign-out")).toBeVisible();
+
+  await page.getByTestId("hub-defaults").click();
+  await expect(page).toHaveURL(/\/settings\/defaults$/);
+});
+
+test("the hub fits 390px", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/settings");
+
+  await expect(page.getByTestId("hub-profile")).toBeVisible();
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflow).toBe(false);
 });
 
 test("the active destination follows the route", async ({ page }) => {

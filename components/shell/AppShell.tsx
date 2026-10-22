@@ -118,6 +118,7 @@ export function AppShell({
       <BottomTabBar
         destinations={NAV_DESTINATIONS}
         activeDestinationId={active?.id ?? null}
+        userProfile={userProfile}
       />
 
       {overlays}

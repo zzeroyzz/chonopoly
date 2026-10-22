@@ -1,4 +1,4 @@
-import { ListChecks, Home, Plus, Wrench, Settings } from "lucide-react";
+import { ListChecks, Home, Plus, Wrench, User } from "lucide-react";
 import { type ShellNavItem } from "./types";
 
 /**
@@ -25,6 +25,15 @@ export interface NavDestination extends ShellNavItem {
   matches: string[];
   /** The add action, drawn as an action rather than a place. */
   isAction?: boolean;
+  /**
+   * Drawn as your avatar, with no caption under it.
+   *
+   * A photograph of you needs no word saying it is you, and "Settings" was the
+   * wrong word anyway — behind it are your income, your debts and your
+   * account, which are not settings in the sense anyone means. `label` stays
+   * because it is still the link's accessible name.
+   */
+  isYou?: boolean;
 }
 
 export const NAV_DESTINATIONS: NavDestination[] = [
@@ -63,10 +72,13 @@ export const NAV_DESTINATIONS: NavDestination[] = [
   },
   {
     id: "settings",
-    label: "Settings",
-    icon: <Settings size={16} />,
-    href: "/settings/profile",
+    label: "You",
+    icon: <User size={16} />,
+    // The hub, not one of the four areas behind it. Landing on
+    // /settings/profile meant the bar's last slot opened a form about debt.
+    href: "/settings",
     matches: ["/settings", "/profile"],
+    isYou: true,
   },
 ];
 
