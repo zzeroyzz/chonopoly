@@ -310,6 +310,97 @@ test("detail shows the property, its contact and its activity at 390px", async (
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 
+/**
+ * The hub's one journey.
+ *
+ * What each tile SAYS is a Jest test against the wording functions — the hub
+ * is a reader and the wording is all it can get wrong on its own. This proves
+ * only what a browser can: the tiles render, and tapping one lands on the tab
+ * that owns it.
+ */
+async function stubHub(page: Page) {
+  await stubDetail(page);
+
+  // After stubDetail so it wins: the screen endpoint lives under
+  // /api/properties, which stubDetail's wildcard would otherwise answer with
+  // a detail body, leaving every tile on its no-figures state.
+  await page.route("**/api/properties/screen**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        rows: [
+          {
+            propertyId: "prop-e1",
+            entryId: "e1",
+            address: "114 Peachtree St",
+            needsAddressReview: false,
+            price: 149_900,
+            piti: 1_247,
+            backDti: 34,
+            cashToClose: 12_000,
+            arv: null,
+            maxOffer: 104_930,
+            walkAwayCash: null,
+            trueProfit: null,
+            marginPct: null,
+            affordability: {
+              verdict: "tight",
+              reasons: [],
+              summary: "$1,915 left after closing",
+              ratiosApply: true,
+              needsProfile: false,
+            },
+            deal: {
+              verdict: "does_not_work",
+              reasons: [],
+              summary: "No resale price yet",
+              provisional: false,
+              hasArv: false,
+            },
+            checklist: { numbers: true, comps: false, estimate: false, visit: false, done: 1 },
+            explanations: {
+              afford: { whatsWrong: "You'd have $1,915 left after closing.", target: "" },
+              deal: { whatsWrong: "There is no resale price yet.", target: "" },
+              arv: null,
+            },
+            approvedComps: 0,
+            compsToReview: 72,
+            isFinalist: false,
+          },
+        ],
+      }),
+    })
+  );
+}
+
+test("the hub shows where the house stands and opens the tab behind a tile", async ({ page }) => {
+  await stubHub(page);
+  await page.goto("/properties/e1");
+
+  await expect(page.getByTestId("hub-tile-arv")).toContainText("Not checked yet");
+  await expect(page.getByTestId("hub-tile-arv")).toContainText("72 houses to go through");
+  await expect(page.getByTestId("hub-tile-numbers")).toContainText("$1,247 a month");
+  await expect(page.getByTestId("hub-tile-deal")).toContainText("No resale price yet");
+
+  // The wiring: a tile is a way in, not a label.
+  await page.getByTestId("hub-tile-arv").click();
+  await expect(page.getByTestId("panel-comps")).toBeVisible();
+});
+
+test("the hub fits 390px", async ({ page }) => {
+  await stubHub(page);
+  await page.goto("/properties/e1");
+
+  await expect(page.getByTestId("details-hub")).toBeVisible();
+
+  // Four tiles two-up on a phone is exactly where this wraps badly.
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflow).toBe(false);
+});
+
 test("dashboard lists stage counts and the no-follow-up defects", async ({ page }) => {
   await stubPipeline(page);
   await page.goto("/pipeline/dashboard");

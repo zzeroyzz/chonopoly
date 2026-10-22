@@ -1,8 +1,8 @@
 # Plan: Details becomes the way in
 
 Status: **Revised (rev 2)** — 2026-10-22, after a self-review. Awaiting the owner. No code written.
-Branch: `feat/details-hub` — **not cut.** `feat/house-header` is unmerged, and
-one branch at a time means this starts from main after that lands.
+Branch: `feat/details-hub`, cut from `9683bf4` — the PR #60 merge, tip of
+main. The house-header work is in.
 RentCast requests: **0**. Every figure here is already on the page.
 Design system: https://claude.ai/artifact/AfFqeoXw92zbqvYSFpchrx — `screens.md`.
 

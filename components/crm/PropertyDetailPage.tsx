@@ -37,6 +37,7 @@ import { StageMenu } from "./StageMenu";
 import { ContactCard } from "./ContactCard";
 import { CompsPanel } from "./CompsPanel";
 import { CopyButton } from "@/components/ui/CopyButton";
+import { DetailsHub } from "./DetailsHub";
 import { NumbersModal } from "@/components/mortgage/NumbersModal";
 import { ScenarioRows } from "./ScenarioRows";
 import { RehabPanel } from "./RehabPanel";
@@ -857,6 +858,16 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
             {tab === "Details" && (
               <div data-testid="panel-overview">
+                {/* Where this house stands, section by section. Six tabs and
+                    no way to see any of it without opening each one. */}
+                <DetailsHub
+                  row={row}
+                  screenLoaded={screenLoaded}
+                  rehab={resolveRehab(null, primaryBudget)}
+                  tasks={detail.tasks}
+                  onOpenTab={setTab}
+                />
+
             {/* Contacts */}
             <h2 className="text-[13px] font-semibold text-(--color-text-primary) mt-6 mb-2">Contacts</h2>
             {detail.contacts.length === 0 ? (
