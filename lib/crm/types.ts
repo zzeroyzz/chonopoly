@@ -73,6 +73,44 @@ export interface ContactEmail {
   created_at: string;
 }
 
+/**
+ * Whether a contact is somebody you ring or a business that holds houses.
+ *
+ * `contacts.company` has always existed — the CRM migration says entity-owned
+ * property is common and the LLC is often the owner — but a row could not say
+ * whether it WAS one. Guessing from a missing first name works until somebody
+ * records a name against a company.
+ */
+export type ContactKind = "person" | "company";
+
+/** A business that has houses: a lender, a wholesaler, a bank. */
+export interface Company {
+  id: string;
+  /** The business name. Never null on a company — it is the only name it has. */
+  name: string;
+  phone: string | null;
+  website: string | null;
+  addressLine1: string | null;
+  city: string | null;
+  state: string | null;
+  zip: string | null;
+  notes: string | null;
+  /** How many houses they hold, for the list. */
+  propertyCount: number;
+}
+
+/** One house in a company's portfolio. A real property row, not a lesser one. */
+export interface PortfolioHouse {
+  propertyId: string;
+  address: string;
+  cityStateZip: string;
+  listPrice: number | null;
+  photoUrl: string | null;
+  beds: number | null;
+  baths: number | null;
+  sqft: number | null;
+}
+
 export type Relationship =
   | "owner"
   | "co_owner"

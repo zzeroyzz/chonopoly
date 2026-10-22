@@ -166,16 +166,16 @@ async function stubCrm(page: Page) {
 
 test("the bottom bar holds all five destinations", async ({ page }) => {
   await stubCrm(page);
-  await page.goto("/pipeline");
+  await page.goto("/properties");
 
-  for (const id of ["pipeline", "properties", "add", "tools", "settings"]) {
+  for (const id of ["companies", "properties", "add", "tools", "settings"]) {
     await expect(page.getByTestId(`nav-${id}`)).toBeVisible();
   }
 });
 
 test("the nav reaches every section", async ({ page }) => {
   await stubCrm(page);
-  await page.goto("/pipeline");
+  await page.goto("/properties");
 
   await page.getByTestId("nav-properties").click();
   await expect(page).toHaveURL(/\/properties$/);
@@ -190,8 +190,8 @@ test("the nav reaches every section", async ({ page }) => {
   await page.getByTestId("nav-settings").click();
   await expect(page).toHaveURL(/\/settings$/);
 
-  await page.getByTestId("nav-pipeline").click();
-  await expect(page).toHaveURL(/\/pipeline$/);
+  await page.getByTestId("nav-companies").click();
+  await expect(page).toHaveURL(/\/companies$/);
 });
 
 /**
@@ -202,7 +202,7 @@ test("the nav reaches every section", async ({ page }) => {
  */
 test("the last slot is your avatar, named without a caption", async ({ page }) => {
   await stubCrm(page);
-  await page.goto("/pipeline");
+  await page.goto("/properties");
 
   const you = page.getByTestId("nav-settings");
   await expect(you).toHaveAttribute("aria-label", "You");
@@ -287,16 +287,19 @@ test("Tools lists only calculators that exist", async ({ page }) => {
 
 // ─── Redirects ────────────────────────────────────────────────────────────────
 
+// Everything that used to land on the pipeline lands on Properties now. The
+// pipeline's own routes are gone, so a redirect still pointing at one would
+// send an old bookmark to a 404 — which is the thing these tests exist to stop.
 const REDIRECTS: [string, RegExp][] = [
-  ["/app", /\/pipeline$/],
-  ["/crm", /\/pipeline$/],
-  ["/crm/tasks", /\/pipeline\/tasks$/],
-  ["/crm/dashboard", /\/pipeline\/dashboard$/],
+  ["/app", /\/properties$/],
+  ["/crm", /\/properties$/],
+  ["/crm/tasks", /\/properties$/],
+  ["/crm/dashboard", /\/properties$/],
   ["/mortgage", /\/tools\/mortgage$/],
   ["/profile", /\/settings\/account$/],
-  ["/more", /\/pipeline$/],
-  ["/cash-flow", /\/pipeline$/],
-  ["/markets", /\/pipeline$/],
+  ["/more", /\/properties$/],
+  ["/cash-flow", /\/properties$/],
+  ["/markets", /\/properties$/],
 ];
 
 for (const [from, to] of REDIRECTS) {
@@ -383,11 +386,12 @@ test("the property page fits 390px", async ({ page }) => {
   expect(overflows).toBe(false);
 });
 
-test("the hub is gone", async ({ page }) => {
+test("the old module hub is gone", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/app");
 
-  await expect(page).toHaveURL(/\/pipeline$/);
+  // It landed on the pipeline until the pipeline went too.
+  await expect(page).toHaveURL(/\/properties$/);
   await expect(page.getByText("Pick where you're working")).toHaveCount(0);
 });
 

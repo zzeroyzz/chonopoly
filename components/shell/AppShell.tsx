@@ -63,7 +63,7 @@ export function AppShell({ userProfile, children }: Props) {
 
       {/* Main content — min-w-0 prevents flex child from overflowing on mobile */}
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden pt-14 lg:pt-0">
-        <MobileTopBar appName={APP_NAME} userProfile={userProfile} />
+        <MobileTopBar />
         {children}
       </main>
 
