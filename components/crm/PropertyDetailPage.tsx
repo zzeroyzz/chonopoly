@@ -645,65 +645,26 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   </div>
                 )}
 
-                {/* 3. Where it is in the pipeline, and the number you need
-                    exactly once. Finalist and Edit moved onto the photo's
-                    corners, where the things you do to a house belong. */}
-                <div className="flex flex-col gap-2 border-t border-(--color-border-subtle) pt-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {detail.entry ? (
-                      <>
-                        <div className="relative">
-                          <button
-                            type="button"
-                            data-testid="detail-stage-badge"
-                            disabled={busy}
-                            onClick={() => setMenuOpen((v) => !v)}
-                            className="text-[12px] px-2.5 py-1 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors disabled:opacity-50"
-                          >
-                            {STAGE_LABEL[detail.entry.stage]}
-                          </button>
-                          {menuOpen && detail.entry && (
-                            <StageMenu
-                              current={detail.entry.stage}
-                              onPick={(s: Stage) =>
-                                void post("/api/crm/stage", {
-                                  entry_id: detail.entry?.id,
-                                  to_stage: s,
-                                })
-                              }
-                              onClose={() => setMenuOpen(false)}
-                            />
-                          )}
-                        </div>
-                        {/* Was "3d", which says nothing on its own. */}
-                        <span className="text-[11px] text-(--color-text-secondary)">
-                          {daysInStage(detail.entry.stage_since)} days in this stage
-                        </span>
-                      </>
-                    ) : (
-                      <span
-                        data-testid="not-on-pipeline"
-                        className="text-[11px] text-(--color-text-tertiary)"
-                      >
-                        Not on the pipeline — screening only.
+                {/* 3. The number you need exactly once and cannot guess.
+
+                    The stage pill and "3 days in this stage" moved off the
+                    card: the log is worth keeping and the card is not where
+                    it reads well. Both still live on Activity. */}
+                {property && (property.parcel_number || property.county) && (
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-(--color-border-subtle) pt-3">
+                    <span className="text-[11px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
+                      Parcel
+                    </span>
+                    <span className="text-[14px] font-medium font-(--font-mono) text-(--color-text-primary)">
+                      {property.parcel_number ?? "Not recorded"}
+                    </span>
+                    {property.county && (
+                      <span className="text-[12px] text-(--color-text-secondary)">
+                        · {property.county} County
                       </span>
                     )}
                   </div>
-
-                  {/* On screen, not behind a disclosure. A parcel number is
-                      the one thing here you cannot guess or look up quickly,
-                      and it was costing a tap to see. */}
-                  {property && (property.parcel_number || property.county) && (
-                    <p className="text-[11px] text-(--color-text-secondary)">
-                      {[
-                        property.parcel_number ? `Parcel ${property.parcel_number}` : null,
-                        property.county ? `${property.county} County` : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  )}
-                </div>
+                )}
               </div>
             </div>
 
@@ -917,6 +878,37 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
             {tab === "Activity" && detail.entry && (
               <div data-testid="panel-activity">
+                {/* The stage and its age came off the house card — the log is
+                    worth keeping and the card was not where it read well.
+                    Here, above the log it belongs to. */}
+                <div className="flex flex-wrap items-center gap-2 mt-4">
+                  <div className="relative">
+                    <button
+                      type="button"
+                      data-testid="detail-stage-badge"
+                      disabled={busy}
+                      onClick={() => setMenuOpen((v) => !v)}
+                      className="text-[12px] px-2.5 py-1 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors disabled:opacity-50"
+                    >
+                      {STAGE_LABEL[detail.entry.stage]}
+                    </button>
+                    {menuOpen && detail.entry && (
+                      <StageMenu
+                        current={detail.entry.stage}
+                        onPick={(s: Stage) =>
+                          void post("/api/crm/stage", {
+                            entry_id: detail.entry?.id,
+                            to_stage: s,
+                          })
+                        }
+                        onClose={() => setMenuOpen(false)}
+                      />
+                    )}
+                  </div>
+                  <span className="text-[11px] text-(--color-text-secondary)">
+                    {daysInStage(detail.entry.stage_since)} days in this stage
+                  </span>
+                </div>
             {/* Tasks */}
             <div className="flex items-center justify-between mt-6 mb-2">
               <h2 className="text-[13px] font-semibold text-(--color-text-primary)">Tasks</h2>
