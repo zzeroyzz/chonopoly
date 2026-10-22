@@ -81,6 +81,16 @@ export function dealTile(row: ScreenRow): TileCopy {
 }
 
 export function workTile(rehab: ResolvedRehab): TileCopy {
+  // A default of zero is not a house that needs no work — it is a house
+  // nobody has costed yet. "$0 to fix up" states the first and means the
+  // second, which is the one reading that sends somebody into a flip blind.
+  if (rehab.budgetOnly && rehab.total === 0) {
+    return {
+      title: "The work",
+      state: "Not set yet",
+      next: "Set a budget, or walk it for a real figure",
+    };
+  }
   return {
     title: "The work",
     state: `${money(rehab.total)} to fix up`,
@@ -120,15 +130,26 @@ export function activityTile(tasks: Task[], now: Date = new Date()): TileCopy {
  * The whole thing is the target, not the arrow: a 44px arrow on a card this
  * size is a smaller thing to hit than the card itself.
  */
-function Tile({ copy, onOpen, testId }: { copy: TileCopy; onOpen: () => void; testId: string }) {
+function Tile({
+  copy,
+  onOpen,
+  testId,
+  span = false,
+}: {
+  copy: TileCopy;
+  onOpen: () => void;
+  testId: string;
+  /** Take the whole row, so an odd tile count leaves no hole beside the last one. */
+  span?: boolean;
+}) {
   return (
     <button
       type="button"
       onClick={onOpen}
       data-testid={testId}
-      className="flex flex-col items-start gap-1 min-h-11 p-3 text-left rounded-(--radius-lg)
+      className={`flex flex-col items-start gap-1 min-h-11 p-3 text-left rounded-(--radius-lg)
         border border-(--color-border-default) bg-(--color-surface)
-        hover:border-(--color-border-strong) transition-colors"
+        hover:border-(--color-border-strong) transition-colors ${span ? "col-span-2" : ""}`}
     >
       <span className="text-[11px] text-(--color-text-secondary)">{copy.title}</span>
       <span className="text-[15px] font-semibold text-(--color-text-primary) leading-snug">
@@ -167,6 +188,15 @@ export function DetailsHub({
   tasks: Task[];
   onOpenTab: (tab: "ARV" | "Numbers" | "Deal" | "Rehab" | "Activity") => void;
 }) {
+  /**
+   * Whether the last tile takes the whole row, which is a counting question.
+   *
+   * Five single tiles in two columns leave the fifth alone beside a hole, so
+   * it spans. On a failed screen request the count changes — one full-width
+   * message, then work and activity — and those two pair off, so it does not.
+   */
+  const screenFailed = screenLoaded && row === null;
+
   return (
     <div data-testid="details-hub" className="grid grid-cols-2 gap-2 mt-4">
       {!screenLoaded ? (
@@ -207,6 +237,7 @@ export function DetailsHub({
         copy={activityTile(tasks)}
         onOpen={() => onOpenTab("Activity")}
         testId="hub-tile-activity"
+        span={!screenFailed}
       />
     </div>
   );

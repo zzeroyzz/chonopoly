@@ -139,6 +139,23 @@ describe("what each tile says", () => {
     expect(copy.next).toBe("Your default — walk it to get a real figure");
   });
 
+  /**
+   * The tile read "$0 to fix up" on every house with no budget set, which
+   * states that the house needs no work and means that nobody has costed it.
+   */
+  it("does not report an unset budget as a house that needs no work", () => {
+    const copy = workTile({
+      total: 0,
+      source: "budget",
+      label: "Budget only",
+      budgetOnly: true,
+    });
+
+    expect(copy.state).toBe("Not set yet");
+    expect(copy.next).toBe("Set a budget, or walk it for a real figure");
+    expect(copy.state).not.toContain("$0");
+  });
+
   it("says which kind of estimate it is once there is one", () => {
     const copy = workTile({
       total: 52_400,
