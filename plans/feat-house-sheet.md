@@ -1,8 +1,11 @@
 # Plan: the house behind, the work in front
 
-Status: **Revised (rev 2)** — 2026-10-22, after a self-review. Awaiting the owner. No code written.
-Branch: `feat/house-sheet` — **not cut.** `feat/details-hub` is unmerged, and
-one branch at a time means this starts from main after that lands.
+Status: **User approved (rev 3)** — 2026-10-22. **Stage 1 only.** Stage 2 is
+held: its premise was found wrong by the self-review and the question that
+replaces it has not been decided. No code written yet.
+Branch: `feat/house-sheet` — **not cut.** `feat/details-hub` is unmerged with
+three commits, and one branch at a time means this starts from main after that
+lands. That is the only thing blocking a start.
 RentCast requests: **0 extra.** See §4 — the map's coordinates come back on a
 call the app already makes.
 
@@ -274,3 +277,60 @@ already sends" is this branch's job or its own.
 
 **Not approval to start. The owner decides, and the new dependency in stage 2
 needs its own word.**
+
+
+## Rev 3 — 2026-10-22
+
+**Approved by the owner**, who said to continue. Recorded here as covering
+stage 1 as written below plus the two resolutions in this section. It does not
+cover stage 2, which stays held, and it does not cover pushing, opening a PR,
+or merging anything.
+
+### Gap 3 resolved — how the hero escapes the padding
+
+The scroll container is one element, `PropertyDetailPage:360`:
+
+```
+overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8 max-w-3xl
+```
+
+The hero and the sheet both take `-mx-4 lg:-mx-8` to cancel the side padding,
+and the sheet puts the padding back on its own inner content. Two elements
+reach the edge; everything inside the sheet keeps the gutter it has now.
+
+Rejected: moving `px-4` off the container and onto each child. It is the
+correct shape and it edits every block on the page to get there, which is a
+bigger diff than the feature and touches code this plan has no business in.
+
+`py-4` stays. It is a 16px gap above the hero before any scrolling, and
+`sticky top-0` pins to the scrollport's top edge regardless of it, so it costs
+nothing once the page moves.
+
+### Gap 4 resolved — the cap comes off, and the ARV card takes its place
+
+Both capped lists are at `CompsPanel:835` (On the market) and `CompsPanel:868`
+(Checked). Still-to-check is the one-card flow and has no list to cap. The
+comment at 865 gives the reason for the ceiling:
+
+> A ceiling on it keeps the ARV card on screen through eighty comps.
+
+So the cap is not arbitrary and removing it is not free — it is what keeps the
+resale figure visible while you scan. The answer is to keep the intent and drop
+the mechanism: **the cap comes off both lists, and the ARV card becomes sticky
+inside the sheet.** The sheet owns the scrolling, nothing nests, and the figure
+still does not leave the screen.
+
+If the sticky card does not hold up at 390px, the fallback is to keep the caps
+and accept the nested scroll on those two tabs only — never on still-to-check,
+which is where the reviewing actually happens.
+
+### Stage 2 stays held
+
+Two things are open and neither is mine to settle:
+
+1. Whether wiring `mapSubjectFacts` into the comps refresh — and deciding what
+   happens when RentCast's facts disagree with ones typed by hand, where
+   `facts_source` is `'manual'` — belongs to this branch or its own.
+2. The new dependency. `leaflet` + `react-leaflet` with CartoDB dark tiles is
+   the recommendation: no key, no billing, and it does not punch a white hole
+   in a dark page. It needs its own word under Tier 2.
