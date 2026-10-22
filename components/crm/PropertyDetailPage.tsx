@@ -2,20 +2,41 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Plus, Pencil, ExternalLink } from "lucide-react";
+import {
+  ArrowLeft,
+  Bath,
+  BedDouble,
+  CalendarDays,
+  Check,
+  ExternalLink,
+  Home,
+  Pencil,
+  Ruler,
+  Plus,
+} from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
-import { VerdictTag } from "@/components/mortgage/VerdictTag";
+import {
+  VerdictTag,
+  AFFORDABILITY_STYLE,
+  DEAL_STYLE,
+  UNJUDGED_STYLE,
+} from "@/components/mortgage/VerdictTag";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
 import { dollars } from "@/components/mortgage/format";
 import { type ScreenRow } from "@/lib/screen/screenRow";
-import { AFFORDABILITY_LABEL, DEAL_LABEL } from "@/lib/mortgage/verdicts";
+import {
+  AFFORDABILITY_LABEL,
+  DEAL_LABEL,
+  NO_RESALE_PRICE_LABEL,
+} from "@/lib/mortgage/verdicts";
 import { STAGE_LABEL, daysInStage } from "@/lib/crm/stages";
 import { cadenceDueDate } from "@/lib/crm/cadence";
 import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/types";
 import { StageMenu } from "./StageMenu";
 import { ContactCard } from "./ContactCard";
 import { CompsPanel } from "./CompsPanel";
+import { CopyButton } from "@/components/ui/CopyButton";
 import { NumbersModal } from "@/components/mortgage/NumbersModal";
 import { ScenarioRows } from "./ScenarioRows";
 import { RehabPanel } from "./RehabPanel";
@@ -320,7 +341,9 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
         affordability: row.affordability.needsProfile
           ? "Set your income"
           : AFFORDABILITY_LABEL[row.affordability.verdict],
-        deal: row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : "No ARV",
+        // Was "No ARV": banned jargon, and a verdict that says neither why
+        // nor what to do about it.
+        deal: row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : NO_RESALE_PRICE_LABEL,
       }
     : null;
 
@@ -385,240 +408,284 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
         {detail && (
           <>
-            <div className="flex items-start gap-3">
-              <div className="min-w-0 flex gap-3 flex-1">
-                {property?.photo_url && (
+            {/* The house, as one card: what it is, what we think, and the
+                controls that belong to it.
+
+                It grew to eight bands separated by four rules, so nothing
+                grouped and the three uppercase questions shouted over the
+                answers they labelled. Three sections now, two rules. */}
+            <div className="rounded-(--radius-xl) border border-(--color-border-default) bg-(--color-elevated) overflow-hidden">
+              {/* The two things you do to a house sit on its corners, the way
+                  the save and share buttons do on a listing card. Both carry
+                  their own dark ground so they stay legible over a bright
+                  photo as well as over the empty band. */}
+              <div className="relative">
+                {property?.photo_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={property.photo_url}
                     alt=""
                     data-testid="property-photo"
-                    className="w-16 h-16 rounded-lg object-cover shrink-0 border border-(--color-border-subtle)"
+                    className="w-full h-44 sm:h-56 object-cover"
                   />
+                ) : (
+                  /* No photo is a fact about the house, not a hole in the page. */
+                  <div className="h-16 bg-(--color-surface) border-b border-(--color-border-subtle) flex items-center px-4">
+                    <span className="text-[11px] text-(--color-text-secondary)">
+                      No photo yet — add one when you edit the house.
+                    </span>
+                  </div>
                 )}
-                <div className="min-w-0">
-                  <h1 className="text-[19px] font-semibold text-(--color-text-primary) wrap-break-word">
-                    {property?.address_line1 ?? "Address unknown"}
-                  </h1>
-                  <p className="text-[12px] text-(--color-text-secondary) mt-0.5">
+
+                {property && (
+                  <button
+                    type="button"
+                    onClick={() => void toggleFinalist()}
+                    disabled={finalistBusy}
+                    data-testid="finalist-toggle"
+                    aria-pressed={isFinalist}
+                    aria-label={isFinalist ? "Remove from finalists" : "Mark as a finalist"}
+                    className={`absolute left-3 top-3 flex items-center gap-1.5 h-9 px-3
+                      rounded-(--radius-pill) border backdrop-blur text-[12px] font-medium
+                      disabled:opacity-40 transition-colors ${
+                        isFinalist
+                          ? "bg-(--color-accent) border-transparent text-(--color-base)"
+                          : "bg-black/60 border-white/25 text-white"
+                      }`}
+                  >
+                    <Star size={13} fill={isFinalist ? "currentColor" : "none"} />
+                    Finalist
+                  </button>
+                )}
+
+                {property && (
+                  <button
+                    type="button"
+                    onClick={() => setEditingHouse((v) => !v)}
+                    data-testid="edit-house-toggle"
+                    aria-label={editingHouse ? "Close the house form" : "Edit this house"}
+                    className="absolute right-3 top-3 flex items-center gap-1.5 h-9 px-3
+                      rounded-(--radius-pill) bg-black/60 border border-white/25 backdrop-blur
+                      text-[12px] font-medium text-white transition-colors"
+                  >
+                    <Pencil size={13} />
+                    {editingHouse ? "Close" : "Edit"}
+                  </button>
+                )}
+              </div>
+
+              <div className="p-4 flex flex-col gap-4">
+                {/* 1. What it is. */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <span className="text-[26px] font-bold leading-none tracking-tight">
+                        {headline ? dollars(headline.price, 0) : "—"}
+                      </span>
+                      <span className="text-[11px] text-(--color-text-secondary)">asking</span>
+                    </div>
+                    {property?.address_line1 && (
+                      <a
+                        href={
+                          searchUrls(
+                            [property.address_line1, property.city, property.state, property.zip]
+                              .filter(Boolean)
+                              .join(", ")
+                          ).zillow
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid="property-zillow"
+                        className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-(--radius-pill)
+                          border border-(--color-border-strong) text-[12px] font-medium
+                          text-(--color-text-primary)"
+                      >
+                        Zillow
+                        <ExternalLink size={11} />
+                      </a>
+                    )}
+                  </div>
+
+                  <div className="flex items-start gap-2">
+                    <h1 className="text-[19px] font-semibold text-(--color-text-primary) wrap-break-word leading-snug min-w-0">
+                      {property?.address_line1 ?? "Address unknown"}
+                    </h1>
+                    {property?.address_line1 && (
+                      <CopyButton
+                        value={[property.address_line1, property.city, property.state, property.zip]
+                          .filter(Boolean)
+                          .join(", ")}
+                        label="Address"
+                        testId="copy-address"
+                      />
+                    )}
+                  </div>
+                  <p className="text-[12px] text-(--color-text-secondary)">
                     {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
                   </p>
 
-                  {/* Somewhere to go and look at the house itself. The comps
-                      have had this since they were added; the house they are
-                      being compared to did not. Built from the address the
-                      same way, by the same function. */}
-                  {property?.address_line1 && (
-                    <a
-                      href={
-                        searchUrls(
-                          [property.address_line1, property.city, property.state, property.zip]
-                            .filter(Boolean)
-                            .join(", ")
-                        ).zillow
-                      }
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      data-testid="property-zillow"
-                      className="inline-flex items-center gap-1 min-h-11 text-[12px] text-(--color-accent)"
-                    >
-                      View on Zillow
-                      <ExternalLink size={11} />
-                    </a>
+                  {/* An icon per fact, read left to right. The icons are what
+                      makes this scannable at a glance rather than a sentence
+                      to be read, which is why they came back. */}
+                  {property && (
+                    <div className="flex flex-wrap items-center gap-y-2 mt-1 text-[12px] text-(--color-text-primary)">
+                      {[
+                        [<BedDouble key="b" size={14} />, property.beds === null ? null : `${property.beds} bed`],
+                        [<Bath key="t" size={14} />, property.baths === null ? null : `${property.baths} bath`],
+                        [<Ruler key="r" size={14} />, property.sqft === null ? null : `${property.sqft.toLocaleString()} sq ft`],
+                        [<CalendarDays key="c" size={14} />, property.year_built === null ? null : `${property.year_built}`],
+                        [<Home key="h" size={14} />, propertyTypeLabel(property.property_type)],
+                      ]
+                        .filter(([, label]) => Boolean(label))
+                        .map(([icon, label], index) => (
+                          <span key={String(label)} className="inline-flex items-center gap-1.5">
+                            {index > 0 && (
+                              <span
+                                className="w-px h-4 bg-(--color-border-default) mx-3"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <span className="text-(--color-text-secondary)">{icon}</span>
+                            {label}
+                          </span>
+                        ))}
+                    </div>
                   )}
-                  {/* The numbers and the two verdicts arrive on the screen
-                      read, one round trip after the address. Holding their
-                      space stops the header growing under your thumb. */}
-                  {!screenLoaded && (
-                    <>
-                      <Skeleton className="h-3 w-48 mt-1.5" />
-                      <Skeleton className="h-4 w-32 mt-2 rounded" />
-                    </>
-                  )}
+                </div>
 
-                  {headline && (
-                    <p className="text-[12px] font-(--font-mono) mt-1">
-                      <span className="text-(--color-text-secondary)">
-                        {dollars(headline.price, 0)}
+                {!screenLoaded && <Skeleton className="h-4 w-40" />}
+
+                {/* 2. What we think.
+
+                    Side by side, each answer under its own question. They were
+                    full-width rows with the chip pushed to the far edge, so
+                    the eye crossed the card to join a question to its answer
+                    and no two chips lined up. */}
+                {headline && row && (
+                  <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-(--color-border-subtle) pt-3">
+                    <div className="flex flex-col items-start gap-1.5">
+                      <span className="text-[12px] text-(--color-text-secondary)">
+                        Can we afford it?
                       </span>
-                      {headline.walkAway !== null && (
-                        <>
-                          <span className="text-(--color-text-tertiary)"> · </span>
-                          <span className="text-(--color-accent)">
-                            {dollars(headline.walkAway, 0)}
-                          </span>
-                          <span className="text-(--color-text-tertiary)"> walk-away</span>
-                        </>
-                      )}
-                      {headline.trueProfit !== null && (
-                        <>
-                          <span className="text-(--color-text-tertiary)"> · </span>
-                          <span
-                            className={
-                              headline.trueProfit < 0
-                                ? "text-(--color-danger)"
-                                : "text-(--color-text-primary)"
-                            }
-                          >
-                            {dollars(headline.trueProfit, 0)}
-                          </span>
-                          <span className="text-(--color-text-tertiary)"> profit</span>
-                        </>
-                      )}
-                    </p>
-                  )}
-                  {/* The same tags as the card, reading the same
-                      explanations, so a verdict cannot be worded one way in
-                      the list and another on the house's own page. */}
-                  {headline && row && (
-                    <div className="flex flex-wrap gap-1.5 mt-1.5">
                       <VerdictTag
                         label={headline.affordability}
-                        toneClassName="bg-(--color-base) text-(--color-text-secondary)"
+                        size="answer"
+                        toneClassName={
+                          row.affordability.needsProfile
+                            ? UNJUDGED_STYLE
+                            : AFFORDABILITY_STYLE[row.affordability.verdict]
+                        }
                         explanation={row.explanations.afford}
                         breakdownHref=""
                         action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
                         testId="header-verdict-afford"
                       />
+                    </div>
+
+                    <div className="flex flex-col items-start gap-1.5">
+                      <span className="text-[12px] text-(--color-text-secondary)">
+                        Does the deal work?
+                      </span>
                       <VerdictTag
                         label={headline.deal}
-                        toneClassName="bg-(--color-base) text-(--color-text-secondary)"
+                        size="answer"
+                        toneClassName={
+                          row.deal.hasArv ? DEAL_STYLE[row.deal.verdict] : UNJUDGED_STYLE
+                        }
                         explanation={row.explanations.deal}
                         breakdownHref=""
-                        action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
+                        action={{
+                          label: row.deal.hasArv ? "See full breakdown →" : "Check houses nearby →",
+                          onClick: () => setTab(row.deal.hasArv ? "Deal" : "ARV"),
+                        }}
                         testId="header-verdict-deal"
                       />
-                      <VerdictTag
-                        label={
-                          row.arv === null
-                            ? "Review comps"
-                            : `ARV ${dollars(row.arv)} · ${row.approvedComps} approved`
-                        }
-                        toneClassName={
-                          row.arv === null
-                            ? "bg-(--color-base) text-(--color-text-tertiary)"
-                            : "bg-(--color-accent-glow) text-(--color-accent)"
-                        }
-                        explanation={{
-                          whatsWrong:
-                            row.arv === null
-                              ? `No comps approved yet${row.compsToReview > 0 ? `, and ${row.compsToReview} are waiting` : ""}.`
-                              : `Built from ${row.approvedComps} comp${row.approvedComps === 1 ? "" : "s"} you approved.`,
-                          target:
-                            row.compsToReview > 0
-                              ? `${row.compsToReview} comp${row.compsToReview === 1 ? "" : "s"} still to review.`
-                              : "Every comp has been reviewed.",
-                          fix:
-                            row.arv === null
-                              ? "Open the ARV tab and mark the comps you would use."
-                              : undefined,
-                        }}
-                        breakdownHref=""
-                        action={{ label: "Review the comps →", onClick: () => setTab("ARV") }}
-                        testId="header-verdict-arv"
+                    </div>
+
+                    {/* Only once there is a figure. With none, this said
+                        "Check houses nearby" beside "No resale price yet" —
+                        the same sentence twice, both linking to the same tab. */}
+                    {row.arv !== null && (
+                      <div className="flex flex-col items-start gap-1.5">
+                        <span className="text-[12px] text-(--color-text-secondary)">
+                          Worth fixed up?
+                        </span>
+                        <VerdictTag
+                          label={`${dollars(row.arv)} · from ${row.approvedComps} ${row.approvedComps === 1 ? "house" : "houses"}`}
+                          size="answer"
+                          toneClassName="bg-(--color-accent-glow) text-(--color-accent)"
+                          explanation={{
+                            whatsWrong: `Built from ${row.approvedComps} house${row.approvedComps === 1 ? "" : "s"} you approved.`,
+                            target:
+                              row.compsToReview > 0
+                                ? `${row.compsToReview} house${row.compsToReview === 1 ? "" : "s"} still to check.`
+                                : "Every house has been checked.",
+                          }}
+                          breakdownHref=""
+                          action={{ label: "Check houses nearby →", onClick: () => setTab("ARV") }}
+                          testId="header-verdict-arv"
+                        />
+                      </div>
+                    )}
+
+                    {(headline.walkAway !== null || headline.trueProfit !== null) && (
+                      <div className="w-full flex flex-wrap gap-x-6 gap-y-1">
+                        {headline.walkAway !== null && (
+                          <span className="text-[12px] text-(--color-text-secondary)">
+                            Cheque you leave with{" "}
+                            <span className="font-semibold text-(--color-accent)">
+                              {dollars(headline.walkAway, 0)}
+                            </span>
+                          </span>
+                        )}
+                        {headline.trueProfit !== null && (
+                          <span className="text-[12px] text-(--color-text-secondary)">
+                            What you actually made{" "}
+                            <span
+                              className={`font-semibold ${
+                                headline.trueProfit < 0
+                                  ? "text-(--color-danger)"
+                                  : "text-(--color-text-primary)"
+                              }`}
+                            >
+                              {dollars(headline.trueProfit, 0)}
+                            </span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 3. The number you need exactly once and cannot guess.
+
+                    The stage pill and "3 days in this stage" moved off the
+                    card: the log is worth keeping and the card is not where
+                    it reads well. Both still live on Activity. */}
+                {property && (property.parcel_number || property.county) && (
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-(--color-border-subtle) pt-3">
+                    <span className="text-[11px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
+                      Parcel
+                    </span>
+                    <span className="text-[14px] font-medium font-(--font-mono) text-(--color-text-primary)">
+                      {property.parcel_number ?? "Not recorded"}
+                    </span>
+                    {property.parcel_number && (
+                      <CopyButton
+                        value={property.parcel_number}
+                        label="Parcel number"
+                        testId="copy-parcel"
                       />
-                    </div>
-                  )}
-                </div>
+                    )}
+                    {property.county && (
+                      <span className="text-[12px] text-(--color-text-secondary)">
+                        · {property.county} County
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
-
             </div>
-
-            {/* Their own row. Sharing one with the address made the title wrap
-                three characters wide on a phone. */}
-            <div className="flex items-center gap-2 mt-2.5">
-              {property && (
-                <button
-                  type="button"
-                  onClick={() => void toggleFinalist()}
-                  disabled={finalistBusy}
-                  data-testid="finalist-toggle"
-                  aria-pressed={isFinalist}
-                  aria-label={isFinalist ? "Remove from finalists" : "Mark as a finalist"}
-                  className={`shrink-0 flex items-center gap-1 h-8 px-2.5 rounded-[var(--radius-pill)] border text-[12px] font-medium disabled:opacity-40 ${
-                    isFinalist
-                      ? "border-(--color-accent) text-(--color-accent)"
-                      : "border-(--color-border-default) text-(--color-text-secondary)"
-                  }`}
-                >
-                  <Star size={12} fill={isFinalist ? "currentColor" : "none"} />
-                  {isFinalist ? "Finalist" : "Mark finalist"}
-                </button>
-              )}
-
-              {property && (
-                <button
-                  type="button"
-                  onClick={() => setEditingHouse((v) => !v)}
-                  data-testid="edit-house-toggle"
-                  className="shrink-0 flex items-center gap-1 h-8 px-2.5 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[12px] font-medium"
-                >
-                  <Pencil size={12} />
-                  {editingHouse ? "Close" : "Edit"}
-                </button>
-              )}
-            </div>
-
-            {/* The pipeline badge only exists when the house is on the
-                pipeline. A house added from the calculator or a batch paste
-                has no entry, and it is still a house worth looking at. */}
-            {detail.entry ? (
-              <div className="flex items-center gap-2 mt-3 flex-wrap">
-                <div className="relative">
-                  <button
-                    type="button"
-                    data-testid="detail-stage-badge"
-                    disabled={busy}
-                    onClick={() => setMenuOpen((v) => !v)}
-                    className="text-[12px] px-2.5 py-1 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors disabled:opacity-50"
-                  >
-                    {STAGE_LABEL[detail.entry.stage]}
-                  </button>
-                  {menuOpen && detail.entry && (
-                    <StageMenu
-                      current={detail.entry.stage}
-                      onPick={(s: Stage) =>
-                        void post("/api/crm/stage", {
-                          entry_id: detail.entry?.id,
-                          to_stage: s,
-                        })
-                      }
-                      onClose={() => setMenuOpen(false)}
-                    />
-                  )}
-                </div>
-                <span className="text-[11px] text-(--color-text-tertiary)">
-                  {daysInStage(detail.entry.stage_since)}d in stage
-                </span>
-              </div>
-            ) : (
-              <p
-                data-testid="not-on-pipeline"
-                className="text-[11px] text-(--color-text-tertiary) mt-3"
-              >
-                Not on the pipeline — screening only.
-              </p>
-            )}
-
-            {property && (
-              <dl className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 text-[12px]">
-                {[
-                  ["Parcel", property.parcel_number],
-                  ["County", property.county],
-                  ["Type", propertyTypeLabel(property.property_type)],
-                  ["Beds / baths", property.beds || property.baths ? `${property.beds ?? "—"} / ${property.baths ?? "—"}` : null],
-                  ["Sqft", property.sqft ? property.sqft.toLocaleString() : null],
-                  ["Year built", property.year_built],
-                ]
-                  .filter(([, v]) => v !== null && v !== undefined && v !== "")
-                  .map(([label, value]) => (
-                    <div key={String(label)}>
-                      <dt className="text-(--color-text-tertiary)">{label}</dt>
-                      <dd className="text-(--color-text-primary)">{String(value)}</dd>
-                    </div>
-                  ))}
-              </dl>
-            )}
 
             {property && editingHouse && (
               <EditHouseForm
@@ -830,6 +897,37 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
             {tab === "Activity" && detail.entry && (
               <div data-testid="panel-activity">
+                {/* The stage and its age came off the house card — the log is
+                    worth keeping and the card was not where it read well.
+                    Here, above the log it belongs to. */}
+                <div className="flex flex-wrap items-center gap-2 mt-4">
+                  <div className="relative">
+                    <button
+                      type="button"
+                      data-testid="detail-stage-badge"
+                      disabled={busy}
+                      onClick={() => setMenuOpen((v) => !v)}
+                      className="text-[12px] px-2.5 py-1 rounded-full border border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) transition-colors disabled:opacity-50"
+                    >
+                      {STAGE_LABEL[detail.entry.stage]}
+                    </button>
+                    {menuOpen && detail.entry && (
+                      <StageMenu
+                        current={detail.entry.stage}
+                        onPick={(s: Stage) =>
+                          void post("/api/crm/stage", {
+                            entry_id: detail.entry?.id,
+                            to_stage: s,
+                          })
+                        }
+                        onClose={() => setMenuOpen(false)}
+                      />
+                    )}
+                  </div>
+                  <span className="text-[11px] text-(--color-text-secondary)">
+                    {daysInStage(detail.entry.stage_since)} days in this stage
+                  </span>
+                </div>
             {/* Tasks */}
             <div className="flex items-center justify-between mt-6 mb-2">
               <h2 className="text-[13px] font-semibold text-(--color-text-primary)">Tasks</h2>

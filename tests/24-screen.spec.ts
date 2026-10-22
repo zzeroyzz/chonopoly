@@ -144,7 +144,11 @@ test("a house with no ARV says so instead of showing a verdict", async ({ page }
   await stubScreen(page, [row({ hasArv: false, arv: null, profit: null })]);
   await page.goto("/properties");
 
-  await expect(page.getByTestId("verdict-deal-prop-1")).toHaveText("No ARV");
+  // Was "No ARV". Changed because the interface stopped saying it, not
+  // because the test went red: ARV is banned from user-facing text and a
+  // verdict has to say what to do about itself. One definition now, in
+  // NO_RESALE_PRICE_LABEL, shared by this list, the house page and compare.
+  await expect(page.getByTestId("verdict-deal-prop-1")).toHaveText("No resale price yet");
   // Not a dash that could be mistaken for zero.
   await expect(page.getByTestId("screen-row-prop-1")).toContainText("—");
 });

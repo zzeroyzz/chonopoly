@@ -202,6 +202,19 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       patch.listingUrl = listingUrl.value;
     }
 
+    // Same shape as the listing link above, with its own message — the user
+    // is told which of the two boxes is wrong, not just that a URL is.
+    const photoUrl = textOrNullOrSkip(payload.photoUrl);
+    if (!photoUrl.skip) {
+      if (photoUrl.value && !/^https?:\/\//i.test(photoUrl.value)) {
+        return NextResponse.json(
+          { error: "The photo link must start with http:// or https://" },
+          { status: 400 }
+        );
+      }
+      patch.photoUrl = photoUrl.value;
+    }
+
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
     }

@@ -38,6 +38,23 @@ function entry(id: string, address: string, stage = "new_lead") {
 async function stubCrm(page: Page) {
   await stubDataEndpoints(page);
 
+  // Next's dev indicator renders into <nextjs-portal> and sits bottom-left by
+  // default — over the first bottom-bar tabs and over the edit dialog's Save.
+  // It swallowed those clicks, which is why the nav and edit tests failed
+  // only on slower runs, once it had rendered. It is framework chrome, not
+  // the app, so the tests look past it rather than designing around it.
+  // The standing fix is `devIndicators: false` in next.config.ts, which is
+  // build config and wants the owner's say-so.
+  // Applied per load rather than via addInitScript: the overlay mounts after
+  // hydration, so a style appended before parsing does not survive to meet it.
+  page.on("load", () => {
+    void page
+      .addStyleTag({ content: "nextjs-portal{display:none!important}" })
+      .catch(() => {
+        /* Navigated away mid-injection; the next load re-applies it. */
+      });
+  });
+
   await page.route("**/api/crm/pipeline**", (r) =>
     r.fulfill({
       status: 200,
@@ -133,6 +150,11 @@ async function stubCrm(page: Page) {
             isPrimary: true,
             property: null,
             profileSnapshot: null,
+            // listScenarios always returns `inputs`, and the property page
+            // reads the primary's renovationBudget straight off it. Without
+            // it here the page threw on every test that visited a house —
+            // the fixture was describing a response the API never sends.
+            inputs: { homeValue: 250_000, loanType: "fha", renovationBudget: 0 },
           },
         ],
       }),
@@ -225,17 +247,21 @@ test("a property deep link keeps its id", async ({ page }) => {
 
 // ─── The property page ────────────────────────────────────────────────────────
 
-test("the property page has five tabs and they switch", async ({ page }) => {
+test("the property page has six tabs and they switch", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties/e1");
 
-  for (const t of ["overview", "numbers", "comps", "rehab", "activity"]) {
+  // Was five: overview, numbers, comps, rehab, activity. Overview became
+  // Details, Comps became ARV and Deal was added (7d182fd), so this loop
+  // asked for two testids that no longer exist and missed one that does.
+  for (const t of ["details", "arv", "numbers", "deal", "rehab", "activity"]) {
     await expect(page.getByTestId(`tab-${t}`)).toBeVisible();
   }
 
+  // The Details tab's panel still carries the old testid, so this one is
+  // right as written.
   await expect(page.getByTestId("panel-overview")).toBeVisible();
 
-  // The tab was renamed Comps -> ARV and this spec was never updated.
   await page.getByTestId("tab-arv").click();
   await expect(page.getByTestId("panel-comps")).toBeVisible();
   await expect(page.getByTestId("panel-overview")).toHaveCount(0);
@@ -249,27 +275,36 @@ test("the Numbers tab lists this property's analyses", async ({ page }) => {
   await page.goto("/properties/e1");
 
   await page.getByTestId("tab-numbers").click();
-  await expect(page.getByTestId("analysis-a1")).toBeVisible();
+  // Renamed analysis-* to scenario-* in 660d84c.
+  await expect(page.getByTestId("scenario-a1")).toBeVisible();
   await expect(page.getByText("at asking")).toBeVisible();
-  // The scenario the other tabs mean when they say "the price".
-  await expect(page.getByText("primary")).toBeVisible();
+  // The one the other tabs mean when they say "the price". The badge used to
+  // read "primary" — an internal word the writing rules ban — and now says
+  // what it is for.
+  await expect(page.getByTestId("primary-badge-a1")).toContainText("Used for profit");
 });
 
-test("Rehab still says which phase fills it", async ({ page }) => {
+test("Rehab is the estimator, not a placeholder", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties/e1");
 
-  // Comps used to carry the same "arrives with the screening step" placeholder.
-  // It is a real panel now, covered by 23-comps.spec.ts; Rehab is still a
-  // placeholder until the estimating phase lands.
+  // This asserted the "arrives with the estimating step" placeholder until
+  // f9fa0d8 shipped that step and the placeholder went. The promise was kept,
+  // so the test now guards what replaced it — and this is the only Playwright
+  // cover RehabPanel has, which is why it is repointed rather than dropped.
   await page.getByTestId("tab-rehab").click();
-  await expect(page.getByTestId("panel-rehab")).toContainText(/estimating step/);
+  await expect(page.getByTestId("panel-rehab")).toBeVisible();
+  await expect(page.getByTestId("rehab-roof")).toBeVisible();
+  await expect(page.getByTestId("save-rehab")).toBeVisible();
 });
 
 test("the property page fits 390px", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties/e1");
-  await expect(page.getByTestId("tab-overview")).toBeVisible();
+  // Waited on tab-overview, which has not existed since 7d182fd — so the
+  // width check below never ran. On a phone-first app this was the most
+  // expensive of the four to have silently skipped.
+  await expect(page.getByTestId("tab-details")).toBeVisible();
 
   const overflows = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
@@ -366,4 +401,64 @@ test("the edit form fits 390px", async ({ page }) => {
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
   );
   expect(overflows).toBe(false);
+});
+
+test("the edit form opens over the page, not below it", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/properties/e1");
+
+  await page.getByTestId("edit-house-toggle").click();
+
+  // The reported bug: inline, the form rendered after the card, the stage
+  // pill, the facts grid and the parcel disclosure, so it opened well below
+  // the fold and the tap looked like it did nothing.
+  const form = page.getByTestId("edit-house-form");
+  await expect(form).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Edit this house" })).toBeVisible();
+
+  const box = await form.boundingBox();
+  const fold = page.viewportSize()?.height ?? 0;
+  expect(box).not.toBeNull();
+  expect(box!.y).toBeLessThan(fold);
+});
+
+test("Save stays reachable on a 390px screen", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/properties/e1");
+
+  await page.getByTestId("edit-house-toggle").click();
+
+  // A full-bleed dialog fails by pushing its footer off the bottom of a phone
+  // rather than by overflowing sideways, which is what the test above checks.
+  const save = page.getByTestId("edit-house-save");
+  await expect(save).toBeInViewport();
+});
+
+test("a pasted photo link saves", async ({ page }) => {
+  await stubCrm(page);
+
+  const patches: string[] = [];
+  await page.route("**/api/properties/*", async (route) => {
+    if (route.request().method() === "PATCH") {
+      patches.push(route.request().postData() ?? "");
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ property: { id: "prop-e1" } }),
+      });
+    }
+    return route.fallback();
+  });
+
+  await page.goto("/properties/e1");
+  await page.getByTestId("edit-house-toggle").click();
+
+  // The photo could be set on Add and never corrected. This is that path.
+  await page.getByTestId("edit-house-photo").fill("https://example.com/house.jpg");
+  await expect(page.getByTestId("edit-house-photo-preview")).toBeVisible();
+  await page.getByTestId("edit-house-save").click();
+
+  expect(patches).toHaveLength(1);
+  const sent = JSON.parse(patches[0]);
+  expect(sent.photoUrl).toBe("https://example.com/house.jpg");
 });

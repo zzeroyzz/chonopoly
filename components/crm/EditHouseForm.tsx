@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { type ActiveContext } from "@/lib/tenancy";
 import { PROPERTY_TYPE_LABEL } from "@/lib/property/types";
 
@@ -14,6 +15,15 @@ import { PROPERTY_TYPE_LABEL } from "@/lib/property/types";
  *
  * Saving marks the facts as hand-entered, so a later RentCast refresh fills
  * only the fields still blank and never overwrites a correction.
+ *
+ * A dialog over the page, not a band of it. Inline, it rendered after the
+ * house card, the stage pill, the facts grid and the parcel disclosure — so
+ * tapping Edit at the top of a 390px screen put the form a screen and a half
+ * below the thumb and nothing moved where the tap happened.
+ *
+ * The shell is the one NumbersModal uses, hand-rolled for the fourth time in
+ * this codebase. A shared Modal across the four is the right fix and is not
+ * this branch's job.
  */
 
 export interface EditableHouse {
@@ -30,6 +40,12 @@ export interface EditableHouse {
   annual_taxes: number | null;
   list_price: number | null;
   listing_url: string | null;
+  photo_url: string | null;
+}
+
+/** Only an http(s) link is worth rendering as a preview. */
+function isImageLink(value: string): boolean {
+  return /^https?:\/\//i.test(value.trim());
 }
 
 /** Empty string means "clear it"; the API distinguishes null from absent. */
@@ -65,9 +81,30 @@ export function EditHouseForm({
   const [annualTaxes, setAnnualTaxes] = useState(asText(house.annual_taxes));
   const [listPrice, setListPrice] = useState(asText(house.list_price));
   const [listingUrl, setListingUrl] = useState(asText(house.listing_url));
+  const [photoUrl, setPhotoUrl] = useState(asText(house.photo_url));
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Escape closes. No unsaved-changes guard, unlike NumbersModal: this is
+  // eleven short fields that reload from the house in a second, and a confirm
+  // on every tap away is friction for the common case.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onCancel]);
+
+  // The page behind must not scroll while the dialog owns the screen.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -95,6 +132,7 @@ export function EditHouseForm({
           annualTaxes: numberField(annualTaxes),
           listPrice: numberField(listPrice),
           listingUrl: listingUrl.trim() || null,
+          photoUrl: photoUrl.trim() || null,
         }),
       });
 
@@ -123,187 +161,263 @@ export function EditHouseForm({
   const label = "text-[11px] text-(--color-text-secondary)";
 
   return (
-    <form
-      onSubmit={submit}
-      data-testid="edit-house-form"
-      className="rounded-xl border border-(--color-border-default) bg-(--color-elevated) p-3 flex flex-col gap-3 mt-4"
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Edit this house"
     >
-      <p className="text-[11px] text-(--color-text-secondary) leading-relaxed">
-        What you enter here wins over RentCast. A refresh fills only the fields
-        still blank.
-      </p>
+      {/* Backdrop. Tapping it is the same as Cancel. */}
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onCancel}
+        className="absolute inset-0 bg-black/60"
+      />
 
-      <label className="flex flex-col gap-1">
-        <span className={label}>Address</span>
-        <input
-          value={addressLine1}
-          onChange={(e) => setAddressLine1(e.target.value)}
-          required
-          data-testid="edit-house-address"
-          className={field}
-        />
-      </label>
+      {/*
+        Three rows: a fixed header, a scrolling body, and a footer that stays
+        put. min-h-0 on the body is what keeps Save on a 390px screen instead
+        of pushing it past twelve fields.
+      */}
+      <form
+        onSubmit={submit}
+        data-testid="edit-house-form"
+        className="relative flex flex-col w-full h-full sm:h-auto sm:max-h-[90vh] sm:max-w-lg
+          bg-(--color-surface) sm:rounded-xl border border-(--color-border-default) overflow-hidden"
+      >
+        <div className="flex items-start gap-3 px-4 py-3 border-b border-(--color-border-subtle) shrink-0">
+          <div className="min-w-0 flex-1">
+            <p className="text-[14px] font-semibold text-(--color-text-primary)">
+              Edit this house
+            </p>
+            <p className="text-[11px] text-(--color-text-secondary) wrap-break-word">
+              {house.address_line1}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            data-testid="edit-house-close"
+            aria-label="Close"
+            className="shrink-0 p-1 text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
 
-      <div className="flex gap-2">
-        <label className="flex flex-col gap-1 flex-1 min-w-0">
-          <span className={label}>City</span>
-          <input
-            value={city}
-            onChange={(e) => setCity(e.target.value)}
-            data-testid="edit-house-city"
-            className={field}
-          />
-        </label>
-        <label className="flex flex-col gap-1 w-16 shrink-0">
-          <span className={label}>State</span>
-          <input
-            value={state}
-            onChange={(e) => setState(e.target.value.toUpperCase().slice(0, 2))}
-            data-testid="edit-house-state"
-            className={field}
-          />
-        </label>
-        <label className="flex flex-col gap-1 w-24 shrink-0">
-          <span className={label}>ZIP</span>
-          <input
-            value={zip}
-            onChange={(e) => setZip(e.target.value)}
-            inputMode="numeric"
-            data-testid="edit-house-zip"
-            className={field}
-          />
-        </label>
-      </div>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-3">
+          <p className="text-[11px] text-(--color-text-secondary) leading-relaxed">
+            What you enter here wins over RentCast. A refresh fills only the fields
+            still blank.
+          </p>
 
-      <label className="flex flex-col gap-1">
-        <span className={label}>Type</span>
-        <select
-          value={propertyType}
-          onChange={(e) => setPropertyType(e.target.value)}
-          data-testid="edit-house-type"
-          className={field}
-        >
-          {Object.entries(PROPERTY_TYPE_LABEL).map(([value, text]) => (
-            <option key={value} value={value}>
-              {text}
-            </option>
-          ))}
-        </select>
-      </label>
+          <label className="flex flex-col gap-1">
+            <span className={label}>Address</span>
+            <input
+              value={addressLine1}
+              onChange={(e) => setAddressLine1(e.target.value)}
+              required
+              data-testid="edit-house-address"
+              className={field}
+            />
+          </label>
 
-      <div className="flex gap-2">
-        <label className="flex flex-col gap-1 flex-1 min-w-0">
-          <span className={label}>Beds</span>
-          <input
-            value={beds}
-            onChange={(e) => setBeds(e.target.value)}
-            inputMode="decimal"
-            data-testid="edit-house-beds"
-            className={field}
-          />
-        </label>
-        <label className="flex flex-col gap-1 flex-1 min-w-0">
-          <span className={label}>Baths</span>
-          <input
-            value={baths}
-            onChange={(e) => setBaths(e.target.value)}
-            inputMode="decimal"
-            data-testid="edit-house-baths"
-            className={field}
-          />
-        </label>
-        <label className="flex flex-col gap-1 flex-1 min-w-0">
-          <span className={label}>Sqft</span>
-          <input
-            value={sqft}
-            onChange={(e) => setSqft(e.target.value)}
-            inputMode="numeric"
-            data-testid="edit-house-sqft"
-            className={field}
-          />
-        </label>
-      </div>
+          <div className="flex gap-2">
+            <label className="flex flex-col gap-1 flex-1 min-w-0">
+              <span className={label}>City</span>
+              <input
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                data-testid="edit-house-city"
+                className={field}
+              />
+            </label>
+            <label className="flex flex-col gap-1 w-16 shrink-0">
+              <span className={label}>State</span>
+              <input
+                value={state}
+                onChange={(e) => setState(e.target.value.toUpperCase().slice(0, 2))}
+                data-testid="edit-house-state"
+                className={field}
+              />
+            </label>
+            <label className="flex flex-col gap-1 w-24 shrink-0">
+              <span className={label}>ZIP</span>
+              <input
+                value={zip}
+                onChange={(e) => setZip(e.target.value)}
+                inputMode="numeric"
+                data-testid="edit-house-zip"
+                className={field}
+              />
+            </label>
+          </div>
 
-      {/* The asking price. Its own row above the other money fields because
-          it is the figure every later step is measured against — and until
-          it was editable, a price typed once on Add could never be fixed. */}
-      <label className="flex flex-col gap-1">
-        <span className={label}>Asking price</span>
-        <input
-          value={listPrice}
-          onChange={(e) => setListPrice(e.target.value)}
-          inputMode="numeric"
-          placeholder="What it is on the market for today"
-          data-testid="edit-house-price"
-          className={field}
-        />
-        <span className="text-[11px] text-(--color-text-tertiary)">
-          Run the numbers opens on this. Leave it blank if you do not know it
-          yet — blank is better than a guess standing in for a fact.
-        </span>
-      </label>
+          <label className="flex flex-col gap-1">
+            <span className={label}>Type</span>
+            <select
+              value={propertyType}
+              onChange={(e) => setPropertyType(e.target.value)}
+              data-testid="edit-house-type"
+              className={field}
+            >
+              {Object.entries(PROPERTY_TYPE_LABEL).map(([value, text]) => (
+                <option key={value} value={value}>
+                  {text}
+                </option>
+              ))}
+            </select>
+          </label>
 
-      <div className="flex gap-2">
-        <label className="flex flex-col gap-1 flex-1 min-w-0">
-          <span className={label}>Year built</span>
-          <input
-            value={yearBuilt}
-            onChange={(e) => setYearBuilt(e.target.value)}
-            inputMode="numeric"
-            data-testid="edit-house-year"
-            className={field}
-          />
-        </label>
-        <label className="flex flex-col gap-1 flex-1 min-w-0">
-          <span className={label}>Annual taxes</span>
-          <input
-            value={annualTaxes}
-            onChange={(e) => setAnnualTaxes(e.target.value)}
-            inputMode="numeric"
-            data-testid="edit-house-taxes"
-            className={field}
-          />
-        </label>
-      </div>
+          <div className="flex gap-2">
+            <label className="flex flex-col gap-1 flex-1 min-w-0">
+              <span className={label}>Beds</span>
+              <input
+                value={beds}
+                onChange={(e) => setBeds(e.target.value)}
+                inputMode="decimal"
+                data-testid="edit-house-beds"
+                className={field}
+              />
+            </label>
+            <label className="flex flex-col gap-1 flex-1 min-w-0">
+              <span className={label}>Baths</span>
+              <input
+                value={baths}
+                onChange={(e) => setBaths(e.target.value)}
+                inputMode="decimal"
+                data-testid="edit-house-baths"
+                className={field}
+              />
+            </label>
+            <label className="flex flex-col gap-1 flex-1 min-w-0">
+              <span className={label}>Sqft</span>
+              <input
+                value={sqft}
+                onChange={(e) => setSqft(e.target.value)}
+                inputMode="numeric"
+                data-testid="edit-house-sqft"
+                className={field}
+              />
+            </label>
+          </div>
 
-      <label className="flex flex-col gap-1">
-        <span className={label}>Listing link</span>
-        <input
-          value={listingUrl}
-          onChange={(e) => setListingUrl(e.target.value)}
-          placeholder="https://…"
-          data-testid="edit-house-listing"
-          className={field}
-        />
-      </label>
+          {/* The asking price. Its own row above the other money fields because
+              it is the figure every later step is measured against — and until
+              it was editable, a price typed once on Add could never be fixed. */}
+          <label className="flex flex-col gap-1">
+            <span className={label}>Asking price</span>
+            <input
+              value={listPrice}
+              onChange={(e) => setListPrice(e.target.value)}
+              inputMode="numeric"
+              placeholder="What it is on the market for today"
+              data-testid="edit-house-price"
+              className={field}
+            />
+            <span className="text-[11px] text-(--color-text-tertiary)">
+              Run the numbers opens on this. Leave it blank if you do not know it
+              yet — blank is better than a guess standing in for a fact.
+            </span>
+          </label>
 
-      {error && (
-        <p
-          data-testid="edit-house-error"
-          className="text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2"
-        >
-          {error}
-        </p>
-      )}
+          <div className="flex gap-2">
+            <label className="flex flex-col gap-1 flex-1 min-w-0">
+              <span className={label}>Year built</span>
+              <input
+                value={yearBuilt}
+                onChange={(e) => setYearBuilt(e.target.value)}
+                inputMode="numeric"
+                data-testid="edit-house-year"
+                className={field}
+              />
+            </label>
+            <label className="flex flex-col gap-1 flex-1 min-w-0">
+              <span className={label}>Annual taxes</span>
+              <input
+                value={annualTaxes}
+                onChange={(e) => setAnnualTaxes(e.target.value)}
+                inputMode="numeric"
+                data-testid="edit-house-taxes"
+                className={field}
+              />
+            </label>
+          </div>
 
-      <div className="flex gap-2">
-        <button
-          type="submit"
-          disabled={saving}
-          data-testid="edit-house-save"
-          className="h-10 px-4 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[13px] font-semibold disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save"}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          data-testid="edit-house-cancel"
-          className="h-10 px-4 rounded-[var(--radius-pill)] border border-(--color-border-default) text-[13px] font-medium"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
+          <label className="flex flex-col gap-1">
+            <span className={label}>Listing link</span>
+            <input
+              value={listingUrl}
+              onChange={(e) => setListingUrl(e.target.value)}
+              placeholder="https://…"
+              data-testid="edit-house-listing"
+              className={field}
+            />
+          </label>
+
+          {/* The photo. A pasted link rather than an upload: the property-images
+              bucket is written but not created, so an upload button would be a
+              control that fails at the moment of use. */}
+          <label className="flex flex-col gap-1">
+            <span className={label}>Photo link</span>
+            <input
+              value={photoUrl}
+              onChange={(e) => setPhotoUrl(e.target.value)}
+              placeholder="https://…"
+              data-testid="edit-house-photo"
+              className={field}
+            />
+            <span className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
+              Paste a link to a photo of the house — the main listing picture
+              works. Right-click it on Zillow and copy the image address. Clear
+              the box to remove the photo.
+            </span>
+          </label>
+
+          {/* Shown before saving, so a link that is not an image is caught here
+              rather than becoming a broken picture at the top of the page. */}
+          {isImageLink(photoUrl) && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={photoUrl.trim()}
+              alt=""
+              data-testid="edit-house-photo-preview"
+              className="w-full h-32 object-cover rounded-lg border border-(--color-border-subtle)"
+            />
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-(--color-border-subtle) px-4 py-3 flex flex-col gap-2">
+          {error && (
+            <p
+              data-testid="edit-house-error"
+              className="text-[12px] text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2"
+            >
+              {error}
+            </p>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              type="submit"
+              disabled={saving}
+              data-testid="edit-house-save"
+              className="h-10 px-4 rounded-(--radius-pill) bg-(--color-accent) text-(--color-base) text-[13px] font-semibold disabled:opacity-50"
+            >
+              {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              data-testid="edit-house-cancel"
+              className="h-10 px-4 rounded-(--radius-pill) border border-(--color-border-default) text-[13px] font-medium"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
   );
 }

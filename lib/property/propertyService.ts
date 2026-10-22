@@ -273,6 +273,14 @@ export interface PropertyFactsPatch {
   /** What the house is on the market for. Correctable, like sqft. */
   listPrice?: number | null;
   listingUrl?: string | null;
+  /**
+   * A link to a photo of the house. Null clears it, which is how a wrong
+   * paste gets undone.
+   *
+   * Hand-set, so it rides `facts_source = 'manual'` below and a later
+   * RentCast refresh will not replace a photo someone chose.
+   */
+  photoUrl?: string | null;
 }
 
 /**
@@ -336,6 +344,7 @@ export async function updatePropertyFacts(
     ["yearBuilt", "year_built"],
     ["annualTaxes", "annual_taxes"],
     ["listingUrl", "listing_url"],
+    ["photoUrl", "photo_url"],
   ];
 
   let touchedFacts = false;

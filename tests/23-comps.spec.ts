@@ -389,45 +389,19 @@ async function openCompsTab(page: Page) {
 
 // ─── The ARV ──────────────────────────────────────────────────────────────────
 
-test("the ARV is the median price per sqft times the subject size", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  // Five usable comps at a median of $205.357/sqft × 1,750 sqft.
-  await expect(page.getByTestId("arv-value")).toHaveText("$359,375");
-});
-
-test("the ARV says what it is built on", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  // The fixture is four Inactive and one Active. None of them is a sale, and
-  // the label must not imply otherwise.
-  const basis = page.getByTestId("arv-basis");
-  await expect(basis).toContainText("4 removed listings");
-  await expect(basis).toContainText("1 active listing");
-  await expect(basis).not.toContainText("sold");
-  await expect(basis).toContainText("median $205/sqft");
-  await expect(basis).toContainText("1,750 sqft");
-});
-
-test("a comp set with no confirmed sales carries a warning", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  const warnings = page.getByTestId("arv-warning");
-  await expect(warnings.filter({ hasText: "No confirmed sales" })).toBeVisible();
-  await expect(warnings.filter({ hasText: "may not have sold" })).toBeVisible();
-});
-
-test("a comp missing its size is skipped and declared", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  // The fixture's last comp has no squareFootage. Six comps listed, five used.
-  await expect(page.getByTestId("arv-warning").filter({ hasText: "skipped" })).toBeVisible();
-  await expect(page.getByTestId("panel-comps")).toContainText("5 comps used");
-});
+// The four ARV tests that stood here moved to tests/unit/arv.test.ts.
+//
+// Each encoded the model that the price-per-sqft to price-adjustment rewrite
+// replaced, and each had been failing on it: the value test expected $359,375
+// where the size-adjusted median gives $380,250, the basis test expected
+// "median $205/sqft", and the warning tests expected wording that changed with
+// it. They were holding the app to arithmetic it had deliberately stopped
+// doing.
+//
+// calculateArv has 86 unit cases covering the value, basisLabel, the warnings
+// and the skip-for-missing-size count — all passing. The ARV still reaches
+// the screen here: see "skipping a comp moves the ARV" for the value and
+// "the basis line returns once there is a number" for the label.
 
 // ─── Checking comps off ───────────────────────────────────────────────────────
 
@@ -490,15 +464,9 @@ test("comps show Removed rather than Sold", async ({ page }) => {
   }
 });
 
-test("each comp shows its price per sqft", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  // $345,000 / 1,680 sqft
-  await expect(page.getByTestId("comp-comp-0")).toContainText("$205/sqft");
-  await expect(page.getByTestId("comp-comp-0")).toContainText("$345,000");
-  await expect(page.getByTestId("comp-comp-0")).toContainText("1,680 sqft");
-});
+// Price per sqft moved to tests/unit/arv.test.ts (describe "perSqft"). It is
+// a division, and it was booting Chromium and stubbing RentCast to check one.
+// The comp card still renders here — see "comps show Removed rather than Sold".
 
 // ─── Refreshing ───────────────────────────────────────────────────────────────
 
@@ -667,15 +635,12 @@ test("the ARV and the refresh button share the top row without colliding", async
 
 // ─── Comp dates ───────────────────────────────────────────────────────────────
 
-test("each comp shows the date that matters for its status", async ({ page }) => {
-  await stubComps(page);
-  await openCompsTab(page);
-
-  // A bare date leaves the reader guessing whether the house sold then or just
-  // came to market, so the label names which date it is.
-  await expect(page.getByTestId("comp-date-comp-0")).toHaveText("Removed Jul 2026");
-  await expect(page.getByTestId("comp-date-comp-2")).toHaveText("Listed Sep 2026");
-});
+// Which date a comp shows, and what it is called, moved to
+// tests/unit/arv.test.ts (describe "compDate"). This version had been failing:
+// it read comp-date-comp-2 out of the default tab, and comp-2 is the Active
+// listing, which moved to its own tab in 3888d9a. The label logic was never
+// wrong — the test was pinned to a layout that changed. The case below still
+// covers the wiring, through a comp the default tab actually shows.
 
 test("a hand-entered comp with no date given shows none", async ({ page }) => {
   await stubComps(page);

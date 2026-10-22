@@ -291,15 +291,18 @@ test("a listing keeps its Removed label beside the sales", async ({ page }) => {
   await expect(page.getByTestId("comp-price-meaning-old-listing")).toHaveCount(0);
 });
 
-test("a possible fixer-upper is flagged, says why, and stays ticked", async ({ page }) => {
+test("a possible fixer-upper is flagged on the right comp, and stays counted", async ({ page }) => {
   await stubRecordedSales(page, recordedSaleComps());
   await openArvTab(page);
 
+  // The wiring: the flag lands on the company purchase and names the buyer.
+  // The sentence itself is tests/unit/arv.test.ts (describe "fixerUpperNote")
+  // — this used to assert "Untick it to leave it out", which the app stopped
+  // saying when the review card replaced the tick, so the test was holding it
+  // to wording the writing rules had already retired.
   const flag = page.getByTestId("comp-fixer-1842-Lisbon-Dr-SW");
-  await expect(flag).toContainText("Bought by a company");
   await expect(flag).toContainText("GEORGIA TARGET PROPERTIES LTD");
   await expect(flag).toContainText("$145,000");
-  await expect(flag).toContainText("Untick it to leave it out");
 
   // Flagged is not skipped. It is still counted.
   await expect(page.getByTestId("comp-review-1842-Lisbon-Dr-SW")).toContainText(
@@ -321,12 +324,10 @@ test("skipping the flagged sale moves the ARV", async ({ page }) => {
   await expect(page.getByTestId("arv-basis")).toContainText("Based on 4 comps you approved");
 });
 
-test("an ordinary sale carries no fixer flag", async ({ page }) => {
-  await stubRecordedSales(page, recordedSaleComps());
-  await openArvTab(page);
-
-  await expect(page.getByTestId("comp-fixer-952-Estes-Dr-SW")).toHaveCount(0);
-});
+// "an ordinary sale carries no fixer flag" moved to tests/unit/arv.test.ts
+// (describe "fixerUpperNote"): it asserted that a person-bought sale returns
+// no company note, which is the function's own branch. The test above still
+// proves the flag reaches the screen on the comp that earns it.
 
 test("the ARV tab fits 390px with recorded sales on it", async ({ page }) => {
   await stubRecordedSales(page, [...recordedSaleComps(), listingComp()]);
