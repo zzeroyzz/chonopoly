@@ -1,11 +1,9 @@
 "use client";
 
-import { useShellProfile } from "@/components/shell/useShellProfile";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { type ScreenRow } from "@/lib/screen/screenRow";
 import { useCrmContext } from "@/components/crm/useCrmContext";
@@ -153,8 +151,6 @@ const GROUPS: { title: string; rows: RowSpec[] }[] = [
 ];
 
 export function ComparePage() {
-  const router = useRouter();
-  const profile = useShellProfile();
   const { ctxParams } = useCrmContext();
   const [rows, setRows] = useState<ScreenRow[]>([]);
   const [ids, setIds] = useState<string[]>([]);
@@ -204,12 +200,7 @@ export function ComparePage() {
     .slice(0, MAX);
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={profile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8">
         <Link
           href="/properties"
@@ -290,7 +281,7 @@ export function ComparePage() {
           </>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }
 

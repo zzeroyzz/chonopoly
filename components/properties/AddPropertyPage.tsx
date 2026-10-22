@@ -1,11 +1,9 @@
 "use client";
 
-import { useShellProfile } from "@/components/shell/useShellProfile";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, Check, Plus } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 import { useCrmContext } from "@/components/crm/useCrmContext";
 
 /**
@@ -43,7 +41,6 @@ const PLACEHOLDER = `128 Maple St, Duluth GA 30096, 250000, https://…
 
 export function AddPropertyPage() {
   const router = useRouter();
-  const profile = useShellProfile();
   const { ctx } = useCrmContext();
 
   // One house is the normal case; the paste box is for a batch from an agent.
@@ -134,12 +131,7 @@ export function AddPropertyPage() {
   }
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={profile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-5 py-4 pb-24 lg:pb-8">
         <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">
           Add a house
@@ -351,7 +343,7 @@ export function AddPropertyPage() {
           </div>
         )}
       </div>
-    </AppShell>
+    </>
   );
 }
 

@@ -235,6 +235,35 @@ test("the hub fits 390px", async ({ page }) => {
   expect(overflow).toBe(false);
 });
 
+/**
+ * The shell is drawn once.
+ *
+ * Every page used to render its own AppShell, so a tab change unmounted the
+ * whole frame and built a new one — not a document reload, but a rebuild of
+ * everything inside it, which is what made switching tabs look like one.
+ *
+ * Tagging the node is the only way to tell the difference from the outside: a
+ * rebuilt nav is a different element and loses the attribute, while a nav that
+ * was never unmounted still carries it.
+ */
+test("the shell survives a tab change instead of being rebuilt", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/properties");
+
+  const nav = page.locator('nav[aria-label="Main"]');
+  await expect(nav).toBeVisible();
+  await nav.evaluate((el) => el.setAttribute("data-probe", "same-node"));
+
+  await page.getByTestId("nav-tools").click();
+  await expect(page).toHaveURL(/\/tools\/mortgage$/);
+
+  await expect(nav).toHaveAttribute("data-probe", "same-node");
+
+  // And it still knows where you are, which a layout that never re-renders
+  // only manages because the bar derives it inside client components.
+  await expect(page.getByTestId("nav-tools")).toHaveAttribute("aria-current", "page");
+});
+
 test("the active destination follows the route", async ({ page }) => {
   await stubCrm(page);
 

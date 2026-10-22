@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CalendarClock, Check, ChevronRight, Plus } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonCard, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import { STAGE_LABEL } from "@/lib/crm/stages";
 import { daysInStage } from "@/lib/crm/stages";
@@ -11,7 +10,6 @@ import { nextTask, todayKey } from "@/lib/crm/sort";
 import { type PipelineRow, type Stage } from "@/lib/crm/types";
 import { StageMenu } from "./StageMenu";
 import { useCrmContext } from "./useCrmContext";
-import { useShellProfile } from "@/components/shell/useShellProfile";
 
 /**
  * The pipeline.
@@ -65,7 +63,6 @@ function DueBadge({ row }: { row: PipelineRow }) {
 
 export function PipelinePage() {
   const router = useRouter();
-  const profile = useShellProfile();
   const { ctxParams } = useCrmContext();
 
   const [rows, setRows] = useState<PipelineRow[]>([]);
@@ -153,12 +150,7 @@ export function PipelinePage() {
     .reduce((sum, [, n]) => sum + n, 0);
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={profile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8">
         <div className="flex items-baseline justify-between gap-3 mb-4">
           <div>
@@ -301,6 +293,6 @@ export function PipelinePage() {
           })}
         </ul>
       </div>
-    </AppShell>
+    </>
   );
 }

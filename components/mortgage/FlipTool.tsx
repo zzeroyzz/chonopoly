@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Home } from "lucide-react";
-import { AppShell } from "@/components/shell/AppShell";
 import { ToolSwitch } from "./ToolSwitch";
 import { loadProfile } from "@/lib/supabase/profile";
 import { defaultInputs } from "@/lib/mortgage/defaults";
@@ -28,7 +27,6 @@ import { ProfitCard, type ProfitCardEdits } from "./ProfitCard";
  * are created in one place, Add.
  */
 export default function FlipTool() {
-  const router = useRouter();
 
   const [userProfile, setUserProfile] = useState<{
     name: string;
@@ -146,12 +144,7 @@ export default function FlipTool() {
   );
 
   return (
-    <AppShell
-      appName="Park Hawkins Capital"
-      userProfile={userProfile}
-      onboardingCompleted={null}
-      onProfileClick={() => router.push("/settings/account")}
-    >
+    <>
       <div className="overflow-y-auto flex-1 w-full px-5 py-4 pb-24 lg:pb-8">
         <h1 className="text-[18px] font-semibold mb-1 text-(--color-text-primary)">
           Flip profit
@@ -247,6 +240,6 @@ export default function FlipTool() {
           </div>
         </div>
       </div>
-    </AppShell>
+    </>
   );
 }
