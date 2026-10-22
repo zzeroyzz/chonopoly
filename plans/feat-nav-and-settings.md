@@ -164,56 +164,74 @@ about to be replaced is churn.
 
 ## Not a menu — a profile screen
 
-The owner's references are two profile screens, not dropdowns: an identity
-header, a row of stats, then grouped sections whose rows carry an icon, a
-title, **a one-line subtitle** and a chevron.
+The owner's reference is the dark one: a screen where each settings area is
+its **own row**, carrying an icon, a title, a one-line subtitle and a chevron.
+Not a dropdown.
 
-The subtitle is the part that matters here. It dissolves the naming problem
-this branch started with: "Defaults" stops needing a better name the moment
-the row underneath it reads *"Income, debts and the loan numbers every house
-is run against."* A label has to carry the whole meaning; a label with a
-subtitle does not.
+In the bar, the gear becomes the avatar — **icon only**, no "Settings" label.
 
-**So there is no dropdown.** The avatar in the bar navigates to a screen.
+### The four rows already exist, and so do their subtitles
 
-### It is mostly built already
+I had the tab list wrong and the owner corrected it. `SETTINGS_TABS` in
+`components/settings/SettingsShell.tsx:8`:
 
-`app/settings/account/page.tsx` is 213 lines and already holds the entire
-identity header from the reference: avatar, name as an `<h1>`, an ADMIN/USER
-role badge, the email, a username field that saves, and sign out. This grows
-that page rather than adding another — §Code Cleanliness, search before you
-write.
+| Row | Route | Subtitle — already written, in the page |
+|---|---|---|
+| **Income & debts** | `/settings/profile` | "Entered once and used for every house you screen. Nothing re-runs on its own…" |
+| **Loan & cost defaults** | `/settings/defaults` | "Where every screening starts. A scenario can still override any of these…" |
+| **Integrations** | `/settings/integrations` | "Outside data the app pulls in, and what's left of this month's allowance." |
+| **Account** | `/settings/account` | — none; see below |
+
+So the subtitles the reference calls for are **three-quarters written already**.
+Each page passes a `title` and a `description` to `SettingsShell`. The rows do
+not need new copy; they need that copy in one place.
+
+### Two real defects this turns up
+
+**1. The labels and the titles disagree.** `SETTINGS_TABS` says "Defaults"
+while the page it links to is titled "Loan & cost defaults". Same for
+"Income & debts", which the tab gets right and nothing else does. Two
+definitions of one name, which is how they drift.
+
+**2. `/settings/account` does not use `SettingsShell`.** It is a 213-line
+standalone page with no `title` and no `description`, which is why it is the
+one row with no subtitle to inherit. It also already holds the identity header
+the reference puts at the top — avatar, name, ADMIN/USER badge, email,
+username, sign out.
+
+**Fix:** one exported list — route, label, description, icon — that both the
+rows and the pages read. Account gets a description written for it.
+
+### The screen
 
 ```
 Profile
 ┌──────────────────────────────────────┐
-│  ( photo ✎ )  Kato Hernandez         │   ← exists today
+│  ( photo ✎ )  Kato Hernandez         │  from /settings/account today
 │               kato@…        [ADMIN]  │
 ├──────────────────────────────────────┤
-│    12          3            1        │   ← new, see the open question
+│    12          3            1        │  ← open question
 │  Houses    Finalists   Under contract│
 ├──────────────────────────────────────┤
-│  YOUR NUMBERS                        │
-│  ⊞  Your money                     › │   /settings/defaults
-│     Income, debts and the loan       │
-│     numbers every house is run against│
+│  ⊞  Income & debts                 › │
+│     Entered once and used for every  │
+│     house you screen                 │
+│  ⊟  Loan & cost defaults           › │
+│     Where every screening starts     │
+│  ⚡ Integrations                    › │
+│     Outside data, and what is left   │
+│     of this month's allowance        │
+│  ◉  Account                        › │
 ├──────────────────────────────────────┤
-│  THE APP                             │
-│  ⚡ Integrations                    › │   /settings/integrations
-│     RentCast, and what it costs you  │
-├──────────────────────────────────────┤
-│  ⏻  Sign out                         │   exists today
+│  ⏻  Sign out                         │
 └──────────────────────────────────────┘
 ```
-
-`SettingsShell`'s sidebar list (Defaults, Integrations, Account) becomes these
-rows. One definition of where the settings are, not two.
 
 ### ProfileDropdown
 
 With no dropdown, `components/ProfileDropdown.tsx` stays dead — it has no
-callers today either. It is **not** deleted in this branch without the owner's
-word: deleting files is Tier 2. Flagged for a decision, not acted on.
+callers today either. **Not** deleted here without the owner's word: deleting
+files is Tier 2. Flagged, not acted on.
 
 ## Out of scope
 
