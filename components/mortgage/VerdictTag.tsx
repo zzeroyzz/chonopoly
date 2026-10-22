@@ -33,19 +33,25 @@ import { type AffordabilityVerdict, type DealVerdict } from "@/lib/mortgage/verd
  * a tag quietly wearing the wrong colour.
  */
 export const AFFORDABILITY_STYLE: Record<AffordabilityVerdict, string> = {
-  qualifies: "bg-(--color-accent-glow) text-(--color-accent)",
-  tight: "bg-amber-500/10 text-amber-400",
-  does_not_qualify: "bg-red-500/10 text-red-400",
+  qualifies: "bg-(--color-accent-glow) text-(--color-accent) border-(--color-accent)/40",
+  tight: "bg-amber-500/10 text-amber-400 border-amber-400/40",
+  does_not_qualify: "bg-red-500/10 text-red-400 border-red-400/40",
 };
 
 export const DEAL_STYLE: Record<DealVerdict, string> = {
-  works: "bg-(--color-accent-glow) text-(--color-accent)",
-  thin: "bg-amber-500/10 text-amber-400",
-  does_not_work: "bg-red-500/10 text-red-400",
+  works: "bg-(--color-accent-glow) text-(--color-accent) border-(--color-accent)/40",
+  thin: "bg-amber-500/10 text-amber-400 border-amber-400/40",
+  does_not_work: "bg-red-500/10 text-red-400 border-red-400/40",
 };
 
-/** Nothing to judge yet: a state, not a verdict, and it says so quietly. */
-export const UNJUDGED_STYLE = "bg-(--color-base) text-(--color-text-secondary)";
+/**
+ * Nothing to judge yet: a state, not a verdict, and it says so quietly.
+ *
+ * It needs an edge of its own. `--color-base` sits on `--color-elevated`, so
+ * without one the chip read as a hole in the card rather than an answer in it.
+ */
+export const UNJUDGED_STYLE =
+  "bg-(--color-base) text-(--color-text-secondary) border-(--color-border-strong)";
 
 const GUTTER = 8;
 const WIDTH = 272;
@@ -172,13 +178,16 @@ export function VerdictTag({
           e.stopPropagation();
           setOpen((v) => !v);
         }}
+        /* The dotted underline stays on the list pills, where a row of them
+           needs something saying they are more than labels. On an answer it
+           read as a spellcheck squiggle under the word it was meant to
+           dignify, so the chip carries it alone. It is still a button, still
+           focusable, and still opens on tap or Enter. */
         className={`${
           size === "answer"
-            ? "text-[15px] font-semibold px-2.5 py-1 rounded-(--radius-md)"
-            : "text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
-        } cursor-help
-          underline decoration-dotted decoration-from-font underline-offset-2
-          focus:outline-none focus-visible:ring-1 focus-visible:ring-(--color-accent) ${toneClassName}`}
+            ? "text-[15px] font-semibold px-3 py-1.5 rounded-(--radius-md) border text-left"
+            : "text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded cursor-help underline decoration-dotted decoration-from-font underline-offset-2"
+        } focus:outline-none focus-visible:ring-1 focus-visible:ring-(--color-accent) ${toneClassName}`}
       >
         {label}
       </button>

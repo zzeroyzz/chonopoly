@@ -501,10 +501,15 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
                 {!screenLoaded && <Skeleton className="h-4 w-40" />}
 
-                {/* 2. What we think. */}
+                {/* 2. What we think.
+
+                    Side by side, each answer under its own question. They were
+                    full-width rows with the chip pushed to the far edge, so
+                    the eye crossed the card to join a question to its answer
+                    and no two chips lined up. */}
                 {headline && row && (
-                  <div className="flex flex-col gap-2 border-t border-(--color-border-subtle) pt-3">
-                    <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-(--color-border-subtle) pt-3">
+                    <div className="flex flex-col items-start gap-1.5">
                       <span className="text-[12px] text-(--color-text-secondary)">
                         Can we afford it?
                       </span>
@@ -523,7 +528,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                       />
                     </div>
 
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col items-start gap-1.5">
                       <span className="text-[12px] text-(--color-text-secondary)">
                         Does the deal work?
                       </span>
@@ -547,7 +552,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                         "Check houses nearby" beside "No resale price yet" —
                         the same sentence twice, both linking to the same tab. */}
                     {row.arv !== null && (
-                      <div className="flex items-center justify-between gap-3">
+                      <div className="flex flex-col items-start gap-1.5">
                         <span className="text-[12px] text-(--color-text-secondary)">
                           Worth fixed up?
                         </span>
@@ -570,7 +575,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     )}
 
                     {(headline.walkAway !== null || headline.trueProfit !== null) && (
-                      <div className="flex flex-wrap gap-x-6 gap-y-1 mt-1">
+                      <div className="w-full flex flex-wrap gap-x-6 gap-y-1">
                         {headline.walkAway !== null && (
                           <span className="text-[12px] text-(--color-text-secondary)">
                             Cheque you leave with{" "}
