@@ -36,6 +36,7 @@ import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/ty
 import { StageMenu } from "./StageMenu";
 import { ContactCard } from "./ContactCard";
 import { CompsPanel } from "./CompsPanel";
+import { CopyButton } from "@/components/ui/CopyButton";
 import { NumbersModal } from "@/components/mortgage/NumbersModal";
 import { ScenarioRows } from "./ScenarioRows";
 import { RehabPanel } from "./RehabPanel";
@@ -505,9 +506,20 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     )}
                   </div>
 
-                  <h1 className="text-[19px] font-semibold text-(--color-text-primary) wrap-break-word leading-snug">
-                    {property?.address_line1 ?? "Address unknown"}
-                  </h1>
+                  <div className="flex items-start gap-2">
+                    <h1 className="text-[19px] font-semibold text-(--color-text-primary) wrap-break-word leading-snug min-w-0">
+                      {property?.address_line1 ?? "Address unknown"}
+                    </h1>
+                    {property?.address_line1 && (
+                      <CopyButton
+                        value={[property.address_line1, property.city, property.state, property.zip]
+                          .filter(Boolean)
+                          .join(", ")}
+                        label="Address"
+                        testId="copy-address"
+                      />
+                    )}
+                  </div>
                   <p className="text-[12px] text-(--color-text-secondary)">
                     {[property?.city, property?.state, property?.zip].filter(Boolean).join(", ") || "—"}
                   </p>
@@ -658,6 +670,13 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     <span className="text-[14px] font-medium font-(--font-mono) text-(--color-text-primary)">
                       {property.parcel_number ?? "Not recorded"}
                     </span>
+                    {property.parcel_number && (
+                      <CopyButton
+                        value={property.parcel_number}
+                        label="Parcel number"
+                        testId="copy-parcel"
+                      />
+                    )}
                     {property.county && (
                       <span className="text-[12px] text-(--color-text-secondary)">
                         · {property.county} County
