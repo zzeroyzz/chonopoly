@@ -1,5 +1,6 @@
 "use client";
 
+import { useShellProfile } from "@/components/shell/useShellProfile";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -42,6 +43,7 @@ const PLACEHOLDER = `128 Maple St, Duluth GA 30096, 250000, https://…
 
 export function AddPropertyPage() {
   const router = useRouter();
+  const profile = useShellProfile();
   const { ctx } = useCrmContext();
 
   // One house is the normal case; the paste box is for a batch from an agent.
@@ -134,7 +136,7 @@ export function AddPropertyPage() {
   return (
     <AppShell
       appName="Park Hawkins Capital"
-      userProfile={null}
+      userProfile={profile}
       onboardingCompleted={null}
       onProfileClick={() => router.push("/settings/account")}
     >

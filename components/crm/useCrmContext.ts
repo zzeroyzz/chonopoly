@@ -2,14 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { type ActiveContext } from "@/lib/tenancy";
-import { loadProfile } from "@/lib/supabase/profile";
 import { createClient } from "@/lib/supabase/client";
-
-export interface ShellProfile {
-  name: string;
-  avatarUrl: string | null;
-  avatarColor: string | null;
-}
 
 /**
  * The CRM reads the same stored context as Finances, under the same key.
@@ -55,32 +48,4 @@ export function useCrmContext(): { ctx: ActiveContext | null; ctxParams: string 
     ctx,
     ctxParams: ctx ? `context_type=${ctx.type}&context_id=${ctx.id}` : null,
   };
-}
-
-/** The profile the shell needs for its avatar. Shared by all three CRM screens. */
-export function useShellProfile(): ShellProfile | null {
-  const [profile, setProfile] = useState<ShellProfile | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const p = await loadProfile();
-        if (!cancelled) {
-          setProfile({
-            name: p.username ?? "",
-            avatarUrl: p.avatar_url,
-            avatarColor: p.avatar_color,
-          });
-        }
-      } catch {
-        // The shell renders fine without a profile.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return profile;
 }

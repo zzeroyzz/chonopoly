@@ -44,7 +44,8 @@ import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
 import { searchUrls } from "./CompLinks";
 import { propertyTypeLabel } from "@/lib/property/types";
-import { useCrmContext, useShellProfile } from "./useCrmContext";
+import { useCrmContext } from "./useCrmContext";
+import { useShellProfile } from "@/components/shell/useShellProfile";
 
 const ACTIVITY_LABEL: Record<ActivityType, string> = {
   call: "Call",
@@ -636,17 +637,6 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               </div>
               </div>
 
-              {property && editingHouse && (
-                <EditHouseForm
-                  house={property as unknown as EditableHouse}
-                  ctx={ctx}
-                  onSaved={async () => {
-                    setEditingHouse(false);
-                    await load();
-                  }}
-                  onCancel={() => setEditingHouse(false)}
-                />
-              )}
 
             {tab === "Numbers" && (
               <div data-testid="panel-numbers">
@@ -968,6 +958,26 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
               </div>
             )}
             </div>
+
+            {/* Outside the sheet, deliberately.
+
+                The sheet is `relative z-10`, which makes it a stacking
+                context — so a modal rendered inside it has its z-50 scoped
+                to that context, and the bottom bar's z-40 in the root
+                context paints over it. The Save button ended up physically
+                under the nav: elementFromPoint at its centre returned the
+                Properties link, so a thumb hit navigation instead. */}
+            {property && editingHouse && (
+            <EditHouseForm
+            house={property as unknown as EditableHouse}
+            ctx={ctx}
+            onSaved={async () => {
+            setEditingHouse(false);
+            await load();
+            }}
+            onCancel={() => setEditingHouse(false)}
+            />
+            )}
           </>
         )}
       </div>

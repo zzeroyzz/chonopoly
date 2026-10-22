@@ -10,7 +10,8 @@ import { daysInStage } from "@/lib/crm/stages";
 import { nextTask, todayKey } from "@/lib/crm/sort";
 import { type PipelineRow, type Stage } from "@/lib/crm/types";
 import { StageMenu } from "./StageMenu";
-import { useCrmContext, useShellProfile } from "./useCrmContext";
+import { useCrmContext } from "./useCrmContext";
+import { useShellProfile } from "@/components/shell/useShellProfile";
 
 /**
  * The pipeline.

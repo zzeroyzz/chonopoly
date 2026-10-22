@@ -8,7 +8,8 @@ import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton
 import { STAGES, STAGE_LABEL, isTerminal } from "@/lib/crm/stages";
 import { nextTask, todayKey } from "@/lib/crm/sort";
 import { type PipelineRow, type Stage } from "@/lib/crm/types";
-import { useCrmContext, useShellProfile } from "./useCrmContext";
+import { useCrmContext } from "./useCrmContext";
+import { useShellProfile } from "@/components/shell/useShellProfile";
 
 /**
  * Count by stage, tasks due, and the no-open-task defect list. Nothing else.
