@@ -44,7 +44,8 @@ import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
 import { searchUrls } from "./CompLinks";
 import { propertyTypeLabel } from "@/lib/property/types";
-import { useCrmContext, useShellProfile } from "./useCrmContext";
+import { useCrmContext } from "./useCrmContext";
+import { useShellProfile } from "@/components/shell/useShellProfile";
 
 const ACTIVITY_LABEL: Record<ActivityType, string> = {
   call: "Call",

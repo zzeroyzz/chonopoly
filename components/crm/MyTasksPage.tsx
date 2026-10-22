@@ -7,7 +7,8 @@ import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
 import { todayKey } from "@/lib/crm/sort";
 import { type Task } from "@/lib/crm/types";
-import { useCrmContext, useShellProfile } from "./useCrmContext";
+import { useCrmContext } from "./useCrmContext";
+import { useShellProfile } from "@/components/shell/useShellProfile";
 
 /**
  * Open tasks for whoever is signed in, soonest first.

@@ -1,5 +1,6 @@
 "use client";
 
+import { useShellProfile } from "@/components/shell/useShellProfile";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -47,6 +48,7 @@ const FLOW_STEPS = [
 
 export function PropertiesPage() {
   const router = useRouter();
+  const profile = useShellProfile();
   const { ctxParams } = useCrmContext();
   const [rows, setRows] = useState<ScreenRow[]>([]);
   const [filter, setFilter] = useState<"all" | "finalists">("all");
@@ -123,7 +125,7 @@ export function PropertiesPage() {
   return (
     <AppShell
       appName="Park Hawkins Capital"
-      userProfile={null}
+      userProfile={profile}
       onboardingCompleted={null}
       onProfileClick={() => router.push("/settings/account")}
     >

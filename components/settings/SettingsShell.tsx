@@ -1,5 +1,6 @@
 "use client";
 
+import { useShellProfile } from "@/components/shell/useShellProfile";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { type ReactNode } from "react";
@@ -79,12 +80,13 @@ export function SettingsShell({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const profile = useShellProfile();
   const section = SETTINGS_SECTIONS.find((s) => s.href === pathname);
 
   return (
     <AppShell
       appName="Park Hawkins Capital"
-      userProfile={null}
+      userProfile={profile}
       onboardingCompleted={null}
       onProfileClick={() => router.push("/settings")}
     >

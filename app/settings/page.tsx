@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, LogOut } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { SETTINGS_SECTIONS } from "@/components/settings/SettingsShell";
-import { useShellProfile } from "@/components/crm/useCrmContext";
+import { useShellProfile } from "@/components/shell/useShellProfile";
 import { getAvatarColors } from "@/lib/avatar";
 import { logout } from "@/app/login/actions";
 import { Skeleton } from "@/components/ui/Skeleton";
