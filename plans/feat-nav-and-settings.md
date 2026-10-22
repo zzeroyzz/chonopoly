@@ -161,12 +161,54 @@ houses and what they have. It is also a feature, not a label:
 route, its page and — for now — its name. Renaming it to something that is
 about to be replaced is churn.
 
+## What the menu holds
+
+The owner's structure: the avatar takes the Settings slot, and everything
+about *you* lives behind it — your financial settings (debt, salary), the
+admin settings, and your team.
+
+```
+[ your photo ]
+  ──────────────────────────────
+  Your money      /settings/defaults       income, debts, loan defaults
+  Your team       /team                    NOT BUILT — see below
+  ──────────────────────────────
+  Integrations    /settings/integrations
+  Account         /settings/account
+  ──────────────────────────────
+  Sign out
+```
+
+Two things this turned up.
+
+**"Defaults" is the same defect as "Pipeline".** `/settings/defaults` is where
+income and the loan numbers live — `DefaultsForm` has "Set income", down
+payment, rate, term, DPA — but it is named for what it is to the code. §Writing
+bans exactly this. The menu says **Your money**; the route does not move.
+
+**The team API already exists and the screens do not.** `app/api/teams/route.ts`
+(GET, POST), `/api/teams/mine`, and invite accept / decline are all there.
+`find app -path '*team*' -name page.tsx` returns nothing. So teammates is UI
+over working routes, not a feature from scratch.
+
+**But a menu item pointing at a page that does not exist is worse than a
+missing one** — `sections.tsx` says so itself, about cash flow and markets:
+
+> A nav item pointing at a 404 is worse than a missing one, which is why cash
+> flow and markets are absent rather than present and disabled.
+
+So **Your team is left out of this branch** and gets its own, once there is a
+page to open. Everything else in the menu points at a page that exists today.
+
 ## Out of scope
 
 - The settings pages themselves.
 - What `/pipeline` shows or how its stages work.
 - The collapsing-hero scroll model on the house page.
 - `tests/23-comps.spec.ts`'s isolation defect.
+- **The team screens.** The API is ready; the UI is its own branch, and the
+  menu gains the item when the page lands.
+- The companies CRM.
 
 ## Approver
 
