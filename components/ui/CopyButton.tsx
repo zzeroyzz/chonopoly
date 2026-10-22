@@ -11,8 +11,9 @@ import { Check, Copy } from "lucide-react";
  * Both are things the owner reads off this screen and types into another one,
  * which is the whole case for this button existing.
  *
- * It says "Copied" rather than flashing a tick alone, because a tick on its
- * own leaves you wondering whether it copied the thing you meant.
+ * Icon only: beside a parcel number the word "Copy" was wider than some of
+ * the values it sat next to. The tick and the accent colour carry the
+ * confirmation, and `aria-label` carries the words for anyone who needs them.
  */
 export function CopyButton({
   value,
@@ -51,15 +52,15 @@ export function CopyButton({
       onClick={() => void copy()}
       data-testid={testId}
       aria-label={copied ? `${label} copied` : `Copy the ${label.toLowerCase()}`}
-      className={`inline-flex items-center gap-1 h-7 px-2 rounded-(--radius-pill)
-        border text-[11px] font-medium transition-colors ${
+      title={copied ? `${label} copied` : `Copy the ${label.toLowerCase()}`}
+      className={`inline-flex items-center justify-center w-7 h-7 shrink-0
+        rounded-(--radius-pill) border transition-colors ${
           copied
             ? "border-(--color-accent) text-(--color-accent)"
-            : "border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong)"
+            : "border-(--color-border-default) text-(--color-text-secondary) hover:border-(--color-border-strong) hover:text-(--color-text-primary)"
         }`}
     >
-      {copied ? <Check size={11} /> : <Copy size={11} />}
-      {copied ? "Copied" : "Copy"}
+      {copied ? <Check size={12} /> : <Copy size={12} />}
     </button>
   );
 }
