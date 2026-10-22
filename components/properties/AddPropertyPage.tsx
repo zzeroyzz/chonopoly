@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, Check, Plus } from "lucide-react";
 import { useCrmContext } from "@/components/crm/useCrmContext";
@@ -41,6 +41,16 @@ const PLACEHOLDER = `128 Maple St, Duluth GA 30096, 250000, https://…
 
 export function AddPropertyPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  /**
+   * The company this house is being added for, when there is one.
+   *
+   * A house in a lender's portfolio is a real house — same table, same ARV and
+   * Deal tabs — so it is added through this form rather than a second, lesser
+   * one. The only difference is where you end up afterwards.
+   */
+  const companyId = searchParams.get("company");
   const { ctx } = useCrmContext();
 
   // One house is the normal case; the paste box is for a batch from an agent.
@@ -84,6 +94,22 @@ export function AddPropertyPage() {
         throw new Error(b.error ?? "Could not add the house");
       }
       const body = (await res.json()) as { property: { id: string } };
+
+      if (companyId) {
+        // Into the portfolio, then back to the company — building one means
+        // adding several, and the house is reachable from there.
+        const link = await fetch(`/api/crm/companies/${companyId}?context_type=${ctx.type}&context_id=${ctx.id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ propertyId: body.property.id }),
+        });
+        if (!link.ok) {
+          const b = (await link.json().catch(() => ({}))) as { error?: string };
+          throw new Error(b.error ?? "Added the house, but not to the company");
+        }
+        router.push(`/companies/${companyId}`);
+        return;
+      }
 
       // Straight to the house, at the next step in the flow — the point of
       // adding one is to find out whether it is worth anything.

@@ -51,7 +51,7 @@ export default function InvitePage() {
         const body = await res.json().catch(() => ({}));
         throw new Error((body as { error?: string }).error ?? "Failed to join team.");
       }
-      router.push("/pipeline");
+      router.push("/properties");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to join team.");
       setActing(false);
@@ -98,7 +98,7 @@ export default function InvitePage() {
           <>
             <p className="text-[15px] font-semibold text-(--color-text-primary) mb-2">Invite not found</p>
             <p className="text-sm text-red-400">{error}</p>
-            <Link href="/pipeline" className="inline-block mt-4 text-sm text-(--color-accent) hover:opacity-80 transition-opacity">
+            <Link href="/properties" className="inline-block mt-4 text-sm text-(--color-accent) hover:opacity-80 transition-opacity">
               Go home
             </Link>
           </>
@@ -108,7 +108,7 @@ export default function InvitePage() {
           <>
             <p className="text-[15px] font-semibold text-(--color-text-primary) mb-2">Invite declined</p>
             <p className="text-sm text-(--color-text-secondary)">You&apos;ve declined the team invite. No action has been taken.</p>
-            <Link href="/pipeline" className="inline-block mt-4 text-sm text-(--color-accent) hover:opacity-80 transition-opacity">
+            <Link href="/properties" className="inline-block mt-4 text-sm text-(--color-accent) hover:opacity-80 transition-opacity">
               Go home
             </Link>
           </>

@@ -833,6 +833,7 @@ export type Database = {
           created_by: string
           first_name: string | null
           id: string
+          kind: string
           last_name: string | null
           mailing_address_line1: string | null
           mailing_city: string | null
@@ -842,6 +843,7 @@ export type Database = {
           owner_id: string
           owner_type: string
           updated_at: string
+          website: string | null
         }
         Insert: {
           company?: string | null
@@ -849,6 +851,7 @@ export type Database = {
           created_by: string
           first_name?: string | null
           id?: string
+          kind?: string
           last_name?: string | null
           mailing_address_line1?: string | null
           mailing_city?: string | null
@@ -858,6 +861,7 @@ export type Database = {
           owner_id: string
           owner_type: string
           updated_at?: string
+          website?: string | null
         }
         Update: {
           company?: string | null
@@ -865,6 +869,7 @@ export type Database = {
           created_by?: string
           first_name?: string | null
           id?: string
+          kind?: string
           last_name?: string | null
           mailing_address_line1?: string | null
           mailing_city?: string | null
@@ -874,6 +879,7 @@ export type Database = {
           owner_id?: string
           owner_type?: string
           updated_at?: string
+          website?: string | null
         }
         Relationships: []
       }

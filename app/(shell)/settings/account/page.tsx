@@ -120,7 +120,7 @@ function ProfileContent() {
   return (
     <div className="min-h-screen bg-(--color-base) text-(--color-text-primary)">
       <div className="bg-(--color-elevated) border-b border-(--color-border-default) px-6 py-4">
-        <Link href="/pipeline" className="inline-flex items-center gap-1.5 text-(--color-text-secondary) hover:text-(--color-accent) text-sm transition-colors">
+        <Link href="/properties" className="inline-flex items-center gap-1.5 text-(--color-text-secondary) hover:text-(--color-accent) text-sm transition-colors">
           <ArrowLeft size={14} />
           Back to Home
         </Link>

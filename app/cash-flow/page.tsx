@@ -5,5 +5,5 @@ import { redirect } from "next/navigation";
  * than to a page that explains it is not built yet.
  */
 export default function CashFlowRedirect() {
-  redirect("/pipeline");
+  redirect("/properties");
 }

@@ -85,88 +85,14 @@ const COUNTS = {
   dead: 1,
 };
 
-async function stubPipeline(page: Page) {
-  await stubDataEndpoints(page);
-  await page.route("**/api/crm/pipeline**", (route) => {
-    if (route.request().method() !== "GET") return route.continue();
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ rows: ROWS, counts: COUNTS }),
-    });
-  });
-}
-
 // ─── Pipeline list ────────────────────────────────────────────────────────────
-
-test("pipeline renders one list at 390px with no column to pick first", async ({ page }) => {
-  await stubPipeline(page);
-  await page.goto("/pipeline");
-
-  const rows = page.getByTestId("pipeline-row");
-  await expect(rows).toHaveCount(3);
-
-  // Every lead is visible without selecting a stage. That's the whole argument
-  // against the board: nothing is behind a choice.
-  await expect(page.getByText("114 Peachtree St")).toBeVisible();
-  await expect(page.getByText("220 Oak Ave")).toBeVisible();
-  await expect(page.getByText("9 Elm Ct")).toBeVisible();
-});
-
-test("the order the API returns is the order rendered — overdue first", async ({ page }) => {
-  await stubPipeline(page);
-  await page.goto("/pipeline");
-
-  const rows = page.getByTestId("pipeline-row");
-  await expect(rows.nth(0)).toContainText("114 Peachtree St");
-  await expect(rows.nth(1)).toContainText("220 Oak Ave");
-  await expect(rows.nth(2)).toContainText("9 Elm Ct");
-});
-
-test("an overdue task and a lead with no follow-up both say so", async ({ page }) => {
-  await stubPipeline(page);
-  await page.goto("/pipeline");
-
-  await expect(page.getByText("Overdue —")).toBeVisible();
-  // A lead nobody is chasing is a defect, not a quiet success.
-  await expect(page.getByText("No follow-up")).toBeVisible();
-});
-
-test("stage changes from a menu on the row, and every stage is one tap away", async ({ page }) => {
-  await stubPipeline(page);
-
-  let posted: Record<string, unknown> | null = null;
-  await page.route("**/api/crm/stage**", async (route) => {
-    posted = route.request().postDataJSON();
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ entry: entry("e1", "dead", new Date().toISOString()) }),
-    });
-  });
-
-  await page.goto("/pipeline");
-  await page.getByTestId("stage-badge").first().click();
-  await expect(page.getByTestId("stage-menu")).toBeVisible();
-
-  // Including the two moves a swipe can't express: straight to dead, and back.
-  await expect(page.getByTestId("stage-option-dead")).toBeVisible();
-  await expect(page.getByTestId("stage-option-new_lead")).toBeVisible();
-
-  await page.getByTestId("stage-option-dead").click();
-  await expect.poll(() => posted).not.toBeNull();
-  expect(posted).toMatchObject({ entry_id: "e1", to_stage: "dead" });
-});
-
-test("closed and dead are hidden until asked for", async ({ page }) => {
-  await stubPipeline(page);
-  await page.goto("/pipeline");
-
-  const toggle = page.getByTestId("toggle-terminal");
-  await expect(toggle).toHaveText("Show closed & dead");
-  await toggle.click();
-  await expect(toggle).toHaveText("Hide closed & dead");
-});
+//
+// Removed with the screens. The pipeline was the same rows as Properties
+// arranged by stage, and the owner had it taken out: "it's not useful for me".
+// Its tests go with it rather than being kept green against nothing.
+//
+// The DATA is untouched — pipeline_entries still holds each house's stage and
+// the house page still reads it, which the Property detail tests below cover.
 
 // ─── Property detail ──────────────────────────────────────────────────────────
 
@@ -401,13 +327,3 @@ test("the hub fits 390px", async ({ page }) => {
   expect(overflow).toBe(false);
 });
 
-test("dashboard lists stage counts and the no-follow-up defects", async ({ page }) => {
-  await stubPipeline(page);
-  await page.goto("/pipeline/dashboard");
-
-  await expect(page.getByText("By stage")).toBeVisible();
-  // e3 is active with zero open tasks — the one defect in the fixture.
-  const defects = page.getByTestId("defect-row");
-  await expect(defects).toHaveCount(1);
-  await expect(defects.first()).toContainText("9 Elm Ct");
-});

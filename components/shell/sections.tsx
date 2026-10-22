@@ -1,4 +1,4 @@
-import { ListChecks, Home, Plus, Wrench, User } from "lucide-react";
+import { Building2, Home, Plus, Wrench, User } from "lucide-react";
 import { type ShellNavItem } from "./types";
 
 /**
@@ -46,11 +46,15 @@ export const NAV_DESTINATIONS: NavDestination[] = [
     href: "/properties",
   },
   {
-    id: "pipeline",
-    label: "Pipeline",
-    icon: <ListChecks size={16} />,
-    href: "/pipeline",
-    matches: ["/pipeline", "/crm"],
+    id: "companies",
+    label: "Companies",
+    icon: <Building2 size={16} />,
+    // Pipeline was the same rows as Properties arranged by stage, which is
+    // why no name for it worked: every honest one was either jargon or a word
+    // already true of the other tab. This is a different noun — Properties is
+    // houses and whether the numbers work, this is who has houses.
+    href: "/companies",
+    matches: ["/companies", "/pipeline", "/crm"],
   },
   {
     id: "add",
