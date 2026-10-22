@@ -77,8 +77,19 @@ export function AppShell({
   // Section memory went with the sections. The bar holds every destination now,
   // so there is no "go back to where I was in that module" to remember.
 
+  /*
+   * h-dvh, not min-h-screen.
+   *
+   * min-h-screen let the shell grow with its content, so <main> grew too and
+   * the document scrolled — which meant every page's own overflow-y-auto
+   * container never scrolled, and every sticky inside one was inert, having a
+   * scroll box that could not scroll. All ten pages already carry that
+   * container, so capping the shell at the viewport is what they were written
+   * for. dvh rather than vh because the owner is on a phone, where 100vh is
+   * taller than the visible area under the browser toolbar.
+   */
   return (
-    <div className="flex min-h-screen overflow-x-hidden bg-(--color-base) text-(--color-text-primary)">
+    <div className="flex h-dvh overflow-x-hidden bg-(--color-base) text-(--color-text-primary)">
 
       <ShellSidebar
         sectionLabel={sectionLabel ?? active?.label ?? appName}

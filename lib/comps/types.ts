@@ -60,14 +60,14 @@ export type CompReview =
 
 export const COMP_REVIEW_LABELS: Record<CompReview, string> = {
   needs_review: "Needs review",
-  renovated_use: "Renovated: use it",
-  not_renovated_skip: "Not renovated: skip",
-  took_off_market_skip: "Took off market: skip",
-  not_comparable_skip: "Not comparable: skip",
+  renovated_use: "Renovated",
+  not_renovated_skip: "Not renovated",
+  took_off_market_skip: "Took off market",
+  not_comparable_skip: "Not comparable",
   // Says what it does as well as what it is: the resale price is the thing
   // the owner is deciding about, and "can't tell" alone does not say that it
   // moves out of the number.
-  cant_tell_skip: "Photos are gone — can't tell. Left out of the resale price.",
+  cant_tell_skip: "Photos are gone, can't tell.",
 };
 
 /**

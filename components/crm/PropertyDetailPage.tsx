@@ -12,16 +12,11 @@ import {
   Home,
   Pencil,
   Ruler,
+  X,
   Plus,
 } from "lucide-react";
 import { AppShell } from "@/components/shell/AppShell";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
-import {
-  VerdictTag,
-  AFFORDABILITY_STYLE,
-  DEAL_STYLE,
-  UNJUDGED_STYLE,
-} from "@/components/mortgage/VerdictTag";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
 import { dollars } from "@/components/mortgage/format";
 import { type ScreenRow } from "@/lib/screen/screenRow";
@@ -357,7 +352,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
       onboardingCompleted={null}
       onProfileClick={() => router.push("/settings/account")}
     >
-      <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:px-8 lg:pb-8 max-w-3xl">
+      <div className="overflow-y-auto flex-1 w-full px-4 pb-24 lg:px-8 lg:pb-8 max-w-3xl">
         {/* Back to wherever you came from. Always sending people to the
             pipeline was wrong the moment Properties became home. */}
         <button
@@ -367,7 +362,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
             else router.push("/properties");
           }}
           data-testid="back"
-          className="inline-flex items-center gap-1.5 text-[12px] text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors mb-3"
+          className="inline-flex items-center gap-1.5 text-[12px] text-(--color-text-tertiary) hover:text-(--color-text-primary) transition-colors mt-4 mb-3"
         >
           <ArrowLeft size={13} /> Back
         </button>
@@ -415,23 +410,43 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 It grew to eight bands separated by four rules, so nothing
                 grouped and the three uppercase questions shouted over the
                 answers they labelled. Three sections now, two rules. */}
-            <div className="rounded-(--radius-xl) border border-(--color-border-default) bg-(--color-elevated) overflow-hidden">
+            {/* The hero: the house, pinned, with the work riding up over it.
+
+                sticky rather than fixed — fixed takes it out of flow and the
+                sheet would then have to know its height, a number that goes
+                stale the moment the photo's aspect changes.
+
+                -mx-4 cancels the scroll container's side padding. Without it
+                the hero is inset 16px on each edge, which is a gap down the
+                side rather than full bleed. */}
+            <div className="sticky top-0 z-0 -mx-4 lg:-mx-8">
               {/* The two things you do to a house sit on its corners, the way
                   the save and share buttons do on a listing card. Both carry
                   their own dark ground so they stay legible over a bright
                   photo as well as over the empty band. */}
               <div className="relative">
                 {property?.photo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={property.photo_url}
-                    alt=""
-                    data-testid="property-photo"
-                    className="w-full h-44 sm:h-56 object-cover"
-                  />
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={property.photo_url}
+                      alt=""
+                      data-testid="property-photo"
+                      className="w-full h-72 sm:h-80 lg:h-[420px] object-cover"
+                    />
+                    {/* The facts sit on the photo, so the bottom of the photo
+                        has to stop competing with them. */}
+                    <div
+                      className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent"
+                      aria-hidden="true"
+                    />
+                  </>
                 ) : (
-                  /* No photo is a fact about the house, not a hole in the page. */
-                  <div className="h-16 bg-(--color-surface) border-b border-(--color-border-subtle) flex items-center px-4">
+                  /* No photo is a fact about the house, not a hole in the page.
+                     The band clears the chips on its corners now: at h-16 the
+                     line ran under them and surfaced between the two as a
+                     fragment of a sentence. */
+                  <div className="h-20 bg-(--color-surface) flex items-end px-4 pb-2">
                     <span className="text-[11px] text-(--color-text-secondary)">
                       No photo yet — add one when you edit the house.
                     </span>
@@ -446,46 +461,20 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     data-testid="finalist-toggle"
                     aria-pressed={isFinalist}
                     aria-label={isFinalist ? "Remove from finalists" : "Mark as a finalist"}
-                    className={`absolute left-3 top-3 flex items-center gap-1.5 h-9 px-3
-                      rounded-(--radius-pill) border backdrop-blur text-[12px] font-medium
-                      disabled:opacity-40 transition-colors ${
-                        isFinalist
-                          ? "bg-(--color-accent) border-transparent text-(--color-base)"
-                          : "bg-black/60 border-white/25 text-white"
-                      }`}
+                    title={isFinalist ? "Remove from finalists" : "Mark as a finalist"}
+                    className={`absolute left-3 top-3 inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-(--radius-pill) border backdrop-blur transition-colors disabled:opacity-40 ${
+                      isFinalist
+                        ? "bg-(--color-accent) border-transparent text-(--color-base)"
+                        : "bg-black/60 border-white/25 text-white"
+                    }`}
                   >
-                    <Star size={13} fill={isFinalist ? "currentColor" : "none"} />
-                    Finalist
+                    <Star size={15} fill={isFinalist ? "currentColor" : "none"} />
                   </button>
                 )}
 
                 {property && (
-                  <button
-                    type="button"
-                    onClick={() => setEditingHouse((v) => !v)}
-                    data-testid="edit-house-toggle"
-                    aria-label={editingHouse ? "Close the house form" : "Edit this house"}
-                    className="absolute right-3 top-3 flex items-center gap-1.5 h-9 px-3
-                      rounded-(--radius-pill) bg-black/60 border border-white/25 backdrop-blur
-                      text-[12px] font-medium text-white transition-colors"
-                  >
-                    <Pencil size={13} />
-                    {editingHouse ? "Close" : "Edit"}
-                  </button>
-                )}
-              </div>
-
-              <div className="p-4 flex flex-col gap-4">
-                {/* 1. What it is. */}
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-baseline gap-2 min-w-0">
-                      <span className="text-[26px] font-bold leading-none tracking-tight">
-                        {headline ? dollars(headline.price, 0) : "—"}
-                      </span>
-                      <span className="text-[11px] text-(--color-text-secondary)">asking</span>
-                    </div>
-                    {property?.address_line1 && (
+                  <div className="absolute right-3 top-3 flex items-center gap-2">
+                    {property.address_line1 && (
                       <a
                         href={
                           searchUrls(
@@ -497,14 +486,44 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                         target="_blank"
                         rel="noopener noreferrer"
                         data-testid="property-zillow"
-                        className="shrink-0 inline-flex items-center gap-1 h-8 px-3 rounded-(--radius-pill)
-                          border border-(--color-border-strong) text-[12px] font-medium
-                          text-(--color-text-primary)"
+                        aria-label="Open this house on Zillow"
+                        title="Open this house on Zillow"
+                        className="inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-(--radius-pill) border backdrop-blur transition-colors bg-black/60 border-white/25 text-white"
                       >
-                        Zillow
-                        <ExternalLink size={11} />
+                        <ExternalLink size={15} />
                       </a>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setEditingHouse((v) => !v)}
+                      data-testid="edit-house-toggle"
+                      aria-label={editingHouse ? "Close the house form" : "Edit this house"}
+                      title={editingHouse ? "Close the house form" : "Edit this house"}
+                      className="inline-flex items-center justify-center w-9 h-9 shrink-0 rounded-(--radius-pill) border backdrop-blur transition-colors bg-black/60 border-white/25 text-white"
+                    >
+                      {editingHouse ? <X size={15} /> : <Pencil size={15} />}
+                    </button>
+                  </div>
+                )}
+                {/* The facts, in the only two places they can go: over the
+                    photo on a house that has one, on the band on a house that
+                    does not. One definition, not a light copy and a dark one —
+                    text-primary is #F4F4F6 and the gradient under it is black,
+                    so the same tokens read in both settings. */}
+                <div
+                  className={`flex flex-col gap-1.5 ${
+                    property?.photo_url
+                      ? "absolute inset-x-0 bottom-0 px-4 pb-8"
+                      : "px-4 py-3"
+                  }`}
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <span className="text-[26px] font-bold leading-none tracking-tight">
+                        {headline ? dollars(headline.price, 0) : "—"}
+                      </span>
+                      <span className="text-[11px] text-(--color-text-secondary)">asking</span>
+                    </div>
                   </div>
 
                   <div className="flex items-start gap-2">
@@ -529,7 +548,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                       makes this scannable at a glance rather than a sentence
                       to be read, which is why they came back. */}
                   {property && (
-                    <div className="flex flex-wrap items-center gap-y-2 mt-1 text-[12px] text-(--color-text-primary)">
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1 text-[12px] text-(--color-text-primary)">
                       {[
                         [<BedDouble key="b" size={14} />, property.beds === null ? null : `${property.beds} bed`],
                         [<Bath key="t" size={14} />, property.baths === null ? null : `${property.baths} bath`],
@@ -538,133 +557,23 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                         [<Home key="h" size={14} />, propertyTypeLabel(property.property_type)],
                       ]
                         .filter(([, label]) => Boolean(label))
-                        .map(([icon, label], index) => (
+                        .map(([icon, label]) => (
                           <span key={String(label)} className="inline-flex items-center gap-1.5">
-                            {index > 0 && (
-                              <span
-                                className="w-px h-4 bg-(--color-border-default) mx-3"
-                                aria-hidden="true"
-                              />
-                            )}
                             <span className="text-(--color-text-secondary)">{icon}</span>
                             {label}
                           </span>
                         ))}
                     </div>
                   )}
-                </div>
-
-                {!screenLoaded && <Skeleton className="h-4 w-40" />}
-
-                {/* 2. What we think.
-
-                    Side by side, each answer under its own question. They were
-                    full-width rows with the chip pushed to the far edge, so
-                    the eye crossed the card to join a question to its answer
-                    and no two chips lined up. */}
-                {headline && row && (
-                  <div className="flex flex-wrap gap-x-8 gap-y-3 border-t border-(--color-border-subtle) pt-3">
-                    <div className="flex flex-col items-start gap-1.5">
-                      <span className="text-[12px] text-(--color-text-secondary)">
-                        Can we afford it?
-                      </span>
-                      <VerdictTag
-                        label={headline.affordability}
-                        size="answer"
-                        toneClassName={
-                          row.affordability.needsProfile
-                            ? UNJUDGED_STYLE
-                            : AFFORDABILITY_STYLE[row.affordability.verdict]
-                        }
-                        explanation={row.explanations.afford}
-                        breakdownHref=""
-                        action={{ label: "See full breakdown →", onClick: () => setTab("Deal") }}
-                        testId="header-verdict-afford"
-                      />
-                    </div>
-
-                    <div className="flex flex-col items-start gap-1.5">
-                      <span className="text-[12px] text-(--color-text-secondary)">
-                        Does the deal work?
-                      </span>
-                      <VerdictTag
-                        label={headline.deal}
-                        size="answer"
-                        toneClassName={
-                          row.deal.hasArv ? DEAL_STYLE[row.deal.verdict] : UNJUDGED_STYLE
-                        }
-                        explanation={row.explanations.deal}
-                        breakdownHref=""
-                        action={{
-                          label: row.deal.hasArv ? "See full breakdown →" : "Check houses nearby →",
-                          onClick: () => setTab(row.deal.hasArv ? "Deal" : "ARV"),
-                        }}
-                        testId="header-verdict-deal"
-                      />
-                    </div>
-
-                    {/* Only once there is a figure. With none, this said
-                        "Check houses nearby" beside "No resale price yet" —
-                        the same sentence twice, both linking to the same tab. */}
-                    {row.arv !== null && (
-                      <div className="flex flex-col items-start gap-1.5">
-                        <span className="text-[12px] text-(--color-text-secondary)">
-                          Worth fixed up?
-                        </span>
-                        <VerdictTag
-                          label={`${dollars(row.arv)} · from ${row.approvedComps} ${row.approvedComps === 1 ? "house" : "houses"}`}
-                          size="answer"
-                          toneClassName="bg-(--color-accent-glow) text-(--color-accent)"
-                          explanation={{
-                            whatsWrong: `Built from ${row.approvedComps} house${row.approvedComps === 1 ? "" : "s"} you approved.`,
-                            target:
-                              row.compsToReview > 0
-                                ? `${row.compsToReview} house${row.compsToReview === 1 ? "" : "s"} still to check.`
-                                : "Every house has been checked.",
-                          }}
-                          breakdownHref=""
-                          action={{ label: "Check houses nearby →", onClick: () => setTab("ARV") }}
-                          testId="header-verdict-arv"
-                        />
-                      </div>
-                    )}
-
-                    {(headline.walkAway !== null || headline.trueProfit !== null) && (
-                      <div className="w-full flex flex-wrap gap-x-6 gap-y-1">
-                        {headline.walkAway !== null && (
-                          <span className="text-[12px] text-(--color-text-secondary)">
-                            Cheque you leave with{" "}
-                            <span className="font-semibold text-(--color-accent)">
-                              {dollars(headline.walkAway, 0)}
-                            </span>
-                          </span>
-                        )}
-                        {headline.trueProfit !== null && (
-                          <span className="text-[12px] text-(--color-text-secondary)">
-                            What you actually made{" "}
-                            <span
-                              className={`font-semibold ${
-                                headline.trueProfit < 0
-                                  ? "text-(--color-danger)"
-                                  : "text-(--color-text-primary)"
-                              }`}
-                            >
-                              {dollars(headline.trueProfit, 0)}
-                            </span>
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 3. The number you need exactly once and cannot guess.
+                {/* The parcel number belongs with the rest of what the house
+                    is, not below the verdicts. It is the one value here that
+                    gets typed into a county site over and over.
 
                     The stage pill and "3 days in this stage" moved off the
                     card: the log is worth keeping and the card is not where
                     it reads well. Both still live on Activity. */}
                 {property && (property.parcel_number || property.county) && (
-                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-(--color-border-subtle) pt-3">
+                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1">
                     <span className="text-[11px] uppercase tracking-[0.1em] text-(--color-text-secondary)">
                       Parcel
                     </span>
@@ -685,49 +594,59 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     )}
                   </div>
                 )}
+                </div>
               </div>
             </div>
 
-            {property && editingHouse && (
-              <EditHouseForm
-                house={property as unknown as EditableHouse}
-                ctx={ctx}
-                onSaved={async () => {
-                  setEditingHouse(false);
-                  await load();
-                }}
-                onCancel={() => setEditingHouse(false)}
-              />
-            )}
+            {/* The sheet: the work, riding up over the house.
 
-            {/* The flow, as four steps with a single next action. The tabs
-                below can be used in any order; this says which one matters. */}
-            {/* The step bar that used to sit here is gone. Two rows of the
-                same four destinations, one above the other, is one row too
-                many — the tabs below do the job and have two more. */}
+                It overlaps the hero by exactly one radius (--radius-xl is
+                20px) so the corners cut into the photo rather than sitting
+                under it, and it carries the page's own background so nothing
+                shows through what is written on it. */}
+            <div className="relative z-10 -mt-5 -mx-4 lg:-mx-8 min-h-[60vh] rounded-t-(--radius-xl) border-t border-(--color-border-default) bg-(--color-base) px-4 lg:px-8 pt-2 shadow-[0_-14px_28px_rgba(0,0,0,0.55)]">
+              <div className="sticky top-0 z-20 -mx-4 lg:-mx-8 px-4 lg:px-8 pt-2 bg-(--color-base) rounded-t-(--radius-xl)">
+                <div
+                  className="mx-auto mb-1 h-1 w-10 rounded-(--radius-pill) bg-(--color-border-strong)"
+                  aria-hidden="true"
+                />
+                {/* No sideways scroll at any width. At 390px the six labels
+                    overflowed by 37px and "Activity" was cut to "Act"; tighter
+                    padding and a smaller label fit them with room to spare, so
+                    every tab keeps its full name. */}
+                {/* The way between panels, pinned with the lip above it so
+                    the two move as one piece. */}
+                <div className="flex border-b border-(--color-border-default)">
+                {TABS.map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTab(t)}
+                    data-testid={`tab-${t.toLowerCase()}`}
+                    aria-current={tab === t ? "page" : undefined}
+                    className={`flex-1 min-w-0 px-1.5 py-2 text-[12px] sm:text-[13px] sm:px-3 border-b-2 -mb-px whitespace-nowrap transition-colors ${
+                      tab === t
+                        ? "text-(--color-accent) border-(--color-accent) font-medium"
+                        : "text-(--color-text-secondary) border-transparent hover:text-(--color-text-primary)"
+                    }`}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+              </div>
 
-            {/* No sideways scroll at any width. At 390px the six labels
-                overflowed by 37px and "Activity" was cut to "Act"; tighter
-                padding and a smaller label fit them with room to spare, so
-                every tab keeps its full name. */}
-            <div className="flex border-b border-(--color-border-default) mt-4 mb-4">
-              {TABS.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => setTab(t)}
-                  data-testid={`tab-${t.toLowerCase()}`}
-                  aria-current={tab === t ? "page" : undefined}
-                  className={`flex-1 min-w-0 px-1.5 py-2 text-[12px] sm:text-[13px] sm:px-3 border-b-2 -mb-px whitespace-nowrap transition-colors ${
-                    tab === t
-                      ? "text-(--color-accent) border-(--color-accent) font-medium"
-                      : "text-(--color-text-secondary) border-transparent hover:text-(--color-text-primary)"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
+              {property && editingHouse && (
+                <EditHouseForm
+                  house={property as unknown as EditableHouse}
+                  ctx={ctx}
+                  onSaved={async () => {
+                    setEditingHouse(false);
+                    await load();
+                  }}
+                  onCancel={() => setEditingHouse(false)}
+                />
+              )}
 
             {tab === "Numbers" && (
               <div data-testid="panel-numbers">
@@ -1048,6 +967,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
             )}
               </div>
             )}
+            </div>
           </>
         )}
       </div>
