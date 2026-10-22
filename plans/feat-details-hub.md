@@ -1,6 +1,6 @@
 # Plan: Details becomes the way in
 
-Status: **Draft** — waiting for the Approver, then the owner. No code written.
+Status: **Revised (rev 2)** — 2026-10-22, after a self-review. Awaiting the owner. No code written.
 Branch: `feat/details-hub` — **not cut.** `feat/house-header` is unmerged, and
 one branch at a time means this starts from main after that lands.
 RentCast requests: **0**. Every figure here is already on the page.
@@ -65,6 +65,18 @@ Three lines, in this order, and the order is the point:
 A tile with nothing to say yet says so and offers the first step:
 *"Not checked yet · 72 houses to go"*. **No tile is ever blank and no tile
 shows a dash.** The whole tile is the tap target, minimum `tap-min`.
+
+**Before the figures arrive, and if they never do.** `row` is
+`ScreenRow | null`: it lands a round trip after the house itself, and a failed
+screen request leaves it null for good. The page already has `screenLoaded`
+and a `Skeleton` for exactly this, and the hub uses both:
+
+- **Loading** — each tile holds its own height with a skeleton line, so the
+  grid does not grow under a thumb already reaching for it.
+- **Loaded, no row** — the tiles that need `row` say *"Couldn't work the
+  numbers out — open it and we'll try again"* and still link through. A tile
+  that vanishes on a failed request is a tile the owner thinks they imagined.
+- The rehab and activity tiles **do not read `row`** and render either way.
 
 ### Where every figure comes from
 
@@ -180,4 +192,50 @@ at 390px — four tiles two-up on a phone is exactly where this wraps badly.
 
 ## Approver
 
-Not yet reviewed. Outcome and date to be recorded here.
+**2026-10-22 — Proceed, with one change made.**
+
+**This is a self-review**, at the owner's standing instruction. It is not the
+independent review `CLAUDE.md` describes and should not later be read as one.
+It checks facts against code; it cannot judge whether a hub is the right idea,
+because the same hand drew it.
+
+### The one gap, now fixed in the body
+
+Rev 1 said *"no tile is ever blank"* and then never said what a tile shows
+while `row` is null — which it is on every first paint, and stays if the
+screen request fails. Five of the seven tiles read `row`. Without an answer
+the grid either renders empty cells or pops into existence a round trip late,
+under a thumb already moving.
+
+The page solved this for the card with `screenLoaded` and `Skeleton`. The hub
+uses the same two, and a failed load says so rather than hiding — written into
+Approach.
+
+### Verified against the code
+
+- `PropertyDetailPage.tsx` is **1,075 lines** and holds six panels. The
+  new-file argument holds.
+- `primaryBudget` is in component scope at `:202`, so the rehab tile reads the
+  same value `RehabPanel` does rather than recomputing it.
+- `ScreenRow` really does carry `piti` (`:92`), `cashToClose` (`:94`) and
+  `marginPct` (`:102`), plus the affordability, deal, arv and comp counts the
+  table claims.
+- The Details panel is Contacts and nothing else (`:858-872`). Rev 1's earlier
+  claim in conversation that Details was *empty* was wrong; the plan says
+  Contacts, which is right, and Contacts stays where it is.
+- `resolveRehab` is imported at `:44` and already called at `:816`.
+
+### Judged, not just checked
+
+- **One Playwright journey test is correct here** where the house-header
+  redesign correctly had none. A hub is wiring — tiles rendering, a tap
+  landing on the right tab — and wiring is the thing only a browser proves.
+  The wording lives in Jest, which is what §Testing asks for.
+- **Leaving the card's verdicts undecided is right.** It is a real choice with
+  an argument each way, and a plan that quietly picks one is how the same fact
+  ends up worded two ways in two places.
+
+**Recommendation: proceed.** The gap above is closed. Nothing else in the plan
+overstates its reach.
+
+**Not approval to start. The owner decides.**
