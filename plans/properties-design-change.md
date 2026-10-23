@@ -1,8 +1,10 @@
 # Plan: the Properties page looks like houses
 
-Status: **User approved** — 2026-10-23: "Approved: Stage 1 as written in
-plans/properties-design-change.md, option A. Reason-copy fix as the next
-branch; Stage 2 later." Self-reviewed first (rev 2, see the end of this file).
+Status: **Approver reviewed (rev 3)**: self-reviewed, see §Rev 3. Awaiting
+the owner. Stage 1 was **User approved** on 2026-10-23 ("Approved: Stage 1 as
+written in plans/properties-design-change.md, option A. Reason-copy fix as the
+next branch; Stage 2 later.") and is built and committed (`8e922f0`). Rev 3 is
+the owner's change to that layout, and none of it is built.
 Branch: `properties-design-change`, cut from `main` at `08679fa`. The name
 skips the `feat/` prefix the rules ask for. It can be renamed before the first
 commit if the owner wants.
@@ -14,6 +16,141 @@ Button, EmptyState, Explain, SpecsBar, StatCard, StatusPill and VerdictCard
 guidelines. Where the owner's reference screenshots and the system disagree,
 **the system wins**, and each place this happens is listed in §What the
 references lose.
+
+## Rev 3: a row of houses over a map
+
+The owner, after seeing Stage 1: *"I want side ways scroll so the houses need
+to be in a row.. underneath the houses will be a map with the properties pin
+point on the map."*
+
+That changes the Stage 1 layout and brings the map forward from Stage 2, so
+it comes back through review. It stays on this branch, because it is the same
+page and nothing here is pushed yet.
+
+### The layout, phone and desktop alike
+
+```
+Properties
+Every house you're looking at. Tap one to see whether it works.
+(All) (Finalists)                                   (Compare 2)
+┌──────────┐ ┌──────────┐ ┌──────
+│  photo   │ │  band    │ │  pho      ← one row, scrolls sideways, snaps to
+│ ⟨Tight⟩  │ │ ⟨Thin⟩   │ │           a card; the next card peeks in so
+│ $135,000 │ │ $100,000 │ │           the row reads as more than one house
+│ 674 Whit…│ │ 1900 Win…│ │
+└──────────┘ └──────────┘ └──────
+╭─────────────────────────────────╮
+│   map, dark tiles, one pin per  │   ← fills the rest of the screen
+│   house with its asking price   │
+│        ($135k)      ($100k)     │
+╰─────────────────────────────────╯
+```
+
+- **The row and the map are linked.** When a card snaps into the middle, its pin
+  is highlighted and the map pans to it. Tapping a pin scrolls the row to that
+  card. Tapping a card still opens the house.
+- **A card in the row is shorter than the Stage 1 card.** At 390px a full
+  Stage 1 card is about 470px tall, which would push the map off the screen. A
+  row card is about 280px wide, with a shorter photo (about 130px, or the
+  band), both verdicts, price, address, and the spec line. **The reason line
+  is clamped to two lines.** "Resale price not checked yet", Compare, and the
+  steps count stay, compressed into one footer row. Nothing leaves the card
+  that option A kept.
+- **Desktop** works the same, with wider cards (about 340px) and a taller
+  map. The Stage 1 grid goes away.
+- **A house the map can't place** still shows in the row. A line above the
+  map says how many are missing: *"2 houses aren't on the map yet. We place a
+  house when it's added or its address changes."*
+
+### Three things the map needs: OWNER DECIDES
+
+**1. A map library, which is a new dependency.**
+
+| | Key | Cost | Dark tiles |
+|---|---|---|---|
+| **`leaflet` 1.9.4 + `react-leaflet` 5.0.0** (+ `@types/leaflet` for development) | no | free | **yes**, CartoDB "dark matter", with attribution shown |
+| Mapbox / Google | yes | metered | yes |
+
+**Recommended: leaflet.** `react-leaflet` 5 supports React 19, which this app is
+on. About 45 KB gzipped, loaded only on this page, through
+`next/dynamic` with `ssr: false` (Leaflet needs `window`; the pattern comes
+from `node_modules/next/dist/docs/01-app/02-guides/lazy-loading.md`). The app
+sets no Content-Security-Policy, so the tiles load without config changes.
+
+**Stack exception:** Leaflet ships its own stylesheet
+(`leaflet/dist/leaflet.css`), and the map does not position correctly without
+it. It is imported once, inside the map component. This is the one non-Tailwind
+style, and only because the library requires it. The pins themselves are
+Tailwind-styled HTML.
+
+**2. Where a house's coordinates come from.** The US Census geocoder
+(`geocoding.geo.census.gov/geocoder/locations/onelineaddress`) is free, needs
+no key, and the app already calls the same service for county tax
+(`lib/census/propertyTax.ts`). It runs on the server when a house is added
+(including batch add) and when its address is edited. It costs **no RentCast
+requests**. If the geocoder fails or finds no match, **the house still saves**.
+It just isn't placed, and the line above the map counts it.
+
+**3. The houses that already exist have no coordinates.** There are three ways
+to handle them:
+
+| Option | Writes to the live database? | Trade-off |
+|---|---|---|
+| **A, recommended:** a one-off fill script, written on this branch, **run only when the owner says "run the backfill"** | yes: `latitude`, `longitude` on each existing house, nothing else | one run and done; it lists the rows it will touch before writing |
+| B: look them up every time the page loads, and never save them | no | about one second slower per load, and the Census service is asked the same thing every time |
+| C: leave them off the map until each one is edited | no | the map starts empty for every house that exists today |
+
+### Scope (rev 3)
+
+| File | Change |
+|---|---|
+| `package.json`, lockfile | `leaflet`, `react-leaflet`, and `@types/leaflet` (dev), **on approval** |
+| `components/properties/PropertiesPage.tsx` | The grid becomes the snapping row. The row card is the compact form of the Stage 1 card. Row and map selection are linked. |
+| `components/properties/HouseMap.tsx`, **new** | The map: tiles, price pins, highlight, and tap-to-select. A new file because Leaflet has to load client-only through `next/dynamic`, which needs it in its own module. |
+| `lib/census/geocode.ts`, **new** | Address → `{ latitude, longitude } \| null`. Kept apart from `propertyTax.ts` because that file does county tax rates; the two share only the host. |
+| `lib/property/propertyService.ts` | Geocode on create, and on update when the address changes. A failure never blocks the save. |
+| `lib/screen/screenRow.ts`, `screenService.ts` | `latitude`, `longitude` read and passed through to the row |
+| `scripts/backfill-coordinates.ts`, **new**, only if option A | Lists, then fills, existing houses. **Not run** without the owner's word. |
+| `tests/unit/geocode.test.ts`, **new** | Parsing the Census reply: a match, no match, a bad reply |
+| `tests/unit/screenRow.test.ts` | Coordinates pass through |
+| `tests/24-screen.spec.ts` | The journey: the row scrolls, tapping a pin selects its card, the 390px check |
+
+### Risks (rev 3)
+
+- **New dependencies**: three packages, named above. Tier 2, so they're only
+  installed on approval.
+- **The backfill writes production data.** It is written but not run, as the
+  owner's no-production-writes rule requires, and the script prints the rows
+  before changing any.
+- **The geocoder is an outside service on the save path.** A timeout (5
+  seconds) and a null result mean it can slow a save, but it can never fail
+  one.
+- **The Census geocoder misses some addresses**, such as new builds and rural
+  routes. Those houses show in the row but not on the map, and the count says so.
+- **The Stage 1 grid is replaced**, and its commit stays in history.
+- **Map tiles come from CartoDB's free tier**, which asks for attribution and
+  fair use. A personal tool with a handful of houses is well inside that.
+
+### Approver (self-review, rev 3)
+
+The same Claude that builds it wrote this review. **It is not independent.**
+
+- **Every Tier 2 item is named**: three dependencies, a production write
+  (backfill option A, not run), and one outside call on save.
+- **Every new file has a reason**: the map must be its own module for
+  `ssr: false`, the geocoder is a separate concern from tax rates, and the
+  backfill is a one-off.
+- **Design system**: the dark tiles keep the dark-only rule. Pins carry the
+  price in `figure-sm` on `color-overlay`, the selected pin uses
+  `color-accent`, and the attribution text is secondary, never tertiary. The
+  row cards keep 44px targets.
+- **Changed by this review**:
+  - The first sketch kept the full Stage 1 card in the row. At 390px that left
+    no room for the map, so the row card is compact.
+  - The geocode-on-save path was changed so it can never block a save.
+
+**Recommendation:** approve rev 3 with leaflet and backfill option A. The
+backfill is run later, only on your word.
 
 ## The problem
 
