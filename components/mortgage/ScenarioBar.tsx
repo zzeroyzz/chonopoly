@@ -4,12 +4,12 @@ import { useCallback, useEffect, useState, useRef } from "react";
 import { Save, Trash2, History, RotateCcw, X, AlertCircle, Home, MapPin } from "lucide-react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import {
-  type ScenarioProperty,
   type ScenarioSummary,
   type ScenarioVersion,
   diffInputs,
 } from "@/lib/mortgage/scenarioService";
 import { snapshotChanges } from "@/lib/mortgage/resolveInputs";
+import { groupByProperty, isSaveableName } from "@/lib/mortgage/groupScenarios";
 import { saveAnalysis } from "@/lib/mortgage/scenarioClient";
 import { Card, SectionLabel } from "./fields";
 import { dollars } from "./format";
@@ -49,24 +49,6 @@ function formatValue(v: unknown): string {
   if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
   if (v === null || v === undefined) return "—";
   return String(v);
-}
-
-/** Group scenarios by the house they belong to; unassigned ones come last. */
-function groupByProperty(scenarios: ScenarioSummary[]) {
-  const houses = new Map<string, { property: ScenarioProperty; rows: ScenarioSummary[] }>();
-  const unassigned: ScenarioSummary[] = [];
-
-  for (const s of scenarios) {
-    if (!s.property) {
-      unassigned.push(s);
-      continue;
-    }
-    const existing = houses.get(s.property.id);
-    if (existing) existing.rows.push(s);
-    else houses.set(s.property.id, { property: s.property, rows: [s] });
-  }
-
-  return { houses: [...houses.values()], unassigned };
 }
 
 /** One saved scenario. Extracted from the flat list it replaced, unchanged. */
@@ -291,7 +273,7 @@ export function ScenarioBar({
   }, []);
 
   async function save() {
-    if (!label.trim() || busy) return;
+    if (!isSaveableName(label) || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -416,7 +398,7 @@ export function ScenarioBar({
         <button
           type="button"
           onClick={() => void save()}
-          disabled={!label.trim() || busy}
+          disabled={!isSaveableName(label) || busy}
           className="h-9 px-3 rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[13px] font-semibold disabled:opacity-40 transition-opacity shrink-0 inline-flex items-center gap-1.5"
           data-testid="scenario-save"
         >

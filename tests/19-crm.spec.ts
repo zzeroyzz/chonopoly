@@ -52,39 +52,6 @@ function task(id: string, entryId: string, dueDate: string, title = "Follow up")
   };
 }
 
-// Deliberately given to the page in the order the API would return them —
-// already sorted, because the sort is server-side.
-const ROWS = [
-  {
-    entry: entry("e1", "contacted", "2026-08-01T00:00:00Z"),
-    addressLine1: "114 Peachtree St",
-    city: "Atlanta",
-    openTasks: [task("t1", "e1", isoDaysFromNow(-4))],
-  },
-  {
-    entry: entry("e2", "contacted", "2026-09-01T00:00:00Z"),
-    addressLine1: "220 Oak Ave",
-    city: "Marietta",
-    openTasks: [task("t2", "e2", isoDaysFromNow(0))],
-  },
-  {
-    entry: entry("e3", "new_lead", "2026-06-01T00:00:00Z"),
-    addressLine1: "9 Elm Ct",
-    city: "Decatur",
-    openTasks: [],
-  },
-];
-
-const COUNTS = {
-  new_lead: 1,
-  contacted: 2,
-  qualified: 0,
-  offer: 0,
-  under_contract: 0,
-  closed: 3,
-  dead: 1,
-};
-
 // ─── Pipeline list ────────────────────────────────────────────────────────────
 //
 // Removed with the screens. The pipeline was the same rows as Properties
@@ -196,45 +163,8 @@ async function stubDetail(page: Page) {
   await page.route("**/api/crm/entry/**", detail);
 }
 
-test("a suppressed number stays visible, struck through, with its reason", async ({ page }) => {
-  await stubDetail(page);
-  await page.goto("/properties/e1");
-
-  // Hiding it wouldn't suppress the call — it would move the lookup somewhere
-  // nobody can flag it. So it's on screen, and it says why.
-  const suppressed = page.getByTestId("suppressed-phone");
-  await expect(suppressed).toBeVisible();
-  await expect(suppressed).toContainText("+14045550199");
-  await expect(page.getByText("Seller asked us to stop")).toBeVisible();
-
-  // And it is not a tel link, while the clean number is.
-  await expect(page.locator('a[href="tel:+14045550199"]')).toHaveCount(0);
-  await expect(page.locator('a[href="tel:+14045550100"]')).toHaveCount(1);
-});
-
-test("detail shows the property, its contact and its activity at 390px", async ({ page }) => {
-  await stubDetail(page);
-  // The route moved to /properties/[id]; the old one redirects here.
-  await page.goto("/properties/e1");
-
-  await expect(page.getByRole("heading", { name: "114 Peachtree St" })).toBeVisible();
-
-  // Contacts and activity now live on separate tabs rather than one long
-  // scroll, so each is asserted where it actually is.
-  await expect(page.getByText("Dana Whitfield")).toBeVisible();
-
-  await page.getByTestId("tab-activity").click();
-  await expect(page.getByText("Left a voicemail.")).toBeVisible();
-
-  // Nothing overflows the phone. A horizontal scrollbar here means a card is
-  // wider than the viewport, which is the failure mode this width is testing.
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-  );
-  expect(overflow).toBe(false);
-});
-
-// ─── Dashboard ────────────────────────────────────────────────────────────────
+// Suppressed numbers (struck through, no tel link, the reason named) are
+// tested against phoneDisplay in tests/unit/crm.test.ts.
 
 /**
  * The hub's one journey.
@@ -300,30 +230,38 @@ async function stubHub(page: Page) {
   );
 }
 
-test("the hub shows where the house stands and opens the tab behind a tile", async ({ page }) => {
+test("detail shows the property, its contact and its activity at 390px", async ({ page }) => {
   await stubHub(page);
+  // The route moved to /properties/[id]; the old one redirects here.
   await page.goto("/properties/e1");
 
-  await expect(page.getByTestId("hub-tile-arv")).toContainText("Not checked yet");
-  await expect(page.getByTestId("hub-tile-arv")).toContainText("72 houses to go through");
-  await expect(page.getByTestId("hub-tile-numbers")).toContainText("$1,247 a month");
-  await expect(page.getByTestId("hub-tile-deal")).toContainText("No resale price yet");
-
-  // The wiring: a tile is a way in, not a label.
-  await page.getByTestId("hub-tile-arv").click();
-  await expect(page.getByTestId("panel-comps")).toBeVisible();
-});
-
-test("the hub fits 390px", async ({ page }) => {
-  await stubHub(page);
-  await page.goto("/properties/e1");
-
+  await expect(page.getByRole("heading", { name: "114 Peachtree St" })).toBeVisible();
+  // The hub's tiles sit two-up on a phone, which is exactly where this wraps
+  // badly, so it is on screen for the width check below.
   await expect(page.getByTestId("details-hub")).toBeVisible();
 
-  // Four tiles two-up on a phone is exactly where this wraps badly.
+  // Contacts and activity now live on separate tabs rather than one long
+  // scroll, so each is asserted where it actually is.
+  await expect(page.getByText("Dana Whitfield")).toBeVisible();
+
+  await page.getByTestId("tab-activity").click();
+  await expect(page.getByText("Left a voicemail.")).toBeVisible();
+
+  // Nothing overflows the phone. A horizontal scrollbar here means a card is
+  // wider than the viewport, which is the failure mode this width is testing.
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
   );
   expect(overflow).toBe(false);
 });
 
+test("a hub tile opens the tab behind it", async ({ page }) => {
+  await stubHub(page);
+  await page.goto("/properties/e1");
+
+  // What each tile says is tested against the wording in
+  // tests/unit/detailsHub.test.ts.
+  // The wiring: a tile is a way in, not a label.
+  await page.getByTestId("hub-tile-arv").click();
+  await expect(page.getByTestId("panel-comps")).toBeVisible();
+});

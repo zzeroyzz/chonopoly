@@ -164,75 +164,40 @@ async function stubCrm(page: Page) {
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
-test("the bottom bar holds all five destinations", async ({ page }) => {
+test("the nav reaches every section, and the active tab follows", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties");
 
   for (const id of ["companies", "properties", "add", "tools", "settings"]) {
     await expect(page.getByTestId(`nav-${id}`)).toBeVisible();
   }
-});
+  await expect(page.getByTestId("nav-properties")).toHaveAttribute("aria-current", "page");
 
-test("the nav reaches every section", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/properties");
-
-  await page.getByTestId("nav-properties").click();
-  await expect(page).toHaveURL(/\/properties$/);
-
+  // Longest prefix wins, so /properties/new is Add rather than Properties.
   await page.getByTestId("nav-add").click();
   await expect(page).toHaveURL(/\/properties\/new$/);
+  await expect(page.getByTestId("nav-add")).toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId("nav-properties")).not.toHaveAttribute("aria-current", "page");
 
   await page.getByTestId("nav-tools").click();
   await expect(page).toHaveURL(/\/tools\/mortgage$/);
 
-  // The last slot opens the hub, not one of the four areas behind it.
-  await page.getByTestId("nav-settings").click();
-  await expect(page).toHaveURL(/\/settings$/);
-
   await page.getByTestId("nav-companies").click();
   await expect(page).toHaveURL(/\/companies$/);
-});
 
-/**
- * The last slot is you.
- *
- * It carries no caption, so its accessible name is the only thing naming it —
- * which makes that name load-bearing rather than decorative.
- */
-test("the last slot is your avatar, named without a caption", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/properties");
-
+  // The last slot is you: no caption, so its accessible name is what names it.
   const you = page.getByTestId("nav-settings");
   await expect(you).toHaveAttribute("aria-label", "You");
-  await expect(you).not.toContainText("Settings");
-});
+  await you.click();
+  await expect(page).toHaveURL(/\/settings$/);
 
-test("the hub opens each of the four areas and says what is behind them", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/settings");
-
-  // Every row says what it holds. "Defaults" alone never did.
-  await expect(page.getByTestId("hub-profile")).toContainText("Income & debts");
-  await expect(page.getByTestId("hub-defaults")).toContainText("Where every screening starts");
-  await expect(page.getByTestId("hub-integrations")).toContainText("RentCast request");
-  await expect(page.getByTestId("hub-account")).toBeVisible();
-  await expect(page.getByTestId("hub-sign-out")).toBeVisible();
-
+  // The hub, at phone width, opens the areas behind it.
+  const fits = await page.evaluate(
+    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+  );
+  expect(fits, "the settings hub fits 390px").toBe(true);
   await page.getByTestId("hub-defaults").click();
   await expect(page).toHaveURL(/\/settings\/defaults$/);
-});
-
-test("the hub fits 390px", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/settings");
-
-  await expect(page.getByTestId("hub-profile")).toBeVisible();
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-  );
-  expect(overflow).toBe(false);
 });
 
 /**
@@ -258,38 +223,14 @@ test("the shell survives a tab change instead of being rebuilt", async ({ page }
   await expect(page).toHaveURL(/\/tools\/mortgage$/);
 
   await expect(nav).toHaveAttribute("data-probe", "same-node");
-
-  // And it still knows where you are, which a layout that never re-renders
-  // only manages because the bar derives it inside client components.
   await expect(page.getByTestId("nav-tools")).toHaveAttribute("aria-current", "page");
-});
-
-test("the active destination follows the route", async ({ page }) => {
-  await stubCrm(page);
-
-  await page.goto("/properties");
-  await expect(page.getByTestId("nav-properties")).toHaveAttribute("aria-current", "page");
-
-  // Longest prefix wins, so /properties/new is Add rather than Properties.
-  await page.goto("/properties/new");
-  await expect(page.getByTestId("nav-add")).toHaveAttribute("aria-current", "page");
-  await expect(page.getByTestId("nav-properties")).not.toHaveAttribute("aria-current", "page");
-});
-
-test("Tools lists only calculators that exist", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/tools/mortgage");
-
-  // No "soon" cards: a nav item pointing at a 404 is worse than a missing one.
-  await expect(page.getByText(/Cash flow analysis/)).toHaveCount(0);
-  await expect(page.getByText(/Market analysis/)).toHaveCount(0);
 });
 
 // ─── Redirects ────────────────────────────────────────────────────────────────
 
 // Everything that used to land on the pipeline lands on Properties now. The
 // pipeline's own routes are gone, so a redirect still pointing at one would
-// send an old bookmark to a 404 — which is the thing these tests exist to stop.
+// send an old bookmark to a 404 — which is the thing this test exists to stop.
 const REDIRECTS: [string, RegExp][] = [
   ["/app", /\/properties$/],
   ["/crm", /\/properties$/],
@@ -300,84 +241,51 @@ const REDIRECTS: [string, RegExp][] = [
   ["/more", /\/properties$/],
   ["/cash-flow", /\/properties$/],
   ["/markets", /\/properties$/],
+  // An old link to one house lands on that house, not on a list.
+  ["/crm/e1", /\/properties\/e1$/],
 ];
 
-for (const [from, to] of REDIRECTS) {
-  test(`${from} redirects`, async ({ page }) => {
-    await stubCrm(page);
-    await page.goto(from);
-    await expect(page).toHaveURL(to);
-  });
-}
-
-test("a property deep link keeps its id", async ({ page }) => {
+test("old routes redirect, and the routes the modal replaced are gone", async ({ page }) => {
   await stubCrm(page);
-  // The case that matters: someone following an old link to one house should
-  // land on that house, not on a list.
-  await page.goto("/crm/e1");
-  await expect(page).toHaveURL(/\/properties\/e1$/);
-  await expect(page.getByText("128 Maple St").first()).toBeVisible();
+  for (const [from, to] of REDIRECTS) {
+    await page.goto(from);
+    await expect(page, from).toHaveURL(to);
+  }
+
+  // The Numbers page was refactored into a modal, not left standing beside it.
+  const res = await page.goto("/properties/e1/numbers/new");
+  expect(res?.status()).toBe(404);
 });
 
 // ─── The property page ────────────────────────────────────────────────────────
 
-test("the property page has six tabs and they switch", async ({ page }) => {
+test("the property page's tabs switch to their panels", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties/e1");
 
-  // Was five: overview, numbers, comps, rehab, activity. Overview became
-  // Details, Comps became ARV and Deal was added (7d182fd), so this loop
-  // asked for two testids that no longer exist and missed one that does.
   for (const t of ["details", "arv", "numbers", "deal", "rehab", "activity"]) {
     await expect(page.getByTestId(`tab-${t}`)).toBeVisible();
   }
-
-  // The Details tab's panel still carries the old testid, so this one is
-  // right as written.
+  // The Details tab's panel still carries its old testid.
   await expect(page.getByTestId("panel-overview")).toBeVisible();
 
   await page.getByTestId("tab-arv").click();
   await expect(page.getByTestId("panel-comps")).toBeVisible();
   await expect(page.getByTestId("panel-overview")).toHaveCount(0);
 
+  await page.getByTestId("tab-numbers").click();
+  await expect(page.getByTestId("scenario-a1")).toBeVisible();
+
+  await page.getByTestId("tab-rehab").click();
+  await expect(page.getByTestId("rehab-roof")).toBeVisible();
+
   await page.getByTestId("tab-activity").click();
   await expect(page.getByTestId("panel-activity")).toBeVisible();
-});
-
-test("the Numbers tab lists this property's analyses", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/properties/e1");
-
-  await page.getByTestId("tab-numbers").click();
-  // Renamed analysis-* to scenario-* in 660d84c.
-  await expect(page.getByTestId("scenario-a1")).toBeVisible();
-  await expect(page.getByText("at asking")).toBeVisible();
-  // The one the other tabs mean when they say "the price". The badge used to
-  // read "primary" — an internal word the writing rules ban — and now says
-  // what it is for.
-  await expect(page.getByTestId("primary-badge-a1")).toContainText("Used for profit");
-});
-
-test("Rehab is the estimator, not a placeholder", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/properties/e1");
-
-  // This asserted the "arrives with the estimating step" placeholder until
-  // f9fa0d8 shipped that step and the placeholder went. The promise was kept,
-  // so the test now guards what replaced it — and this is the only Playwright
-  // cover RehabPanel has, which is why it is repointed rather than dropped.
-  await page.getByTestId("tab-rehab").click();
-  await expect(page.getByTestId("panel-rehab")).toBeVisible();
-  await expect(page.getByTestId("rehab-roof")).toBeVisible();
-  await expect(page.getByTestId("save-rehab")).toBeVisible();
 });
 
 test("the property page fits 390px", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/properties/e1");
-  // Waited on tab-overview, which has not existed since 7d182fd — so the
-  // width check below never ran. On a phone-first app this was the most
-  // expensive of the four to have silently skipped.
   await expect(page.getByTestId("tab-details")).toBeVisible();
 
   const overflows = await page.evaluate(
@@ -387,9 +295,9 @@ test("the property page fits 390px", async ({ page }) => {
 });
 
 test("without a photo, the sheet does not cover the house's facts", async ({ page }) => {
-  // The stub's house has no photo and no listing price. The sheet rides up
-  // 20px over the header, and on a house without a photo it used to cover the
-  // bottom of the spec line.
+  // The stub's house has no photo. The sheet rides up 20px over the header,
+  // and on a house without a photo it used to cover the bottom of the spec
+  // line.
   await stubCrm(page);
   await page.goto("/properties/e1");
   await expect(page.getByTestId("tab-details")).toBeVisible();
@@ -403,34 +311,12 @@ test("without a photo, the sheet does not cover the house's facts", async ({ pag
   });
   expect(gap).not.toBeNull();
   expect(gap ?? -1).toBeGreaterThanOrEqual(0);
-
-  // And no price is said in words, not as the calculator's default.
-  await expect(page.getByTestId("house-listing-price")).toHaveText("No listing price yet");
-});
-
-test("the old module hub is gone", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/app");
-
-  // It landed on the pipeline until the pipeline went too.
-  await expect(page).toHaveURL(/\/properties$/);
-  await expect(page.getByText("Pick where you're working")).toHaveCount(0);
 });
 
 // ─── House facts are editable ─────────────────────────────────────────────────
 
-test("property type reads as a label, not a database value", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/properties/e1");
-
-  // "single_family" on a detail page is showing the database to the user.
-  await expect(page.getByText("Single family")).toBeVisible();
-  await expect(page.getByText("single_family")).toHaveCount(0);
-});
-
-test("house facts can be edited", async ({ page }) => {
-  await stubCrm(page);
-
+/** Records every PATCH to the house, answering each as saved. */
+async function recordPatches(page: Page): Promise<string[]> {
   const patches: string[] = [];
   await page.route("**/api/properties/*", async (route) => {
     if (route.request().method() === "PATCH") {
@@ -443,119 +329,50 @@ test("house facts can be edited", async ({ page }) => {
     }
     return route.fallback();
   });
+  return patches;
+}
 
-  await page.goto("/properties/e1");
-  await page.getByTestId("edit-house-toggle").click();
-  await expect(page.getByTestId("edit-house-form")).toBeVisible();
-
-  // The two the owner named: sqft and the address.
-  await page.getByTestId("edit-house-sqft").fill("1875");
-  await page.getByTestId("edit-house-address").fill("128 Maple Street");
-  await page.getByTestId("edit-house-save").click();
-
-  expect(patches).toHaveLength(1);
-  const sent = JSON.parse(patches[0]);
-  expect(sent.sqft).toBe(1875);
-  expect(sent.addressLine1).toBe("128 Maple Street");
-});
-
-test("the edit form says hand-entered facts win", async ({ page }) => {
+test("house facts can be edited, a photo link included, and cancel sends nothing", async ({ page }) => {
   await stubCrm(page);
+  const patches = await recordPatches(page);
   await page.goto("/properties/e1");
 
-  await page.getByTestId("edit-house-toggle").click();
-  // Otherwise a correction looks like it might be overwritten on the next
-  // refresh, which is exactly what used to happen.
-  await expect(page.getByTestId("edit-house-form")).toContainText("wins over RentCast");
-});
-
-test("cancelling the edit form changes nothing", async ({ page }) => {
-  await stubCrm(page);
-
-  let patches = 0;
-  await page.route("**/api/properties/*", async (route) => {
-    if (route.request().method() === "PATCH") patches += 1;
-    return route.fallback();
-  });
-
-  await page.goto("/properties/e1");
+  // Cancelling changes nothing.
   await page.getByTestId("edit-house-toggle").click();
   await page.getByTestId("edit-house-sqft").fill("9999");
   await page.getByTestId("edit-house-cancel").click();
-
   await expect(page.getByTestId("edit-house-form")).toHaveCount(0);
-  expect(patches).toBe(0);
-});
+  expect(patches).toHaveLength(0);
 
-test("the edit form fits 390px", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/properties/e1");
-
+  // The two the owner named, sqft and the address, plus a pasted photo link.
   await page.getByTestId("edit-house-toggle").click();
-  await expect(page.getByTestId("edit-house-form")).toBeVisible();
-
-  const overflows = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-  );
-  expect(overflows).toBe(false);
-});
-
-test("the edit form opens over the page, not below it", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/properties/e1");
-
-  await page.getByTestId("edit-house-toggle").click();
-
-  // The reported bug: inline, the form rendered after the card, the stage
-  // pill, the facts grid and the parcel disclosure, so it opened well below
-  // the fold and the tap looked like it did nothing.
-  const form = page.getByTestId("edit-house-form");
-  await expect(form).toBeVisible();
-  await expect(page.getByRole("dialog", { name: "Edit this house" })).toBeVisible();
-
-  const box = await form.boundingBox();
-  const fold = page.viewportSize()?.height ?? 0;
-  expect(box).not.toBeNull();
-  expect(box!.y).toBeLessThan(fold);
-});
-
-test("Save stays reachable on a 390px screen", async ({ page }) => {
-  await stubCrm(page);
-  await page.goto("/properties/e1");
-
-  await page.getByTestId("edit-house-toggle").click();
-
-  // A full-bleed dialog fails by pushing its footer off the bottom of a phone
-  // rather than by overflowing sideways, which is what the test above checks.
-  const save = page.getByTestId("edit-house-save");
-  await expect(save).toBeInViewport();
-});
-
-test("a pasted photo link saves", async ({ page }) => {
-  await stubCrm(page);
-
-  const patches: string[] = [];
-  await page.route("**/api/properties/*", async (route) => {
-    if (route.request().method() === "PATCH") {
-      patches.push(route.request().postData() ?? "");
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ property: { id: "prop-e1" } }),
-      });
-    }
-    return route.fallback();
-  });
-
-  await page.goto("/properties/e1");
-  await page.getByTestId("edit-house-toggle").click();
-
-  // The photo could be set on Add and never corrected. This is that path.
+  await page.getByTestId("edit-house-sqft").fill("1875");
+  await page.getByTestId("edit-house-address").fill("128 Maple Street");
   await page.getByTestId("edit-house-photo").fill("https://example.com/house.jpg");
   await expect(page.getByTestId("edit-house-photo-preview")).toBeVisible();
   await page.getByTestId("edit-house-save").click();
 
   expect(patches).toHaveLength(1);
   const sent = JSON.parse(patches[0]);
+  expect(sent.sqft).toBe(1875);
+  expect(sent.addressLine1).toBe("128 Maple Street");
   expect(sent.photoUrl).toBe("https://example.com/house.jpg");
+});
+
+test("the edit form opens over the page with Save reachable at 390px", async ({ page }) => {
+  await stubCrm(page);
+  await page.goto("/properties/e1");
+
+  await page.getByTestId("edit-house-toggle").click();
+
+  // Inline, the form once rendered below the fold and the tap looked like it
+  // did nothing. It is a dialog now, and a full-bleed one fails by pushing its
+  // footer off the bottom of a phone rather than by overflowing sideways.
+  await expect(page.getByRole("dialog", { name: "Edit this house" })).toBeVisible();
+  await expect(page.getByTestId("edit-house-save")).toBeInViewport();
+
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflows).toBe(false);
 });

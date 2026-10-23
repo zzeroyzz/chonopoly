@@ -1,3 +1,10 @@
+jest.mock("@supabase/supabase-js", () => ({
+  createClient: jest.fn(),
+}));
+
+import { createClient } from "@supabase/supabase-js";
+import { saveScenario } from "@/lib/mortgage/scenarioService";
+import { fakeClient } from "./fakeDatabase";
 import { readInputs, diffInputs, CURRENT_INPUTS_VERSION } from "@/lib/mortgage/scenarioService";
 import { defaultInputs } from "@/lib/mortgage/defaults";
 import { type MortgageInputs } from "@/lib/mortgage/types";
@@ -87,5 +94,69 @@ describe("diffInputs", () => {
       "interestRate",
       "termYears",
     ]);
+  });
+});
+
+describe("saveScenario", () => {
+  const mockCreateClient = createClient as jest.Mock;
+  const CTX = { type: "personal" as const, id: "user-1" };
+  const SAVED_ROW = {
+    data: {
+      id: "s-1",
+      label: "Maple St",
+      inputs: { homeValue: 265_000 },
+      inputs_version: CURRENT_INPUTS_VERSION,
+      outputs: { monthlyPayment: 2_300 },
+      version: 2,
+      updated_at: "2026-10-23T00:00:00.000Z",
+      profile_snapshot: null,
+      properties: null,
+      is_primary: false,
+    },
+    error: null,
+  };
+
+  function save(
+    answers: Parameters<typeof fakeClient>[0],
+    propertyId: string | null = null,
+    label = "Maple St"
+  ) {
+    const { client, writes } = fakeClient(answers);
+    mockCreateClient.mockReturnValue(client);
+    return saveScenario(
+      { label, inputs: inputs({ homeValue: 265_000 }), monthlyPayment: 2_300, propertyId },
+      CTX,
+      "user-1"
+    ).then(() => writes);
+  }
+
+  it("updates the row with the same name instead of adding a second one", async () => {
+    // The version number itself is bumped by the database on update; what the
+    // app owns is choosing update over insert, so the list keeps one row.
+    const writes = await save([{ data: { id: "s-1" }, error: null }, SAVED_ROW]);
+    expect(writes.insert).toEqual([]);
+    expect(writes.update).toHaveLength(1);
+  });
+
+  it("does not change which analysis is primary on a re-save", async () => {
+    const writes = await save([{ data: { id: "s-1" }, error: null }, SAVED_ROW], "prop-1");
+    expect(writes.update[0]).not.toHaveProperty("is_primary");
+  });
+
+  it("adds a new row for a new name, primary when the house has none", async () => {
+    const writes = await save(
+      [
+        { data: null, error: null }, // no save with this name yet
+        { data: null, error: null }, // no primary on this house yet
+        SAVED_ROW,
+      ],
+      "prop-1"
+    );
+    expect(writes.insert).toHaveLength(1);
+    expect(writes.insert[0]).toMatchObject({ property_id: "prop-1", is_primary: true });
+  });
+
+  it("refuses a name that is only spaces", async () => {
+    await expect(save([], null, "   ")).rejects.toThrow("A name is required");
   });
 });

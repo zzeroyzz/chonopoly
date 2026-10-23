@@ -128,6 +128,17 @@ export function isSkipped(review: CompReview): boolean {
   return COMP_REVIEW_SKIPS.includes(review);
 }
 
+/**
+ * Whether approving this comp needs a sale price first.
+ *
+ * A removed listing's only price is what it was asking. Counting that as a
+ * sale would quietly put an ask into the resale price, so approving one asks
+ * what it actually sold for instead.
+ */
+export function needsSalePrice(next: CompReview, status: CompStatus): boolean {
+  return next === "renovated_use" && status === "removed";
+}
+
 export interface Comp {
   id: string;
   propertyId: string;

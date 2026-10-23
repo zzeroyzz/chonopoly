@@ -12,6 +12,7 @@ import {
   compReviewOptions,
   isReviewable,
   isSkipped,
+  needsSalePrice,
 } from "@/lib/comps/types";
 import { type ArvResult, type CompNote } from "@/lib/comps/arv";
 import {
@@ -23,10 +24,17 @@ import {
   perSqft,
   priceLabel,
   provenanceLabel,
-  shortDate,
   type SubjectFacts,
 } from "@/lib/comps/format";
 import { CompLinks, type CompLinkSource } from "./CompLinks";
+import {
+  forceCost,
+  refreshControls,
+  sourceLine,
+  type RefreshStatus,
+  type RefreshUsage,
+} from "@/lib/comps/refreshControls";
+import { readJsonResponse } from "@/lib/http/readJsonResponse";
 import { SalePricePrompt } from "./SalePricePrompt";
 import { Dropdown, type DropdownTone } from "@/components/ui/Dropdown";
 import {
@@ -74,35 +82,6 @@ interface CompsResponse {
   usage?: RefreshUsage | null;
 }
 
-interface RefreshUsage {
-  used: number;
-  cap: number;
-  planLimit: number;
-  remaining: number;
-  atCap: boolean;
-}
-
-/** What the tab needs to know before anyone presses anything. */
-interface RefreshStatus {
-  usage: RefreshUsage;
-  mode: "live" | "mock";
-  /** False when no API key is configured — nothing can be pulled at all. */
-  connected: boolean;
-  locked: boolean;
-  fetchedAt: string | null;
-  nextRefreshAt: string | null;
-  canForce: boolean;
-  canRebuild: boolean;
-  windowDays: number;
-}
-
-const SOURCE_LABEL: Record<string, string> = {
-  cached: "from the saved response",
-  rebuilt: "rebuilt from the saved response",
-  mock: "sample data — this deployment doesn't call RentCast",
-  live: "fresh from RentCast",
-};
-
 const CONFIDENCE_LABEL: Record<ArvResult["confidence"], string> = {
   none: "No estimate",
   low: "Low confidence",
@@ -119,42 +98,6 @@ const REVIEW_TONE: Record<CompReview, DropdownTone> = {
   not_comparable_skip: "warn",
   cant_tell_skip: "warn",
 };
-
-/**
- * Read a response safely, whatever came back.
- *
- * A 500 from a crashed route has no JSON body, and calling `.json()` on it
- * throws "Unexpected end of JSON input" — which is what the Comps tab showed
- * instead of the real PostgREST error. Status is checked first, and a body that
- * will not parse becomes a message about the status rather than a parser
- * complaint the user cannot act on.
- */
-async function readResponse(res: Response, fallback: string): Promise<CompsResponse> {
-  const text = await res.text();
-
-  let parsed: unknown = null;
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      // Left null — handled below.
-    }
-  }
-
-  if (!res.ok) {
-    const message =
-      parsed && typeof parsed === "object" && typeof (parsed as { error?: unknown }).error === "string"
-        ? (parsed as { error: string }).error
-        : `${fallback} (HTTP ${res.status})`;
-    throw new Error(message);
-  }
-
-  if (!parsed || typeof parsed !== "object") {
-    throw new Error(`${fallback} — the server sent an empty response.`);
-  }
-
-  return parsed as CompsResponse;
-}
 
 export function CompsPanel({
   propertyId,
@@ -176,6 +119,7 @@ export function CompsPanel({
   const [degraded, setDegraded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [status, setStatus] = useState<RefreshStatus | null>(null);
+  const controls = refreshControls(status);
   const [source, setSource] = useState<string | null>(null);
   const [subjectBeds, setSubjectBeds] = useState<number | null>(null);
   const [subjectBaths, setSubjectBaths] = useState<number | null>(null);
@@ -248,7 +192,7 @@ export function CompsPanel({
     if (!ctxParams) return;
     try {
       const res = await fetch(`/api/properties/${propertyId}/comps?${ctxParams}`);
-      apply(await readResponse(res, "Failed to load comps"));
+      apply(await readJsonResponse<CompsResponse>(res, "Failed to load comps"));
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load comps");
@@ -316,7 +260,7 @@ export function CompsPanel({
       // A degraded lookup is a 200 carrying a reason, not an error — the comps
       // already held stay on screen either way. A real 500 throws with the
       // server's message.
-      apply(await readResponse(res, "Failed to refresh comps"));
+      apply(await readJsonResponse<CompsResponse>(res, "Failed to refresh comps"));
       await loadStatus();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to refresh comps");
@@ -374,7 +318,7 @@ export function CompsPanel({
           }),
         }
       );
-      apply(await readResponse(res, "Failed to save your review"));
+      apply(await readJsonResponse<CompsResponse>(res, "Failed to save your review"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save your review");
       await load();
@@ -388,7 +332,7 @@ export function CompsPanel({
         `/api/properties/${propertyId}/comps/${comp.id}?${ctxParams}`,
         { method: "DELETE" }
       );
-      apply(await readResponse(res, "Failed to remove the comp"));
+      apply(await readJsonResponse<CompsResponse>(res, "Failed to remove the comp"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to remove the comp");
     }
@@ -485,14 +429,14 @@ export function CompsPanel({
               RentCast is unreachable — no key, or the month's allowance gone —
               Refresh is removed entirely and the reason takes its place
               below. Otherwise: locked, or free to call. */}
-          {status && !status.connected ? null : status?.usage.atCap ? null : status?.locked ? (
+          {controls.button === "none" ? null : controls.button === "force" ? (
             <button
               type="button"
               onClick={() => setConfirmingForce(true)}
-              disabled={refreshing || !ctx || !status.canForce}
+              disabled={refreshing || !ctx || !controls.forceAllowed}
               data-testid="force-refresh-comps"
               title={
-                status.canForce
+                controls.forceAllowed
                   ? "Spends one request"
                   : "Only the account owner can refresh early"
               }
@@ -516,16 +460,13 @@ export function CompsPanel({
         </div>
 
         {/* ── When this house may be looked up again ─────────────────────── */}
-        {status?.locked && status.fetchedAt && status.nextRefreshAt && (
+        {controls.lockLine && (
           <p
             data-testid="refresh-lock"
             className="flex items-center gap-1.5 text-[11px] text-(--color-text-secondary) mt-2"
           >
             <Lock size={11} className="shrink-0" />
-            <span>
-              Comps from {shortDate(status.fetchedAt)} · refresh available{" "}
-              {shortDate(status.nextRefreshAt)}
-            </span>
+            <span>{controls.lockLine}</span>
           </p>
         )}
 
@@ -537,7 +478,7 @@ export function CompsPanel({
             <p className="text-[12px] leading-relaxed">
               Refresh now from RentCast?{" "}
               <span className="font-semibold">
-                Uses 1 of {status?.usage.remaining ?? 0} remaining this month.
+                {forceCost(status?.usage.remaining ?? 0)}
               </span>
             </p>
             <div className="flex gap-2 mt-3">
@@ -590,43 +531,30 @@ export function CompsPanel({
           </div>
         )}
 
-        {status && !status.connected && (
+        {controls.notice && (
           <p
-            data-testid="refresh-unavailable"
-            className="flex gap-1.5 text-[11px] text-(--color-text-secondary) mt-2 leading-relaxed"
+            data-testid={
+              controls.notice.kind === "cap" ? "refresh-cap-notice" : "refresh-unavailable"
+            }
+            className={`flex gap-1.5 text-[11px] mt-2 leading-relaxed ${
+              controls.notice.kind === "cap" ? "text-red-400" : "text-(--color-text-secondary)"
+            }`}
           >
             <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-            <span>
-              RentCast isn&apos;t connected, so comps can&apos;t be pulled
-              automatically. Add them by hand below.
-            </span>
-          </p>
-        )}
-
-        {status?.connected && status.usage.atCap && (
-          <p
-            data-testid="refresh-cap-notice"
-            className="flex gap-1.5 text-[11px] text-red-400 mt-2 leading-relaxed"
-          >
-            <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-            <span>
-              {status.usage.used} of {status.usage.cap} monthly RentCast requests used,
-              so nothing can be pulled until next month. Comps can still be
-              added by hand.
-            </span>
+            <span>{controls.notice.text}</span>
           </p>
         )}
 
         {/* Where these comps came from. A cached or sample set must not be
             mistaken for a fresh lookup. */}
-        {source && SOURCE_LABEL[source] && (
+        {sourceLine(source) && (
           <p data-testid="comps-source" className="text-[11px] text-(--color-text-tertiary) mt-1">
-            Comps {SOURCE_LABEL[source]}
+            {sourceLine(source)}
           </p>
         )}
 
         {/* The request is already paid for; rebuilding costs nothing. */}
-        {status?.canRebuild && (
+        {controls.rebuild && (
           <button
             type="button"
             onClick={() => void refresh({ rebuild: true })}
@@ -1085,7 +1013,7 @@ function CompRow({
               // Approving a removed listing is a claim that it sold, so it
               // needs the figure it sold for. Asking here rather than
               // silently feeding the asking price into the ARV.
-              if (next === "renovated_use" && comp.status === "removed") {
+              if (needsSalePrice(next, comp.status)) {
                 setAskingSale(true);
                 return;
               }
@@ -1172,7 +1100,7 @@ function ManualCompForm({
           status,
         }),
       });
-      onAdded(await readResponse(res, "Failed to add the comp"));
+      onAdded(await readJsonResponse<CompsResponse>(res, "Failed to add the comp"));
       setAddress("");
       setPrice("");
       setSqft("");

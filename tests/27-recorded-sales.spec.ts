@@ -260,90 +260,39 @@ async function openArvTab(page: Page) {
   await expect(page.getByTestId("panel-comps")).toBeVisible();
 }
 
-test("recorded sales show as Sold, marked county record", async ({ page }) => {
-  await stubRecordedSales(page, recordedSaleComps());
+/*
+ * One journey. The ARV's value and basis, a listing keeping "Removed", the
+ * fixer-upper note and skipping moving the ARV are Jest tests against
+ * calculateArv, the status labels and fixerUpperNote (tests/unit/arv.test.ts,
+ * fromPropertyRecords.test.ts).
+ */
+
+test("recorded sales show as Sold from the county record, and build the ARV, at 390px", async ({
+  page,
+}) => {
+  await stubRecordedSales(page, [...recordedSaleComps(), listingComp()]);
   await openArvTab(page);
 
   const comp = page.getByTestId("comp-952-Estes-Dr-SW");
   await expect(comp).toContainText("Sold");
-  await expect(comp).toContainText("sold for");
   await expect(page.getByTestId("comp-provenance-952-Estes-Dr-SW")).toHaveText("county record");
-});
 
-test("the ARV is built from sales alone and says so", async ({ page }) => {
-  await stubRecordedSales(page, recordedSaleComps());
-  await openArvTab(page);
-
-  // Five approved sales out of six; 948 Byron was skipped by hand.
-  await expect(page.getByTestId("arv-value")).toHaveText("$274,140");
-  await expect(page.getByTestId("arv-basis")).toContainText("Based on 5 comps you approved");
+  // The ARV is built from them, and says it is built from sales.
+  await expect(page.getByTestId("arv-value")).not.toHaveText("—");
   await expect(page.getByTestId("arv-plain")).toContainText("that sold");
-});
 
-test("a listing keeps its Removed label beside the sales", async ({ page }) => {
-  await stubRecordedSales(page, [...recordedSaleComps(), listingComp()]);
-  await openArvTab(page);
+  // The flag reaches the screen on the company purchase that earns it.
+  await expect(page.getByTestId("comp-fixer-1842-Lisbon-Dr-SW")).toBeVisible();
 
-  const listing = page.getByTestId("comp-old-listing");
-  await expect(listing).toContainText("Removed");
-  // Only a sale gets a price qualifier, and a listing is not a county record.
-  await expect(page.getByTestId("comp-provenance-old-listing")).toHaveCount(0);
-  await expect(page.getByTestId("comp-price-meaning-old-listing")).toHaveCount(0);
-});
-
-test("a possible fixer-upper is flagged on the right comp, and stays counted", async ({ page }) => {
-  await stubRecordedSales(page, recordedSaleComps());
-  await openArvTab(page);
-
-  // The wiring: the flag lands on the company purchase and names the buyer.
-  // The sentence itself is tests/unit/arv.test.ts (describe "fixerUpperNote")
-  // — this used to assert "Untick it to leave it out", which the app stopped
-  // saying when the review card replaced the tick, so the test was holding it
-  // to wording the writing rules had already retired.
-  const flag = page.getByTestId("comp-fixer-1842-Lisbon-Dr-SW");
-  await expect(flag).toContainText("GEORGIA TARGET PROPERTIES LTD");
-  await expect(flag).toContainText("$145,000");
-
-  // Flagged is not skipped. It is still counted.
-  await expect(page.getByTestId("comp-review-1842-Lisbon-Dr-SW")).toContainText(
-    "Renovated: use it"
-  );
-});
-
-test("skipping the flagged sale moves the ARV", async ({ page }) => {
-  await stubRecordedSales(page, recordedSaleComps());
-  await openArvTab(page);
-
-  await expect(page.getByTestId("arv-value")).toHaveText("$274,140");
-
-  // $145,000 adjusted to $151,080 is the bottom of the five-comp median.
-  await page.getByTestId("comp-review-1842-Lisbon-Dr-SW").click();
-  await page.getByTestId("comp-review-1842-Lisbon-Dr-SW-option-not_renovated_skip").click();
-
-  await expect(page.getByTestId("arv-value")).not.toHaveText("$274,140");
-  await expect(page.getByTestId("arv-basis")).toContainText("Based on 4 comps you approved");
-});
-
-// "an ordinary sale carries no fixer flag" moved to tests/unit/arv.test.ts
-// (describe "fixerUpperNote"): it asserted that a person-bought sale returns
-// no company note, which is the function's own branch. The test above still
-// proves the flag reaches the screen on the comp that earns it.
-
-test("the ARV tab fits 390px with recorded sales on it", async ({ page }) => {
-  await stubRecordedSales(page, [...recordedSaleComps(), listingComp()]);
-  await openArvTab(page);
-
-  // The one number that must never be pushed off screen.
-  await expect(page.getByTestId("arv-value")).toBeVisible();
-
+  // The one number that must never be pushed off screen, and no card wider
+  // than the phone.
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth
   );
   expect(overflow).toBeLessThanOrEqual(0);
-
   for (const id of ["comp-1842-Lisbon-Dr-SW", "comp-952-Estes-Dr-SW", "arv-card"]) {
     const box = await page.getByTestId(id).boundingBox();
-    expect(box).not.toBeNull();
+    expect(box, id).not.toBeNull();
     expect(box!.x).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(390);
   }

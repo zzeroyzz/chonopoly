@@ -15,37 +15,16 @@ jest.mock("@supabase/supabase-js", () => ({
 import { createClient } from "@supabase/supabase-js";
 import { geocodeAddress } from "@/lib/census/geocode";
 import { updatePropertyFacts, upsertProperty } from "@/lib/property/propertyService";
+import { fakeClient, type Answer } from "./fakeDatabase";
 
 const mockCreateClient = createClient as jest.Mock;
 const mockGeocode = geocodeAddress as jest.Mock;
 
 const CTX = { type: "personal" as const, id: "user-1" };
 
-/**
- * A query builder where every step chains and `single` / `maybeSingle` answer
- * from a queue, in order. Records what was inserted and updated.
- */
-function fakeDatabase(answers: { data: unknown; error: null | { message: string } }[]) {
-  const writes: { insert: unknown[]; update: unknown[] } = { insert: [], update: [] };
-  const builder: Record<string, unknown> = {};
-  const chain = (...args: unknown[]) => {
-    void args;
-    return builder;
-  };
-  for (const step of ["select", "eq", "is", "order", "in"]) builder[step] = chain;
-  builder.insert = (row: unknown) => {
-    writes.insert.push(row);
-    return builder;
-  };
-  builder.update = (row: unknown) => {
-    writes.update.push(row);
-    return builder;
-  };
-  const answer = () => Promise.resolve(answers.shift() ?? { data: null, error: null });
-  builder.single = answer;
-  builder.maybeSingle = answer;
-
-  mockCreateClient.mockReturnValue({ from: () => builder });
+function fakeDatabase(answers: Answer[]) {
+  const { client, writes } = fakeClient(answers);
+  mockCreateClient.mockReturnValue(client);
   return writes;
 }
 

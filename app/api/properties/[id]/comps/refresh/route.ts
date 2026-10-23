@@ -14,7 +14,6 @@ import {
   CACHE_WINDOW_DAYS,
   PROPERTY_RECORDS_ENDPOINT,
   MockModeWriteError,
-  type RentCastFailure,
 } from "@/lib/rentcast/client";
 import {
   getUsage,
@@ -27,6 +26,11 @@ import {
   clearStaleClaims,
 } from "@/lib/rentcast/quota";
 import { type RentCastPropertyRecord } from "@/lib/rentcast/types";
+import {
+  DEGRADED_MESSAGES,
+  IN_FLIGHT_MESSAGE,
+  NO_COMPS_MESSAGE,
+} from "@/lib/comps/refreshMessages";
 import { type RequestContext } from "@/lib/context";
 
 /**
@@ -57,17 +61,6 @@ import { type RequestContext } from "@/lib/context";
  * retyped — the string is part of the cache key.
  */
 const ENDPOINT = PROPERTY_RECORDS_ENDPOINT;
-
-/** What the user can actually do about each failure. */
-const DEGRADED_MESSAGES: Record<RentCastFailure, string> = {
-  no_key: "RentCast isn't connected, so comps have to be entered by hand.",
-  quota: "This month's RentCast requests are used up. Comps can still be entered by hand.",
-  rate_limited: "RentCast is rate limiting requests. Try again in a minute.",
-  not_found: "RentCast has no data for this address. Enter comps by hand.",
-  http_error: "RentCast couldn't be reached. Comps can still be entered by hand.",
-  network_error: "RentCast couldn't be reached. Comps can still be entered by hand.",
-  bad_response: "RentCast returned something unreadable. Comps can still be entered by hand.",
-};
 
 interface PropertyRow {
   id: string;
@@ -292,7 +285,7 @@ async function refresh(request: Request, params: Promise<{ id: string }>) {
     return NextResponse.json({
       ...(await currentState(id, ctx, row)),
       degraded: "in_flight",
-      message: "A lookup for this address is already running. Give it a moment and reload.",
+      message: IN_FLIGHT_MESSAGE,
       usage,
     });
   }
@@ -396,7 +389,7 @@ async function applyResponse(
     degraded: sales.length === 0 ? "no_comps" : null,
     message:
       sales.length === 0
-        ? "No recorded sales of a similar house within a mile in the last year. Add a sold comp by hand from your agent's list."
+        ? NO_COMPS_MESSAGE
         : null,
     // A full page of records means there are probably more we did not see.
     atRecordLimit: records.length >= RECORDED_SALES_LIMIT,

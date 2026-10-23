@@ -20,7 +20,16 @@ jest.mock("@/lib/property/propertyService", () => ({
   })),
 }));
 
+// Batch add must never spend a RentCast request: fifteen pasted addresses
+// would be fifteen of fifty a month. Stands in for the client so a call would
+// be seen.
+jest.mock("@/lib/rentcast/client", () => ({
+  fetchPropertyRecords: jest.fn(),
+  fetchValueEstimate: jest.fn(),
+}));
+
 import { POST } from "@/app/api/properties/batch/route";
+import * as rentcast from "@/lib/rentcast/client";
 import { upsertProperty } from "@/lib/property/propertyService";
 
 const mockUpsert = upsertProperty as jest.Mock;
@@ -48,5 +57,16 @@ describe("batch add", () => {
     await paste("44 Oak Ave, Duluth, GA, 30096");
 
     expect(mockUpsert.mock.calls[0][0]).not.toHaveProperty("list_price");
+  });
+});
+
+describe("batch add and RentCast", () => {
+  it("never calls RentCast, however many addresses are pasted", async () => {
+    await paste("128 Maple St, Duluth GA 30096\n44 Oak Ave, Duluth GA 30096\n58 Willow Bend Rd, Duluth GA 30096");
+
+    expect(mockUpsert).toHaveBeenCalledTimes(3);
+    for (const fn of Object.values(rentcast)) {
+      if (jest.isMockFunction(fn)) expect(fn).not.toHaveBeenCalled();
+    }
   });
 });

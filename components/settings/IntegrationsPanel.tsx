@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, CheckCircle2, XCircle } from "lucide-react";
 import { useCrmContext } from "@/components/crm/useCrmContext";
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
+import { integrationLines, type RentCastStatus } from "@/lib/rentcast/integrationStatus";
 
 /**
  * RentCast's status and what's left of this month's allowance.
@@ -15,25 +16,6 @@ import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
  * The key itself never reaches this component, not even masked. There is
  * nothing useful to do with four characters of an API key.
  */
-
-interface RentCastStatus {
-  connected: boolean;
-  /** Mock deployments serve fixtures and spend nothing. */
-  mode?: "live" | "mock";
-  usage: {
-    used: number;
-    /** The cap, which is what actually stops calls. */
-    limit: number;
-    planLimit?: number;
-    fraction: number;
-    monthStart: string;
-  };
-  cap?: number;
-  cacheWindowDays?: number;
-  warningFraction: number;
-  nearLimit: boolean;
-  atLimit: boolean;
-}
 
 export function IntegrationsPanel() {
   const { ctxParams } = useCrmContext();
@@ -89,9 +71,7 @@ export function IntegrationsPanel() {
     );
   }
 
-  const { usage } = status;
-  const remaining = Math.max(0, usage.limit - usage.used);
-  const percent = Math.min(100, Math.round(usage.fraction * 100));
+  const lines = integrationLines(status);
 
   // Amber at the warning line, red at the wall — the bar should say which of
   // the two situations you are in before you read the numbers.
@@ -121,82 +101,61 @@ export function IntegrationsPanel() {
           }`}
         >
           {status.connected ? <CheckCircle2 size={13} /> : <XCircle size={13} />}
-          {status.connected ? "Connected" : "Not connected"}
+          {lines.connected}
         </span>
       </div>
 
-      {status.mode === "mock" && (
+      {lines.mockNote && (
         <p
           data-testid="rentcast-mock-mode"
           className="text-[11px] text-(--color-text-secondary) bg-(--color-base) border border-(--color-border-default) rounded-lg px-3 py-2 leading-relaxed"
         >
-          This deployment uses sample comps and never calls RentCast, so the
-          count below stays where it is. Only production spends requests.
+          {lines.mockNote}
         </p>
       )}
 
       <div>
         <div className="flex items-baseline justify-between">
           <p data-testid="rentcast-usage" className="text-[13px]">
-            <span className="font-semibold">{usage.used}</span>
-            <span className="text-(--color-text-secondary)"> of {usage.limit} this month</span>
+            <span className="font-semibold">{lines.used}</span>
+            <span className="text-(--color-text-secondary)">{lines.ofLimit}</span>
           </p>
-          <p className="text-[11px] text-(--color-text-secondary)">
-            {remaining} left
-          </p>
+          <p className="text-[11px] text-(--color-text-secondary)">{lines.left}</p>
         </div>
 
         <div
           className="mt-2 h-1.5 w-full rounded-full bg-(--color-base) overflow-hidden"
           role="progressbar"
-          aria-valuenow={percent}
+          aria-valuenow={lines.percent}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-label="RentCast requests used this month"
         >
-          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${percent}%` }} />
+          <div className={`h-full rounded-full ${barColor}`} style={{ width: `${lines.percent}%` }} />
         </div>
       </div>
 
-      {status.atLimit && (
+      {lines.warning && (
         <p
-          data-testid="rentcast-at-limit"
-          className="flex gap-1.5 text-[11px] text-red-400 leading-relaxed"
+          data-testid={lines.warning.kind === "at_limit" ? "rentcast-at-limit" : "rentcast-near-limit"}
+          className={`flex gap-1.5 text-[11px] leading-relaxed ${
+            lines.warning.kind === "at_limit" ? "text-red-400" : "text-amber-400"
+          }`}
         >
           <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-          <span>
-            This month&apos;s requests are used up. Comps can still be entered by hand
-            on any property.
-          </span>
+          <span>{lines.warning.text}</span>
         </p>
       )}
 
-      {status.nearLimit && !status.atLimit && (
-        <p
-          data-testid="rentcast-near-limit"
-          className="flex gap-1.5 text-[11px] text-amber-400 leading-relaxed"
-        >
-          <AlertTriangle size={12} className="shrink-0 mt-0.5" />
-          <span>
-            {Math.round(status.warningFraction * 100)}% of this month&apos;s requests are
-            used. {remaining} left — each property you screen spends one.
-          </span>
-        </p>
-      )}
-
-      {status.cacheWindowDays && (
+      {lines.windowNote && (
         <p className="text-[11px] text-(--color-text-tertiary) leading-relaxed">
-          Each property is looked up at most once every {status.cacheWindowDays} days,
-          and the app stops at {status.usage.limit}
-          {status.usage.planLimit ? ` of the plan's ${status.usage.planLimit}` : ""} so
-          RentCast&apos;s own count can never catch us short.
+          {lines.windowNote}
         </p>
       )}
 
-      {!status.connected && (
+      {lines.noKeyNote && (
         <p className="text-[11px] text-(--color-text-secondary) leading-relaxed">
-          Without a key, comps have to be entered by hand. Every other part of
-          screening works as normal.
+          {lines.noKeyNote}
         </p>
       )}
     </div>
