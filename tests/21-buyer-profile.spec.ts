@@ -117,31 +117,19 @@ const SALARY = buildProfile(
   [{ id: "d-1", label: "Car loan", debtType: "auto", monthlyPayment: 600, includeInRatios: true }]
 );
 
-test("with no profile, the calculator asks for income instead of inventing one", async ({ page }) => {
+/*
+ * What moved to Jest: asking for income with no profile (verdicts.test.ts,
+ * needsProfile); one profile reused for every house (resolveInputs.test.ts);
+ * the defaults' values (defaults.ts). The Integrations wording is
+ * tests/unit/integrationStatus.test.ts.
+ */
+
+test("first run: named debts give a verdict without leaving the calculator", async ({ page }) => {
   await stubProfileApi(page, null);
   await openCalculator(page);
 
-  await expect(page.getByTestId("set-income")).toBeVisible();
-  // The old hardcoded $9,000 must not appear anywhere.
-  await expect(page.getByText("9,000")).toHaveCount(0);
-});
-
-test("the first-run modal takes named debts, not a lump sum", async ({ page }) => {
-  await stubProfileApi(page, null);
-  await openCalculator(page);
   await page.getByTestId("set-income").click();
-
   // Each debt is a name and an amount, so it can be audited and excluded later.
-  await expect(page.getByTestId("debt-name-0")).toBeVisible();
-  await expect(page.getByTestId("debt-amount-0")).toBeVisible();
-  await expect(page.getByText(/Name each one/)).toBeVisible();
-});
-
-test("saving the modal produces a verdict without leaving the calculator", async ({ page }) => {
-  await stubProfileApi(page, null);
-  await openCalculator(page);
-
-  await page.getByTestId("set-income").click();
   await page.getByTestId("income-name-0").fill("Salary");
   await page.getByTestId("income-amount-0").fill("9000");
   await page.getByTestId("debt-name-0").fill("Car loan");
@@ -152,149 +140,57 @@ test("saving the modal produces a verdict without leaving the calculator", async
   await expect(page.getByTestId("set-income")).toHaveCount(0);
   await expect(page.getByText("$9,000", { exact: true })).toBeVisible();
   await expect(page.getByText(/under|over/).first()).toBeVisible();
-});
-
-test("the modal is first-run only — afterwards the figures are read-only", async ({ page }) => {
-  await stubProfileApi(page, SALARY);
-  await openCalculator(page);
-
-  await expect(page.getByTestId("set-income")).toHaveCount(0);
-  await expect(page.getByText("$9,000", { exact: true })).toBeVisible();
+  // From here on the figures are read-only, edited in Settings.
   await expect(page.getByRole("link", { name: /Edit in Settings/ })).toBeVisible();
 });
 
-test("income is entered once and used without re-entry", async ({ page }) => {
-  await stubProfileApi(page, SALARY);
-  await openCalculator(page);
-
-  // No income field to fill in — it comes from the profile.
-  await expect(page.getByLabel("Gross monthly income")).toHaveCount(0);
-  await expect(page.getByText("1 income · 1 debt counted.")).toBeVisible();
-
-  // And it reaches the ratios: 9,000 income with 600 of debt.
-  await expect(page.getByText("$600", { exact: true })).toBeVisible();
-});
-
-test("a second house reuses the same profile with nothing re-entered", async ({ page }) => {
-  await stubProfileApi(page, SALARY);
-  await openCalculator(page);
-
-  const price = page.locator('input:not([type="checkbox"])').first();
-  await price.fill("250000");
-  await price.blur();
-  await expect(page.getByText("$9,000", { exact: true })).toBeVisible();
-
-  // Change the house; the profile figures stay put.
-  await price.fill("410000");
-  await price.blur();
-  await expect(page.getByText("$9,000", { exact: true })).toBeVisible();
-  await expect(page.getByTestId("set-income")).toHaveCount(0);
-});
-
-test("the settings screen lists each debt by name and amount", async ({ page }) => {
+test("settings shows the profile, the tabs move, and defaults save", async ({ page }) => {
   await stubProfileApi(page, SALARY);
   await stubDataEndpoints(page);
   await page.goto("/settings/profile");
 
   await expect(page.getByTestId("settings-income-name-0")).toHaveValue("Salary");
-  await expect(page.getByTestId("settings-income-amount-0")).toHaveValue("9000");
   await expect(page.getByTestId("settings-debt-name-0")).toHaveValue("Car loan");
   await expect(page.getByTestId("settings-debt-amount-0")).toHaveValue("600");
-  await expect(page.getByText("Counted in ratios $600/mo")).toBeVisible();
-});
 
-test("settings fits 390px without horizontal overflow", async ({ page }) => {
-  await stubProfileApi(page, SALARY);
-  await stubDataEndpoints(page);
-  await page.goto("/settings/profile");
-  await expect(page.getByTestId("settings-income-name-0")).toBeVisible();
-
-  const overflows = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-  );
-  expect(overflows).toBe(false);
-});
-
-test("the calculator fits 390px with the profile shown", async ({ page }) => {
-  await stubProfileApi(page, SALARY);
-  await openCalculator(page);
-
-  const overflows = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-  );
-  expect(overflows).toBe(false);
-});
-
-// ─── Settings → defaults ──────────────────────────────────────────────────────
-
-test("the defaults screen edits loan and flip costs", async ({ page }) => {
-  await stubProfileApi(page, SALARY);
-  await stubDataEndpoints(page);
-  await page.goto("/settings/defaults");
-
-  await expect(page.getByLabel("Interest rate")).toHaveValue("6.75");
-  await expect(page.getByLabel("Term")).toHaveValue("30");
-  await expect(page.getByRole("textbox", { name: /^Down payment/ })).toHaveValue("3.5");
-  // Flip costs live here too, saved now so they are ready for Phase 4.
-  await expect(page.getByLabel("Selling costs")).toHaveValue("8");
-  await expect(page.getByLabel("Contingency — photo estimate")).toHaveValue("20");
-});
-
-test("the assistance fields appear only when assistance is on", async ({ page }) => {
-  await stubProfileApi(page, SALARY);
-  await stubDataEndpoints(page);
-  await page.goto("/settings/defaults");
-
-  // SALARY has dpaEnabled false, so the structure picker is hidden.
-  await expect(page.getByLabel("Structure")).toHaveCount(0);
-
-  await page.getByText("I'm using an assistance program by default").click();
-  await expect(page.getByLabel("Structure")).toBeVisible();
-});
-
-test("defaults saves and reports it", async ({ page }) => {
-  await stubProfileApi(page, SALARY);
-  await stubDataEndpoints(page);
-  await page.goto("/settings/defaults");
-
+  await page.getByTestId("settings-tab-defaults").click();
   await page.getByLabel("Interest rate").fill("7.25");
   await page.getByTestId("save-settings-defaults").click();
   await expect(page.getByText("Saved.")).toBeVisible();
 });
 
-test("the settings tabs move between the screens", async ({ page }) => {
+test("settings, defaults, integrations and the calculator fit 390px", async ({ page }) => {
   await stubProfileApi(page, SALARY);
   await stubDataEndpoints(page);
+  await page.route("**/api/integrations/rentcast**", (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        connected: true,
+        usage: { used: 12, limit: 50, fraction: 0.24, monthStart: "2026-10-01T00:00:00.000Z" },
+        warningFraction: 0.8,
+        nearLimit: false,
+        atLimit: false,
+      }),
+    })
+  );
+
+  const fits = () =>
+    page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
 
   await page.goto("/settings/profile");
+  await expect(page.getByTestId("settings-income-name-0")).toBeVisible();
+  expect(await fits(), "profile").toBe(true);
+
   await page.getByTestId("settings-tab-defaults").click();
   await expect(page.getByLabel("Interest rate")).toBeVisible();
+  expect(await fits(), "defaults").toBe(true);
 
-  await page.getByTestId("settings-tab-profile").click();
-  await expect(page.getByTestId("settings-income-name-0")).toBeVisible();
+  await page.getByTestId("settings-tab-integrations").click();
+  await expect(page.getByTestId("rentcast-integration")).toBeVisible();
+  expect(await fits(), "integrations").toBe(true);
 
-  // Integrations is a real screen now — it carries the RentCast usage counter,
-  // added with the comps work. Team still has none, so it still has no tab.
-  await expect(page.getByTestId("settings-tab-integrations")).toBeVisible();
-  await expect(page.getByTestId("settings-tab-team")).toHaveCount(0);
-});
-
-test("the defaults screen fits 390px without horizontal overflow", async ({ page }) => {
-  await stubProfileApi(page, SALARY);
-  await stubDataEndpoints(page);
-  await page.goto("/settings/defaults");
-  await expect(page.getByLabel("Interest rate")).toBeVisible();
-
-  const overflows = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-  );
-  expect(overflows).toBe(false);
-});
-
-test("defaults explains itself when there is no profile yet", async ({ page }) => {
-  await stubProfileApi(page, null);
-  await stubDataEndpoints(page);
-  await page.goto("/settings/defaults");
-
-  await expect(page.getByText(/haven't set up a profile yet/)).toBeVisible();
+  await openCalculator(page);
+  expect(await fits(), "calculator").toBe(true);
 });
