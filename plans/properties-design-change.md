@@ -65,6 +65,23 @@ Every house you're looking at. Tap one to see whether it works.
   map says how many are missing: *"2 houses aren't on the map yet. We place a
   house when it's added or its address changes."*
 
+### Found while building (2026-10-23)
+
+- **CartoDB's tiles are no longer keyless.** Without a key they carry an "API
+  KEY REQUIRED" watermark. The owner supplied `CARTO_API_KEY` (already in
+  `.env.local`). It is read on the server in `app/(shell)/properties/page.tsx`
+  and added to the tile URLs as `?key=`, which is how Carto's basemap keys
+  are meant to be used. So **signed-in users can see it** in the tile
+  requests. Without the key, the map still works, with the watermark.
+  **The key must also be set in Vercel**, which is the owner's step. Carto's
+  free tier is 5 million tile requests a month and is described as for
+  non-commercial use.
+- **Leaflet's z-indexes go up to 1000**, so the map is wrapped in `isolate`.
+  Otherwise its controls would paint over the bottom bar (the same trap as the
+  house page's sheet).
+- **The row card's footer** shows "2 of 4 steps", and the listing link is
+  icon-only. "Steps done" and the word "Listing" didn't fit at 280px.
+
 ### Three things the map needs: OWNER DECIDES
 
 **1. A map library, which is a new dependency.**
