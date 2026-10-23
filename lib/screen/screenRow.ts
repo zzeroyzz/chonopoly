@@ -112,6 +112,10 @@ export interface ScreenRow {
   isFinalist: boolean;
   /** The house's picture, for the card thumbnail. */
   photoUrl: string | null;
+  /** The house's own facts, for the card's spec line. Null when not entered. */
+  beds: number | null;
+  baths: number | null;
+  sqft: number | null;
   /** Everything the compare view needs, from the same build as the card. */
   loanType: string;
   /** True profit over cash in. Null when no cash went in. */
@@ -302,6 +306,9 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     compsToReview,
     isFinalist: house.isFinalist ?? false,
     photoUrl: house.photoUrl ?? null,
+    beds: house.beds ?? null,
+    baths: house.baths,
+    sqft: house.sqft,
     loanType: inputs.loanType,
     roiPct: deal.roiPct,
     cashIn: deal.cashIn,

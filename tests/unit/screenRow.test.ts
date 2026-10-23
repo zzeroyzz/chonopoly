@@ -100,6 +100,19 @@ describe("the row's figures", () => {
     expect(row.address).toBe("128 Maple St");
   });
 
+  it("carries the house's beds, baths and size for the spec line", () => {
+    const row = buildScreenRow(house({ beds: 3, baths: 2, sqft: 1_180 }), {
+      profile: profile(),
+      now: NOW,
+    });
+    expect([row.beds, row.baths, row.sqft]).toEqual([3, 2, 1_180]);
+  });
+
+  it("reads missing facts as null, not zero", () => {
+    const row = buildScreenRow(house({ sqft: null }), { profile: profile(), now: NOW });
+    expect([row.beds, row.baths, row.sqft]).toEqual([null, null, null]);
+  });
+
   it("takes the price from the primary analysis", () => {
     const row = buildScreenRow(house({ analysisInputs: { homeValue: 312_500 } }), {
       profile: profile(),
