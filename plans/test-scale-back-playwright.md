@@ -199,3 +199,216 @@ instruction. **It is not an independent review.**
 
 **Recommendation:** approve. Step 1 (diagnosis) is done and found no product
 bugs.
+
+## Mapping table (step 2, written 2026-10-23, before any test was removed)
+
+**K** = kept in Playwright, with the merge target in brackets. **J** = moved to
+Jest, naming the test that holds it. **D** = dropped, with the reason. Files
+marked *new* are created in step 3. "Extract" means the rule leaves a
+component for a plain function, with no behaviour change.
+
+### 01-auth (8 → 3)
+| Test | → |
+|---|---|
+| renders the login form | K [wrong details show the error] |
+| password field starts hidden | D: the browser's default attribute, not app behaviour |
+| toggles password visibility | D: a DOM attribute flip, with no rule behind it |
+| shows an error on invalid credentials | **K** wrong details show the error |
+| switches to forgot-password mode | **K** forgot-password there and back |
+| forgot-password form has an email field | K [forgot-password there and back] |
+| returns to login from forgot-password mode | K [forgot-password there and back] |
+| reset page: error when no code | **K** |
+
+### 19-crm (4 → 2)
+| Test | → |
+|---|---|
+| a suppressed number stays visible, struck through | J: `crm.test.ts` (suppression rule), plus extract "no tel link when suppressed" if it is inline |
+| detail shows property, contact, activity at 390px | **K** |
+| the hub opens the tab behind a tile | **K** (tile wording is already in `detailsHub.test.ts`) |
+| the hub fits 390px | K [detail at 390px] |
+
+### 20-mortgage-scenarios (13 → 3)
+| Test | → |
+|---|---|
+| the save control is on the page | D: the save journey proves it |
+| save is disabled until named | J: *new* `groupScenarios.test.ts`, extract `isSaveableName` (whitespace is not a name) |
+| saving lists it with price and payment | **K** save, list, reopen, delete |
+| opening puts the numbers back | K [save, list, reopen, delete] |
+| same name keeps one row, bumps the version | J: `scenarios.test.ts`, `saveScenario` versioning against a stand-in database |
+| deleting removes it | K [save, list, reopen, delete] |
+| the saved list fits 390px | K [grouped list at 390px] |
+| a picked house groups the save | J: `groupScenarios.test.ts`, extract `groupByProperty` |
+| two saves on one house: one heading, two rows | J: `groupScenarios.test.ts` |
+| the calculator cannot create a house | D: no address field is static markup. The 25 journey proves saves carry no address and write no house. |
+| no house lands under Unassigned | J: `groupScenarios.test.ts` |
+| an Unassigned save can have an address attached | **K**, rewritten: attaching is now a house picker (`attach-house-*`), not a typed address. That is why it failed. |
+| the grouped list fits 390px | **K** |
+
+### 21-buyer-profile (15 → 3)
+| Test | → |
+|---|---|
+| with no profile, the calculator asks for income | J: `verdicts.test.ts` (`needsProfile`) |
+| the first-run modal takes named debts | **K** first-run: named debts → verdict, no leaving |
+| saving the modal gives a verdict | K [first-run] |
+| the modal is first-run only | K [first-run: afterwards it is read-only, with "Edit in Settings"] |
+| income is entered once and reused | J: `resolveInputs.test.ts` (profile applied to every house) |
+| a second house reuses the profile | J: `resolveInputs.test.ts` |
+| settings lists each debt | **K** settings shows the profile, the tabs move, and defaults save |
+| settings fits 390px | **K** settings, defaults and calculator at 390px |
+| the calculator fits 390px | K [390px] |
+| the defaults screen edits loan and flip costs | D: prefilled values are `defaults.ts` (Jest-covered). Its "Term" selector also matches the tax field now, which is why it failed. |
+| assistance fields appear only when on | D: one boolean, no rule |
+| defaults saves and reports it | K [settings journey] |
+| the settings tabs move | K [settings journey] |
+| defaults fits 390px | K [390px] |
+| defaults explains itself with no profile | D: static copy on one condition |
+
+### 22-navigation (24 → 8)
+| Test | → |
+|---|---|
+| the bottom bar holds five destinations | K [the nav reaches every section] |
+| the nav reaches every section | **K** |
+| the last slot is your avatar | K [nav] |
+| the hub opens each of four areas | K [nav] |
+| the hub fits 390px | K [house page at 390px, which also loads the hub] |
+| the shell survives a tab change | **K** |
+| the active destination follows the route | K [nav] |
+| Tools lists only calculators that exist | J: the Tools list, if it is a constant, otherwise D (static) |
+| `${from}` redirects | **K** one parametrised test (plus the 25 "routes gone" and "old module hub") |
+| a property deep link keeps its id | K [tabs switch] |
+| the property page has six tabs and they switch | **K** |
+| the Numbers tab lists analyses | K [tabs switch] |
+| Rehab is the estimator | K [tabs switch] |
+| the property page fits 390px | **K** |
+| without a photo, the sheet clears the facts | **K** |
+| the old module hub is gone | K [redirects] |
+| property type reads as a label | J: *new* case for `propertyTypeLabel` in `screenRow.test.ts`'s sibling `specLine.test.ts` |
+| house facts can be edited | **K** edit, cancel, photo link |
+| the edit form says hand-entered facts win | D: static copy |
+| cancelling the edit form changes nothing | K [edit] |
+| the edit form fits 390px | K [Save reachable at 390px] |
+| the edit form opens over the page | K [Save reachable at 390px] |
+| Save stays reachable at 390px | **K** |
+| a pasted photo link saves | K [edit] |
+
+### 23-comps (46 → 6)
+| Test | → |
+|---|---|
+| skipping a comp moves the ARV | **K** (asserts the ARV moves, not a count) |
+| approving again restores the ARV | J: `arv.test.ts` (included vs skipped), plus the sale-price prompt rule |
+| comps show Removed rather than Sold | J: `arv.test.ts` status labels |
+| refresh pulls comps into an empty tab | **K** refresh fills the tab, and a double tap sends one request |
+| no API key says so | J: *new* `refreshMessages.test.ts`, moving the route's reason map to `lib/comps/refreshMessages.ts` |
+| an exhausted quota is distinct | J: `refreshMessages.test.ts` |
+| no comps found is reported | J: `refreshMessages.test.ts` |
+| a failed refresh keeps the comps | **K** a failed refresh says why and keeps the comps |
+| a hand-entered comp is a confirmed sale | **K** manual comp: saved as Sold, with its date, removable |
+| the basis label counts the manual sale | J: `arv.test.ts` (`basisLabel`) |
+| only hand-entered comps can be removed | K [manual comp] |
+| the Comps tab fits 390px | **K** comps tab, form, confirm and lock row at 390px, ARV and Refresh apart |
+| the manual form fits 390px | K [390px] |
+| ARV and Refresh share the top row | K [390px] |
+| a manual comp with no date shows none | J: `arv.test.ts` (`compDate`) |
+| a manual comp records its date | K [manual comp] |
+| Integrations usage against the limit | J: *new* `integrationStatus.test.ts`, extract from `IntegrationsPanel` |
+| Integrations warns at 80% | J: `integrationStatus.test.ts` |
+| Integrations says what still works | J: `integrationStatus.test.ts` |
+| Integrations reports a missing key | J: `integrationStatus.test.ts` |
+| Integrations reachable at 390px | K [settings 390px, in 21] |
+| a 500 with a reason shows it | J: *new* `readErrorMessage.test.ts`, one function shared by the comps panel and the Properties list |
+| a 500 with an empty body | J: `readErrorMessage.test.ts` |
+| a crashed refresh leaves comps alone | K [failed refresh keeps the comps] |
+| a locked house says when | J: *new* `refreshControls.test.ts`, extract from `CompsPanel` |
+| locked offers Refresh early | J: `refreshControls.test.ts` |
+| unlocked offers Refresh | J: `refreshControls.test.ts` |
+| forcing confirms and says the cost | **K** force: confirm, cancel spends nothing, accept sends `force` |
+| cancelling spends nothing | K [force] |
+| accepting sends force | K [force] |
+| the confirm panel fits 390px | K [390px] |
+| a non-owner cannot force | J: `refreshControls.test.ts` |
+| at the cap Refresh is removed, reason given | J: `refreshControls.test.ts` |
+| manual comps still work at the cap | D: the manual form does not read refresh status; the manual comp journey proves it works |
+| comps say when from the saved response | J: `refreshControls.test.ts` (source labels) |
+| rebuild offered, never calls out | J: `refreshControls.test.ts` (offered) |
+| rebuild hidden with nothing saved | J: `refreshControls.test.ts` |
+| the lock row fits 390px | K [390px] |
+| a double tap sends one request | K [refresh fills the tab] |
+| disabled while running | K [refresh fills the tab] |
+| losing the lock race | J: `refreshMessages.test.ts` (in_flight) |
+| Integrations: a deployment that never calls | J: `integrationStatus.test.ts` |
+| no key hides Refresh and says why | J: `refreshControls.test.ts` |
+| manual comps work with no key | D: as at the cap |
+| an empty ARV card says one thing | J: `arv.test.ts` (`basisLabel` empty), or extract the card's rule |
+| the basis line returns with a number | J: `arv.test.ts` (`basisLabel`) |
+
+### 24-screen (34 → 4)
+| Test | → |
+|---|---|
+| both verdicts | J: `verdicts.test.ts` |
+| each verdict carries its reason | J: `verdicts.test.ts` |
+| the card leads with price, address, specs | J: `specLine.test.ts` and *new* `cardSteps.test.ts` (price wording) |
+| no listing price says so | J: `cardSteps.test.ts` |
+| no ARV says so | J: `verdicts.test.ts` |
+| nothing approved asks for a review | J: `cardSteps.test.ts`, extract `resaleUnchecked` |
+| a checked price does not ask | J: `cardSteps.test.ts` |
+| no income on file | J: `verdicts.test.ts`. The Playwright copy was stale: the prompt is the banner, not the tag. |
+| an address flagged for review | J: `screenRow.test.ts` (flag passes through) |
+| a listing link is one tap away | K [photo card journey] |
+| the steps count opens the next step | J: `cardSteps.test.ts`, extract `cardSteps` |
+| a finished house shows four of four | J: `cardSteps.test.ts` |
+| the server's order is kept | J: `screenRow.test.ts` (`sortScreenRows`) |
+| an empty screen points at adding | D: static copy on one condition |
+| a filter showing nothing offers a way back | D: one state flip and static copy |
+| a failed load says why | J: `readErrorMessage.test.ts` |
+| the screen fits 390px | **K** |
+| photo card: photo, fallback, opens | **K** (also the listing link and the card-wide link) |
+| the row and the map are linked | **K** |
+| a house the map cannot place is counted | J: `mapPins.test.ts` |
+| a map with no placed houses says why | D: static copy on `pins.length === 0` |
+| pasting five addresses adds five | **K**, fixed to click "Add several" first. That is why it failed. |
+| one address reads as one house | J: `parseAddressLines.test.ts` |
+| a bad line is named | J: `parseAddressLines.test.ts` |
+| a probable match is flagged | J: `addressDedupe.test.ts` |
+| batch add does not call RentCast | J: `batchPrice.test.ts`, *new* case |
+| the result links on to the screen | K [pasting] |
+| submit disabled with nothing pasted | D: one `trim()` check |
+| a failed batch says why, keeps the text | J: `readErrorMessage.test.ts` (the why). Keeping the text: D, a textarea not being cleared. |
+| the add screen fits 390px | K [pasting] |
+| a row links to its property | K [photo card] |
+| the whole card is clickable | K [photo card] |
+| no pipeline entry still opens | K [photo card] (the href never uses the entry) |
+| the listing link opens the listing | K [photo card] |
+
+### 25-calculator-binding (7 → 2)
+| Test | → |
+|---|---|
+| open, run, save: one analysis, no house | **K**, with the reload returning to the same house |
+| saving an existing analysis adds a version | J: `scenarios.test.ts` (`saveScenario` versioning) |
+| a reload comes back to the same house | K [journey] |
+| closing with unsaved changes asks first | D: a confirm dialog with no rule behind it |
+| Save stays visible at 390px | **K** |
+| the modal asks for no address | D: static markup. The journey asserts no address is sent. |
+| the routes it replaced are gone | K [redirects in 22] |
+
+### 27-recorded-sales (6 → 1)
+| Test | → |
+|---|---|
+| recorded sales show as Sold, county record | **K** recorded sales at 390px: Sold, county record, ARV built |
+| the ARV is built from sales alone | J: `arv.test.ts` |
+| a listing keeps Removed beside sales | J: `arv.test.ts` (status labels) |
+| a possible fixer-upper is flagged | J: `fromPropertyRecords.test.ts` |
+| skipping the flagged sale moves the ARV | J: `arv.test.ts` |
+| the ARV tab fits 390px | K [recorded sales] |
+
+### 28-companies (5 → 3)
+| Test | → |
+|---|---|
+| an empty list says what goes there | D: static copy on one condition |
+| adding a company sends what was typed | **K** |
+| a portfolio shows, and each house opens | **K** (price wording is already in `companies.test.ts`) |
+| adding a house goes through the normal form | K [portfolio] |
+| the companies screens fit 390px | **K** |
+
+**Totals:** 153 → **35** Playwright tests. 34 were planned. The extra one is
+comps' "a failed refresh keeps the comps", kept because the tab emptying
+itself was a real bug once, and only a browser shows it.
