@@ -158,3 +158,36 @@ Written by the same Claude that will build it. **It is not independent.**
 
 **Recommendation:** approve, with the holding cost applied to all loans. Cut
 the branch once `fix/paste-address` merges.
+
+## Outcome (2026-10-23)
+
+- **Numbers** sizes hard money the way Deal does. The rehab box is back. It
+  shows the down payment the loan leaves, and the loan as a read-only line
+  (advance plus funded rehab). There is a new "Lender and title fees" field
+  (2% of the price by default, with the dollar amount shown).
+- **Deal**: hard money's carry adds tax, insurance and HOA every month held.
+  Closing costs are the lender and title fees, not $0. Settings' holding cost
+  and period apply to every deal.
+- **A missing ARV** no longer caps a hard money loan to $0.
+- **The Flip calculator**:
+  - It opens on hard money.
+  - Switching loans resets the rate, points and down payment.
+  - Mortgage loans get a down payment field (the fixed $12,250 is gone).
+  - Saving keeps every loan setting.
+- **Settings** says the holding cost is utilities and upkeep, with tax and
+  insurance counted on their own.
+- **Tests**:
+  - Jest: 637 pass. One house gives the same loan and down payment on Numbers
+    and Deal, plus cases for fees, tax and insurance, Settings holding, no
+    ARV, and the Flip inputs. The three old mortgage-test expectations
+    changed on purpose: they encoded "price minus a typed down payment".
+  - Playwright: 38 pass, including the new journey (hard money on Numbers →
+    Deal shows the same down payment).
+  - `tsc` and the build pass. Lint is unchanged.
+- **Checked at 390px**: Numbers (the loan line, the rehab box) and the Flip
+  calculator.
+- **Also on this branch**: the iPhone review-sheet tap fix (`f54231c`), shipped
+  ahead as #69.
+- **Not done, flagged**: Numbers keeps the mortgage rate (6.75%) when you
+  switch to hard money. The Flip calculator resets it to 15%, and Numbers
+  could do the same.
