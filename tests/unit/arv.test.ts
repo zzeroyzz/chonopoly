@@ -1,3 +1,4 @@
+import { COMP_STATUS_LABELS, needsSalePrice } from "@/lib/comps/types";
 import { calculateArv, assessComps, effectivePrice } from "@/lib/comps/arv";
 import { mapCompStatus, mapComparables, mapSubjectFacts } from "@/lib/comps/fromRentCast";
 import {
@@ -1181,5 +1182,26 @@ describe("compDate", () => {
     expect(compDate(comp({ status: "sold", removedDate: null }))).toBeNull();
     expect(compDate(comp({ status: "removed", removedDate: null }))).toBeNull();
     expect(compDate(comp({ status: "active", listedDate: null }))).toBeNull();
+  });
+});
+
+describe("comp status labels", () => {
+  // RentCast reports only Active or Inactive. Inactive becomes "Removed",
+  // never "Sold": only a person or a county record can say a house sold.
+  it("calls a removed listing Removed, never Sold", () => {
+    expect(COMP_STATUS_LABELS.removed).toBe("Removed");
+    expect(COMP_STATUS_LABELS.active).toBe("Active");
+    expect(COMP_STATUS_LABELS.sold).toBe("Sold");
+  });
+});
+
+describe("needsSalePrice", () => {
+  it("asks what a removed listing sold for before counting it", () => {
+    expect(needsSalePrice("renovated_use", "removed")).toBe(true);
+  });
+
+  it("does not ask for a recorded sale, or for a skip", () => {
+    expect(needsSalePrice("renovated_use", "sold")).toBe(false);
+    expect(needsSalePrice("not_comparable_skip", "removed")).toBe(false);
   });
 });

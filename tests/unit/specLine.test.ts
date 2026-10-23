@@ -1,4 +1,5 @@
 import { specLabels, specLine } from "@/lib/screen/specLine";
+import { propertyTypeLabel } from "@/lib/property/types";
 
 describe("specLine", () => {
   it("reads beds, baths and size in that order", () => {
@@ -27,5 +28,20 @@ describe("specLine", () => {
 
   it("ignores a figure that cannot be a fact", () => {
     expect(specLine({ beds: -1, baths: Number.NaN, sqft: Number.POSITIVE_INFINITY })).toEqual([]);
+  });
+});
+
+describe("propertyTypeLabel", () => {
+  it("reads a stored type as a label, not a database value", () => {
+    expect(propertyTypeLabel("single_family")).toBe("Single family");
+    expect(propertyTypeLabel("mobile")).toBe("Mobile home");
+  });
+
+  it("shows an unexpected value as it is rather than hiding it", () => {
+    expect(propertyTypeLabel("houseboat")).toBe("houseboat");
+  });
+
+  it("says nothing when no type was recorded", () => {
+    expect(propertyTypeLabel(null)).toBeNull();
   });
 });

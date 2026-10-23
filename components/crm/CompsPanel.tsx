@@ -12,6 +12,7 @@ import {
   compReviewOptions,
   isReviewable,
   isSkipped,
+  needsSalePrice,
 } from "@/lib/comps/types";
 import { type ArvResult, type CompNote } from "@/lib/comps/arv";
 import {
@@ -1012,7 +1013,7 @@ function CompRow({
               // Approving a removed listing is a claim that it sold, so it
               // needs the figure it sold for. Asking here rather than
               // silently feeding the asking price into the ARV.
-              if (next === "renovated_use" && comp.status === "removed") {
+              if (needsSalePrice(next, comp.status)) {
                 setAskingSale(true);
                 return;
               }
