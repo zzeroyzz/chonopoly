@@ -112,6 +112,26 @@ scope:
   no price. The `headline` object it came from had no other reader, so it went
   too.
 
+### The listing price was never loaded (2026-10-23)
+
+The owner: *"all you had to do was change 'asking price' to listing price
+because the value stays the same."* Right. Switching the header to
+`list_price` exposed three faults, all fixed here:
+
+- `lib/screen/screenService.ts` never selected `list_price` or `is_finalist`.
+  So every card said "No listing price yet", and no house was ever a finalist
+  on the list.
+- Batch add parsed a price off each line, then dropped it.
+- The owner's houses held their price only in their financing numbers.
+  **On the owner's instruction ("backfill that")**,
+  `scripts/backfill-list-price.ts` copied each house's typed `homeValue` into
+  `list_price`. It was dry-run first, then written. 4 houses were set:
+  $149,900, $100,000, $135,000 and $200,000. Only empty prices were written,
+  and the calculator default was never copied.
+
+The picking rule for "which financing numbers" moved to
+`lib/screen/primaryFinancing.ts`, so the list and the script share it.
+
 ### Three things the map needs: OWNER DECIDES
 
 **1. A map library, which is a new dependency.**
