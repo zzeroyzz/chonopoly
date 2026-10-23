@@ -38,6 +38,35 @@ export interface HardMoneyTerms {
   interestStyle: InterestStyle;
 }
 
+/** The terms a set of inputs describes, so every screen reads them one way. */
+export function hardMoneyTermsFrom(inputs: {
+  interestRate: number;
+  points: number;
+  hardMoneyPurchaseLtvPct: number;
+  hardMoneyRehabFundedPct: number;
+  hardMoneyMaxLoanToArvPct: number;
+  hardMoneyInterestStyle: InterestStyle;
+}): HardMoneyTerms {
+  return {
+    ratePct: inputs.interestRate,
+    pointsPct: inputs.points,
+    purchaseLtvPct: inputs.hardMoneyPurchaseLtvPct,
+    rehabFundedPct: inputs.hardMoneyRehabFundedPct,
+    maxLoanToArvPct: inputs.hardMoneyMaxLoanToArvPct,
+    interestStyle: inputs.hardMoneyInterestStyle,
+  };
+}
+
+/**
+ * Lender and title fees in dollars: a percent of the purchase price.
+ *
+ * The points are charged on the loan and kept as their own line; these are the
+ * rest of the upfront cost, which used to be counted as nothing.
+ */
+export function hardMoneyFees(purchasePrice: number, feesPct: number): number {
+  return Math.max(0, purchasePrice) * (Math.max(0, feesPct) / 100);
+}
+
 export const HARD_MONEY_DEFAULTS: HardMoneyTerms = {
   ratePct: 15,
   pointsPct: 2,
@@ -57,8 +86,8 @@ export interface HardMoneyLoan {
 
   /** What the terms would have funded with no ceiling. */
   uncapped: number;
-  /** ARV × maxLoanToArv. */
-  arvCeiling: number;
+  /** ARV × maxLoanToArv. Null when there is no ARV yet to set one. */
+  arvCeiling: number | null;
   /** True when the ceiling reduced the loan. */
   capped: boolean;
   /**
@@ -82,11 +111,15 @@ export interface HardMoneyLoan {
  * The ceiling bites the rehab draws rather than the purchase advance, because
  * the purchase advance is wired at closing and the draws are what a lender
  * actually trims when the ARV will not support the full request.
+ *
+ * With no ARV yet there is no ceiling to apply, so the loan is sized on its
+ * terms alone. This used to treat a missing ARV as an ARV of $0, which capped
+ * the loan to nothing and showed the whole house as cash.
  */
 export function sizeHardMoneyLoan(
   purchasePrice: number,
   rehabTotal: number,
-  arv: number,
+  arv: number | null,
   terms: HardMoneyTerms
 ): HardMoneyLoan {
   const purchase = Math.max(0, purchasePrice);
@@ -96,10 +129,12 @@ export function sizeHardMoneyLoan(
   const wantedRehabFunded = rehab * (Math.max(0, terms.rehabFundedPct) / 100);
   const uncapped = wantedPurchaseAdvance + wantedRehabFunded;
 
-  const arvCeiling = Math.max(0, arv) * (Math.max(0, terms.maxLoanToArvPct) / 100);
+  const arvCeiling =
+    arv !== null && arv > 0 ? arv * (Math.max(0, terms.maxLoanToArvPct) / 100) : null;
+  const ceiling = arvCeiling ?? Number.POSITIVE_INFINITY;
 
-  const purchaseAdvance = Math.min(wantedPurchaseAdvance, arvCeiling);
-  const rehabFunded = Math.max(0, Math.min(wantedRehabFunded, arvCeiling - purchaseAdvance));
+  const purchaseAdvance = Math.min(wantedPurchaseAdvance, ceiling);
+  const rehabFunded = Math.max(0, Math.min(wantedRehabFunded, ceiling - purchaseAdvance));
   const total = purchaseAdvance + rehabFunded;
 
   return {

@@ -107,6 +107,8 @@ export function defaultInputs(now: Date = new Date()): MortgageInputs {
     hardMoneyMaxLoanToArvPct: 75,
     hardMoneyInterestStyle: "non_dutch",
     hardMoneyDraws: [],
+    // A starting point to replace with the lender's quote, not a quote.
+    hardMoneyFeesPct: 2,
 
     fhaUfmipFinanced: true,
 

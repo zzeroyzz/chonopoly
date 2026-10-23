@@ -250,7 +250,8 @@ export function ProfitCard({
           <AlertTriangle size={13} className="shrink-0 mt-0.5 text-(--color-warning)" />
           <p className="text-[11px] text-(--color-text-secondary) leading-relaxed">
             The loan hit the {hardMoney.terms.maxLoanToArvPct}% of ARV ceiling
-            ({dollars(hardMoney.loan.arvCeiling, 0)}). {dollars(hardMoney.loan.shortfall, 0)}{" "}
+            {/* Capped only ever happens under a ceiling, so it is set here. */}
+            ({dollars(hardMoney.loan.arvCeiling ?? 0, 0)}). {dollars(hardMoney.loan.shortfall, 0)}{" "}
             you expected to borrow is cash you have to bring.
           </p>
         </div>

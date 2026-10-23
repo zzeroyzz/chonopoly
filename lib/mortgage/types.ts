@@ -126,6 +126,12 @@ export interface MortgageInputs {
   hardMoneyInterestStyle: "dutch" | "non_dutch";
   /** Rehab advances. Empty means "spread evenly", which is what gets prefilled. */
   hardMoneyDraws: { month: number; amount: number }[];
+  /**
+   * Lender and title fees, as a percent of the purchase price: underwriting,
+   * processing, title, the closing attorney and recording. The points are
+   * their own line. These came to $0 before, which understated cash to close.
+   */
+  hardMoneyFeesPct: number;
 
   /** DSCR */
   grossMonthlyRent: number;

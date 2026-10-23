@@ -15,6 +15,7 @@ import {
   BORROWER_MINIMUM_INVESTMENT,
   allowsDownPaymentAssistance,
 } from "./loanTypes";
+import { hardMoneyFees, hardMoneyTermsFrom, sizeHardMoneyLoan } from "./hardMoney";
 import {
   buildAmortizationSchedule,
   buildInterestOnlySchedule,
@@ -212,7 +213,22 @@ function pmiTerminationPeriod(schedule: AmortizationRow[], originalValue: number
 
 export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
   const config = LOAN_TYPE_CONFIG[inputs.loanType];
-  const base = baseLoanAmount(inputs);
+
+  // Hard money is sized off the deal, not a down payment: a percent of the
+  // price plus the funded rehab, under the ARV ceiling. The same sizing the
+  // Deal tab uses, so the two cannot show different loans for one house. It
+  // used to be "price minus a typed down payment", like a mortgage.
+  const hardMoneyLoan = config.isHardMoney
+    ? sizeHardMoneyLoan(
+        inputs.homeValue,
+        inputs.renovationBudget,
+        inputs.arv,
+        hardMoneyTermsFrom(inputs)
+      )
+    : null;
+  const base = hardMoneyLoan ? hardMoneyLoan.total : baseLoanAmount(inputs);
+  // What the buyer puts down: typed on a mortgage, left over on hard money.
+  const downPayment = hardMoneyLoan ? hardMoneyLoan.downPayment : inputs.downPayment;
   const downPercent = downPaymentPercent(inputs);
 
   // ── Financed fees ────────────────────────────────────────────────────────
@@ -344,7 +360,12 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
   // One-time money. Deliberately kept out of the monthly payment and the DTI
   // ratios — closing costs don't recur, and folding them in would overstate
   // every month for the life of the loan.
-  const closingCosts = (inputs.homeValue * inputs.closingCostPercent) / 100;
+  // Hard money's closing is the lender and title fees; its points are added
+  // below as fees due. It used to borrow the mortgage percentage, which carries
+  // prepaids and escrow a hard money closing does not have.
+  const closingCosts = hardMoneyLoan
+    ? hardMoneyFees(inputs.homeValue, inputs.hardMoneyFeesPct)
+    : (inputs.homeValue * inputs.closingCostPercent) / 100;
 
   // A fee that isn't financed has to be paid at the table instead.
   let feesDueAtClosing = 0;
@@ -354,8 +375,12 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
 
   const result: MortgageResult = {
     loanAmount,
-    downPaymentAmount: inputs.downPayment,
-    downPaymentPercent: downPercent,
+    downPaymentAmount: downPayment,
+    downPaymentPercent: hardMoneyLoan
+      ? inputs.homeValue > 0
+        ? (downPayment / inputs.homeValue) * 100
+        : 0
+      : downPercent,
     financedFees,
     closingCosts,
     feesDueAtClosing,
@@ -367,7 +392,7 @@ export function calculateMortgage(inputs: MortgageInputs): MortgageResult {
         ? (loanAmount / inputs.afterRepairValue) * 100
         : null,
 
-    ...allocateAssistance(inputs, inputs.downPayment, closingCosts + feesDueAtClosing),
+    ...allocateAssistance(inputs, downPayment, closingCosts + feesDueAtClosing),
     dpaMonthlyPayment,
 
     principalAndInterest,
