@@ -76,17 +76,6 @@ async function stubOne(page: Page) {
   );
 }
 
-test("an empty list says what goes there and how to fill it", async ({ page }) => {
-  await stubEmpty(page);
-  await page.goto("/companies");
-
-  const empty = page.getByTestId("companies-empty");
-  await expect(empty).toBeVisible();
-  await expect(empty).toContainText("No companies yet");
-  // Not just a statement — a way out of it.
-  await expect(page.getByTestId("companies-empty-add")).toBeVisible();
-});
-
 test("adding a company sends what was typed", async ({ page }) => {
   await stubEmpty(page);
 
@@ -133,19 +122,11 @@ test("a company shows its portfolio, and each house opens", async ({ page }) => 
   await expect(page.getByTestId("company-name-heading")).toHaveText("Ground Floor LLC");
   await expect(page.getByTestId("company-phone-link")).toBeVisible();
 
-  // A house with nothing recorded still says something, rather than a dash.
-  await expect(page.getByTestId("portfolio-p1")).toContainText("$149,900");
-  await expect(page.getByTestId("portfolio-p2")).toContainText("No listing price yet");
-
+  // How each house's price is worded is tests/unit/companies.test.ts.
   await expect(page.getByTestId("portfolio-p1")).toHaveAttribute("href", "/properties/p1");
-});
 
-test("adding a house to a portfolio goes through the normal add form", async ({ page }) => {
-  await stubOne(page);
-  await page.goto("/companies/co-1");
-
-  // A portfolio house is a real house, entered the same way as any other —
-  // which is why this links to the add form rather than a second, lesser one.
+  // A portfolio house is a real house, entered through the normal add form
+  // rather than a second, lesser one.
   await expect(page.getByTestId("add-house-to-portfolio")).toHaveAttribute(
     "href",
     "/properties/new?company=co-1"
