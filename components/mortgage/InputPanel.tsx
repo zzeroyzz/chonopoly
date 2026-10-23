@@ -388,23 +388,42 @@ export function InputPanel({
             </>
           )}
 
-          <NumberField
-            label="Loan amount"
-            value={Math.round(derivedLoan)}
-            onChange={(loanAmountOverride) => onChange({ loanAmountOverride })}
-            prefix="$"
-            hint={inputs.loanAmountOverride === null ? "auto" : "edited"}
-            note={`${ltvPercent(derivedLoan, inputs.homeValue).toFixed(1)}% loan-to-value`}
-            min={0}
-          />
-          {inputs.loanAmountOverride !== null && (
-            <button
-              type="button"
-              onClick={() => onChange({ loanAmountOverride: null })}
-              className="text-[11px] text-(--color-accent) text-left -mt-2"
-            >
-              Reset to home value minus down payment
-            </button>
+          {/* Hard money's loan is sized off the deal, so it is shown, not
+              typed: a typed figure here would be ignored by the maths, and
+              this box used to show a mortgage-style loan the maths no longer
+              uses. */}
+          {hardMoneyLoan ? (
+            <p data-testid="hm-loan" className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+              <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) block mb-0.5">
+                Loan amount
+              </span>
+              <span className="text-[15px] text-(--color-text-primary) font-semibold">
+                {dollars(hardMoneyLoan.total, 0)}
+              </span>
+              {" "}— {dollars(hardMoneyLoan.purchaseAdvance, 0)} toward the price and{" "}
+              {dollars(hardMoneyLoan.rehabFunded, 0)} of the rehab, paid back in full when you sell.
+            </p>
+          ) : (
+            <>
+            <NumberField
+              label="Loan amount"
+              value={Math.round(derivedLoan)}
+              onChange={(loanAmountOverride) => onChange({ loanAmountOverride })}
+              prefix="$"
+              hint={inputs.loanAmountOverride === null ? "auto" : "edited"}
+              note={`${ltvPercent(derivedLoan, inputs.homeValue).toFixed(1)}% loan-to-value`}
+              min={0}
+            />
+            {inputs.loanAmountOverride !== null && (
+              <button
+                type="button"
+                onClick={() => onChange({ loanAmountOverride: null })}
+                className="text-[11px] text-(--color-accent) text-left -mt-2"
+              >
+                Reset to home value minus down payment
+              </button>
+            )}
+            </>
           )}
 
           <NumberField
