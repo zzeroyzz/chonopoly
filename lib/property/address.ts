@@ -63,6 +63,42 @@ const DIRECTIONALS: Record<string, string> = {
   SOUTHWEST: "SW", SW: "SW",
 };
 
+/** US states and DC by name, for addresses that spell the state out. */
+const STATE_NAMES: Record<string, string> = {
+  ALABAMA: "AL", ALASKA: "AK", ARIZONA: "AZ", ARKANSAS: "AR", CALIFORNIA: "CA",
+  COLORADO: "CO", CONNECTICUT: "CT", DELAWARE: "DE", "DISTRICT OF COLUMBIA": "DC",
+  FLORIDA: "FL", GEORGIA: "GA", HAWAII: "HI", IDAHO: "ID", ILLINOIS: "IL",
+  INDIANA: "IN", IOWA: "IA", KANSAS: "KS", KENTUCKY: "KY", LOUISIANA: "LA",
+  MAINE: "ME", MARYLAND: "MD", MASSACHUSETTS: "MA", MICHIGAN: "MI", MINNESOTA: "MN",
+  MISSISSIPPI: "MS", MISSOURI: "MO", MONTANA: "MT", NEBRASKA: "NE", NEVADA: "NV",
+  "NEW HAMPSHIRE": "NH", "NEW JERSEY": "NJ", "NEW MEXICO": "NM", "NEW YORK": "NY",
+  "NORTH CAROLINA": "NC", "NORTH DAKOTA": "ND", OHIO: "OH", OKLAHOMA: "OK",
+  OREGON: "OR", PENNSYLVANIA: "PA", "RHODE ISLAND": "RI", "SOUTH CAROLINA": "SC",
+  "SOUTH DAKOTA": "SD", TENNESSEE: "TN", TEXAS: "TX", UTAH: "UT", VERMONT: "VT",
+  VIRGINIA: "VA", WASHINGTON: "WA", "WEST VIRGINIA": "WV", WISCONSIN: "WI",
+  WYOMING: "WY",
+};
+
+/** "Georgia" → "GA". Null for anything that is not a state's full name. */
+export function stateAbbreviation(name: string): string | null {
+  return STATE_NAMES[name.trim().replace(/\s+/g, " ").toUpperCase()] ?? null;
+}
+
+/** Every full state name, longest first, so "West Virginia" wins over "Virginia". */
+export const STATE_FULL_NAMES: string[] = Object.keys(STATE_NAMES).sort(
+  (a, b) => b.length - a.length
+);
+
+/** "Dr", "Drive", "St." — a word that ends the street part of an address. */
+export function isStreetSuffix(token: string): boolean {
+  return token.replace(/\./g, "").toUpperCase() in SUFFIXES;
+}
+
+/** "NE", "North" — a direction that can follow the street suffix. */
+export function isDirectional(token: string): boolean {
+  return token.replace(/\./g, "").toUpperCase() in DIRECTIONALS;
+}
+
 /**
  * Unit designators. The unit is KEPT — apartment 2 and apartment 3 are different
  * properties — but the designator itself is canonicalized so "#2", "APT 2" and
