@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import { resolveInputs } from "@/lib/mortgage/resolveInputs";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
-import { buildDeal } from "@/lib/deal/buildDeal";
+import { buildDeal, holdingFrom } from "@/lib/deal/buildDeal";
 import { explainDeal } from "@/lib/deal/explainDeal";
 import { offerCeiling } from "@/lib/offers/offerCeiling";
 import { calculateDti } from "@/lib/mortgage/dti";
@@ -153,6 +153,7 @@ export function DealPanel({
         arv,
         rehab,
         sellerClosingPct: profile?.defaults.sellingPct ?? 8,
+        holding: holdingFrom(profile?.defaults),
         taxes: taxDefaultsFrom(profile?.defaults),
         state,
       },
@@ -206,7 +207,11 @@ export function DealPanel({
     const ceilingFor = (profitFloor: number) =>
       shortOfWorking
         ? offerCeiling({
-            house: { arv, rehab: built.rehab, sellerClosingPct: profile?.defaults.sellingPct ?? 8 },
+            house: {
+              arv, rehab: built.rehab,
+              sellerClosingPct: profile?.defaults.sellingPct ?? 8,
+              holding: holdingFrom(profile?.defaults),
+            },
             inputs: built.inputs,
             profitFloor,
           }).price

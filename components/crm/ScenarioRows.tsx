@@ -6,7 +6,7 @@ import { type ScenarioSummary, type ScenarioVersion } from "@/lib/mortgage/scena
 import { type BuyerProfile } from "@/lib/profile/types";
 import { resolveInputs } from "@/lib/mortgage/resolveInputs";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
-import { buildDeal } from "@/lib/deal/buildDeal";
+import { buildDeal, holdingFrom } from "@/lib/deal/buildDeal";
 import { resolveRehab } from "@/lib/rehab/resolveRehab";
 import { taxDefaultsFrom } from "@/lib/mortgage/capitalGains";
 import { scenarioDescription, suggestScenarioName } from "@/lib/mortgage/scenarioName";
@@ -50,6 +50,7 @@ function dealFor(
     arv,
     rehab: resolveRehab(null, inputs.renovationBudget),
     sellerClosingPct: profile?.defaults.sellingPct ?? 8,
+    holding: holdingFrom(profile?.defaults),
     taxes: taxDefaultsFrom(profile?.defaults),
     state,
   });
