@@ -135,7 +135,7 @@ test("a company shows its portfolio, and each house opens", async ({ page }) => 
 
   // A house with nothing recorded still says something, rather than a dash.
   await expect(page.getByTestId("portfolio-p1")).toContainText("$149,900");
-  await expect(page.getByTestId("portfolio-p2")).toContainText("No asking price yet");
+  await expect(page.getByTestId("portfolio-p2")).toContainText("No listing price yet");
 
   await expect(page.getByTestId("portfolio-p1")).toHaveAttribute("href", "/properties/p1");
 });

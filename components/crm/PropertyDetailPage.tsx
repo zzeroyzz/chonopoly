@@ -19,11 +19,6 @@ import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { type ScenarioSummary } from "@/lib/mortgage/scenarioService";
 import { dollars } from "@/components/mortgage/format";
 import { type ScreenRow } from "@/lib/screen/screenRow";
-import {
-  AFFORDABILITY_LABEL,
-  DEAL_LABEL,
-  NO_RESALE_PRICE_LABEL,
-} from "@/lib/mortgage/verdicts";
 import { STAGE_LABEL, daysInStage } from "@/lib/crm/stages";
 import { cadenceDueDate } from "@/lib/crm/cadence";
 import { type ActivityType, type PropertyDetail, type Stage } from "@/lib/crm/types";
@@ -42,7 +37,8 @@ import { type BuyerProfile } from "@/lib/profile/types";
 import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
 import { searchUrls } from "./CompLinks";
-import { propertyTypeLabel } from "@/lib/property/types";
+import { NO_LISTING_PRICE_LABEL, propertyTypeLabel } from "@/lib/property/types";
+import { specLabels } from "@/lib/screen/specLine";
 import { useCrmContext } from "./useCrmContext";
 
 const ACTIVITY_LABEL: Record<ActivityType, string> = {
@@ -181,6 +177,8 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   }
 
   const property = detail?.property;
+  const specs = property ? specLabels(property) : null;
+  const listPrice = property?.list_price ?? null;
 
   // This house's financing analyses. Fetched once the property is known, since
   // the Numbers tab is scoped to it. A useCallback rather than a bare effect so
@@ -326,20 +324,6 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
 
   // Only once both follow-up reads are in. Before that every test above is
   // false for want of data, not because the work is undone.
-
-  const headline = row
-    ? {
-        price: row.price,
-        walkAway: row.walkAwayCash,
-        trueProfit: row.trueProfit,
-        affordability: row.affordability.needsProfile
-          ? "Set your income"
-          : AFFORDABILITY_LABEL[row.affordability.verdict],
-        // Was "No ARV": banned jargon, and a verdict that says neither why
-        // nor what to do about it.
-        deal: row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : NO_RESALE_PRICE_LABEL,
-      }
-    : null;
 
   const openTasks = (detail?.tasks ?? []).filter((t) => t.status === "open");
 
@@ -503,20 +487,41 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                     does not. One definition, not a light copy and a dark one —
                     text-primary is #F4F4F6 and the gradient under it is black,
                     so the same tokens read in both settings. */}
+                {/* pb-8 in both layouts: the sheet below rides up 20px over
+                    the hero. Without a photo this was py-3, so the sheet
+                    covered the bottom of the spec line (and the parcel line
+                    under it). */}
                 <div
+                  data-testid="house-facts"
                   className={`flex flex-col gap-1.5 ${
                     property?.photo_url
                       ? "absolute inset-x-0 bottom-0 px-4 pb-8"
-                      : "px-4 py-3"
+                      : "px-4 pt-3 pb-8"
                   }`}
                 >
                   <div className="flex items-start gap-3">
-                    <div className="flex items-baseline gap-2 min-w-0">
-                      <span className="text-[26px] font-bold leading-none tracking-tight">
-                        {headline ? dollars(headline.price, 0) : "—"}
+                    {/* The house's own listing price. This was the calculator's
+                        price, which matched only until a financing setup
+                        changed it, and fell back to a $350,000 default on a
+                        house with no price at all. */}
+                    {listPrice !== null ? (
+                      <div className="flex items-baseline gap-2 min-w-0">
+                        <span
+                          data-testid="house-listing-price"
+                          className="text-[26px] font-bold leading-none tracking-tight"
+                        >
+                          {dollars(listPrice, 0)}
+                        </span>
+                        <span className="text-[11px] text-(--color-text-secondary)">listing</span>
+                      </div>
+                    ) : (
+                      <span
+                        data-testid="house-listing-price"
+                        className="text-[15px] leading-none text-(--color-text-secondary)"
+                      >
+                        {property ? NO_LISTING_PRICE_LABEL : "—"}
                       </span>
-                      <span className="text-[11px] text-(--color-text-secondary)">asking</span>
-                    </div>
+                    )}
                   </div>
 
                   <div className="flex items-start gap-2">
@@ -543,9 +548,9 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   {property && (
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1 text-[12px] text-(--color-text-primary)">
                       {[
-                        [<BedDouble key="b" size={14} />, property.beds === null ? null : `${property.beds} bed`],
-                        [<Bath key="t" size={14} />, property.baths === null ? null : `${property.baths} bath`],
-                        [<Ruler key="r" size={14} />, property.sqft === null ? null : `${property.sqft.toLocaleString()} sq ft`],
+                        [<BedDouble key="b" size={14} />, specs?.beds ?? null],
+                        [<Bath key="t" size={14} />, specs?.baths ?? null],
+                        [<Ruler key="r" size={14} />, specs?.sqft ?? null],
                         [<CalendarDays key="c" size={14} />, property.year_built === null ? null : `${property.year_built}`],
                         [<Home key="h" size={14} />, propertyTypeLabel(property.property_type)],
                       ]
@@ -597,7 +602,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                 20px) so the corners cut into the photo rather than sitting
                 under it, and it carries the page's own background so nothing
                 shows through what is written on it. */}
-            <div className="relative z-10 -mt-5 -mx-4 lg:-mx-8 min-h-[60vh] rounded-t-(--radius-xl) border-t border-(--color-border-default) bg-(--color-base) px-4 lg:px-8 pt-2 shadow-[0_-14px_28px_rgba(0,0,0,0.55)]">
+            <div data-testid="house-sheet" className="relative z-10 -mt-5 -mx-4 lg:-mx-8 min-h-[60vh] rounded-t-(--radius-xl) border-t border-(--color-border-default) bg-(--color-base) px-4 lg:px-8 pt-2 shadow-[0_-14px_28px_rgba(0,0,0,0.55)]">
               <div className="sticky top-0 z-20 -mx-4 lg:-mx-8 px-4 lg:px-8 pt-2 bg-(--color-base) rounded-t-(--radius-xl)">
                 <div
                   className="mx-auto mb-1 h-1 w-10 rounded-(--radius-pill) bg-(--color-border-strong)"

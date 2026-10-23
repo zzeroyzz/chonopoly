@@ -386,6 +386,28 @@ test("the property page fits 390px", async ({ page }) => {
   expect(overflows).toBe(false);
 });
 
+test("without a photo, the sheet does not cover the house's facts", async ({ page }) => {
+  // The stub's house has no photo and no listing price. The sheet rides up
+  // 20px over the header, and on a house without a photo it used to cover the
+  // bottom of the spec line.
+  await stubCrm(page);
+  await page.goto("/properties/e1");
+  await expect(page.getByTestId("tab-details")).toBeVisible();
+
+  const gap = await page.evaluate(() => {
+    const facts = document.querySelector('[data-testid="house-facts"]');
+    const sheet = document.querySelector('[data-testid="house-sheet"]');
+    const last = facts?.lastElementChild;
+    if (!last || !sheet) return null;
+    return sheet.getBoundingClientRect().top - last.getBoundingClientRect().bottom;
+  });
+  expect(gap).not.toBeNull();
+  expect(gap ?? -1).toBeGreaterThanOrEqual(0);
+
+  // And no price is said in words, not as the calculator's default.
+  await expect(page.getByTestId("house-listing-price")).toHaveText("No listing price yet");
+});
+
 test("the old module hub is gone", async ({ page }) => {
   await stubCrm(page);
   await page.goto("/app");

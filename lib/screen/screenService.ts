@@ -9,6 +9,7 @@ import { calculateRehab } from "../rehab/calculateRehab";
 import { readInputs } from "../mortgage/scenarioService";
 import { type HouseInputs } from "../mortgage/resolveInputs";
 import { buildScreenRow, sortScreenRows, type ScreenHouse, type ScreenRow } from "./screenRow";
+import { primaryFinancingByProperty, type AnalysisRow } from "./primaryFinancing";
 
 /**
  * Load everything the screen table needs, in a fixed number of queries.
@@ -41,6 +42,12 @@ const PROPERTY_FIELDS: PropertyColumn[] = [
   "annual_taxes",
   "listing_url",
   "photo_url",
+  // Both were typed on the row and never selected, so every card read "No
+  // listing price yet" and no house was ever a finalist on this list.
+  "list_price",
+  "is_finalist",
+  "latitude",
+  "longitude",
   "needs_address_review",
   "visit_completed_at",
   "created_at",
@@ -78,6 +85,9 @@ export async function loadScreenRows(
     annual_taxes: number | null;
     listing_url: string | null;
     photo_url: string | null;
+    // `numeric` columns, which PostgREST can send as strings.
+    latitude: number | string | null;
+    longitude: number | string | null;
     needs_address_review: boolean;
     visit_completed_at: string | null;
   }[];
@@ -132,36 +142,13 @@ export async function loadScreenRows(
     if (entry.property_id) entryByProperty.set(entry.property_id, entry.id);
   }
 
-  interface AnalysisRow {
-    property_id: string | null;
-    kind: string;
-    is_primary: boolean;
-    label: string;
-    inputs: unknown;
-    inputs_version: number;
-  }
-
-  const primaryByProperty = new Map<string, AnalysisRow>();
-  const rehabProperties = new Set<string>();
-
-  for (const raw of analyses ?? []) {
-    const analysis = raw as unknown as AnalysisRow;
-    if (!analysis.property_id) continue;
-
-    if (analysis.kind === "rehab") {
-      rehabProperties.add(analysis.property_id);
-      continue;
-    }
-
-    if (analysis.kind === "financing") {
-      const existing = primaryByProperty.get(analysis.property_id);
-      // The primary wins; otherwise the first financing analysis stands in, so
-      // a house with numbers but no primary still shows them.
-      if (!existing || (analysis.is_primary && !existing.is_primary)) {
-        primaryByProperty.set(analysis.property_id, analysis);
-      }
-    }
-  }
+  const typedAnalyses = (analyses ?? []) as unknown as AnalysisRow[];
+  const primaryByProperty = primaryFinancingByProperty(typedAnalyses);
+  const rehabProperties = new Set(
+    typedAnalyses
+      .filter((analysis) => analysis.kind === "rehab" && analysis.property_id)
+      .map((analysis) => analysis.property_id as string)
+  );
 
   const houses: ScreenHouse[] = rows.map((row) => {
     const primary = primaryByProperty.get(row.id);
@@ -187,6 +174,8 @@ export async function loadScreenRows(
       annualTaxes: row.annual_taxes,
       listingUrl: row.listing_url,
       photoUrl: row.photo_url,
+      latitude: row.latitude === null ? null : Number(row.latitude),
+      longitude: row.longitude === null ? null : Number(row.longitude),
       needsAddressReview: row.needs_address_review,
       visitCompletedAt: row.visit_completed_at,
       isFinalist: row.is_finalist ?? false,

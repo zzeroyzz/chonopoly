@@ -307,7 +307,7 @@ export function EditHouseForm({
               it is the figure every later step is measured against — and until
               it was editable, a price typed once on Add could never be fixed. */}
           <label className="flex flex-col gap-1">
-            <span className={label}>Asking price</span>
+            <span className={label}>Listing price</span>
             <input
               value={listPrice}
               onChange={(e) => setListPrice(e.target.value)}

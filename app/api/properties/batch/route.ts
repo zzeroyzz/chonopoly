@@ -121,6 +121,9 @@ async function saveOne(
         ...(house.state ? { state: house.state } : {}),
         zip: house.zip,
         ...(house.listingUrl ? { listing_url: house.listingUrl } : {}),
+        // The parser read the price off the line; it was then dropped here,
+        // so a pasted "…, 250000" saved a house with no listing price.
+        ...(house.price !== null ? { list_price: house.price } : {}),
       },
       ctx,
       userId,

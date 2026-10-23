@@ -210,7 +210,7 @@ export function AddPropertyPage() {
               <Field label="Sqft" value={form.sqft} onChange={(v) => set({ sqft: v })} testId="add-sqft" numeric />
             </div>
             <Field
-              label="Sales price"
+              label="Listing price"
               value={form.sales_price}
               onChange={(v) => set({ sales_price: v })}
               testId="add-price"
