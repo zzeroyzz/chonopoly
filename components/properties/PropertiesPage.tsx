@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Home, AlertTriangle, ExternalLink, Star } from "lucide-react";
@@ -18,6 +18,7 @@ import {
   NO_RESALE_PRICE_LABEL,
 } from "@/lib/mortgage/verdicts";
 import { type ScreenRow } from "@/lib/screen/screenRow";
+import { specLine } from "@/lib/screen/specLine";
 
 /**
  * Every house, with its numbers and both verdicts.
@@ -120,57 +121,33 @@ export function PropertiesPage() {
 
   return (
     <>
-      <div className="overflow-y-auto flex-1 w-full px-5 py-4 pb-24 lg:pb-8">
-        <h1 className="text-[18px] font-semibold text-(--color-text-primary)">Properties</h1>
-        <p className="text-[12px] text-(--color-text-secondary) mt-1 mb-4 leading-relaxed">
-          Every house you&apos;ve looked at, with the two questions that matter:
-          can you afford it, and does the deal work.
+      <div className="overflow-y-auto flex-1 w-full px-4 py-4 pb-24 lg:pb-8">
+        <h1 className="text-(length:--type-heading-size) leading-(--type-heading-leading) font-semibold text-(--color-text-primary)">
+          Properties
+        </h1>
+        {/* Worded as the design system's screens.md has it. */}
+        <p className="text-(length:--type-body-size) leading-(--type-body-leading) text-(--color-text-secondary) mt-1 mb-3">
+          Every house you&apos;re looking at. Tap one to see whether it works.
         </p>
 
         {loading && (
           <SkeletonRegion label="Loading your houses" testId="screen-loading">
-            <SkeletonList count={3} gap="gap-2">
+            <SkeletonList count={3} gap="gap-3">
               {() => (
-                <div className="rounded-xl border border-(--color-border-default) bg-(--color-elevated) p-3">
-                  {/* Address over two lines, with the compare and finalist
-                      controls to its right. */}
-                  {/* Bars match the line-height of the text they stand in for,
-                      not its font size, or the card loads 50px taller than it
-                      waited at. */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1 grid gap-1.5">
-                      <Skeleton className="h-4 w-4/5" />
-                      <Skeleton className="h-4 w-1/3" />
+                <div className="rounded-(--radius-lg) border border-(--color-border-default) bg-(--color-surface) overflow-hidden">
+                  {/* The photo is most of the card's height. Without it the
+                      list jumped when it loaded, which is the thing
+                      skeletons are for. */}
+                  <Skeleton className="aspect-[4/3] w-full rounded-none lg:aspect-auto lg:h-[220px]" />
+                  <div className="px-4 pt-2 pb-3 grid gap-1.5">
+                    <Skeleton className="h-7 w-2/5" />
+                    <Skeleton className="h-5 w-4/5" />
+                    <Skeleton className="h-3.5 w-1/2" />
+                    <Skeleton className="h-5 w-full mt-1" />
+                    <div className="flex gap-2 mt-2">
+                      <Skeleton className="h-9 w-24 rounded-(--radius-pill)" />
+                      <Skeleton className="h-9 w-28 rounded-(--radius-pill)" />
                     </div>
-                    <Skeleton className="h-5 w-20 shrink-0 rounded" />
-                  </div>
-
-                  {/* The verdict pills, the reason line, then the headline. */}
-                  <div className="flex gap-1.5 mt-2">
-                    <Skeleton className="h-5 w-20 rounded" />
-                    <Skeleton className="h-5 w-16 rounded" />
-                  </div>
-                  <Skeleton className="h-3 w-full mt-2" />
-                  <Skeleton className="h-4 w-3/4 mt-2" />
-
-                  {/* The eight figures, three to a row. This is most of the
-                      card's height — without it the list jumped when it
-                      loaded, which is the thing skeletons are for. */}
-                  <div className="grid grid-cols-3 gap-x-3 gap-y-1.5 mt-2.5">
-                    {Array.from({ length: 8 }, (_, i) => (
-                      <div key={i} className="grid gap-1">
-                        <Skeleton className="h-2.5 w-3/4" />
-                        <Skeleton className="h-3.5 w-full" />
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* The four progress chips. */}
-                  <div className="flex gap-1.5 mt-2.5">
-                    <Skeleton className="h-5 w-14 rounded" />
-                    <Skeleton className="h-5 w-11 rounded" />
-                    <Skeleton className="h-5 w-16 rounded" />
-                    <Skeleton className="h-5 w-11 rounded" />
                   </div>
                 </div>
               )}
@@ -187,15 +164,23 @@ export function PropertiesPage() {
           </p>
         )}
 
+        {/* The design system's empty state: what goes here, how it gets
+            filled, and a button that does it. */}
         {!loading && !error && rows.length === 0 && (
           <div data-testid="screen-empty" className="text-center py-12">
             <Home size={28} className="mx-auto text-(--color-text-tertiary) mb-3" />
-            <p className="text-[13px] text-(--color-text-secondary)">No houses yet.</p>
+            <p className="text-(length:--type-body-size) leading-(--type-body-leading) font-semibold text-(--color-text-primary)">
+              No houses yet
+            </p>
+            <p className="text-(length:--type-body-size) leading-(--type-body-leading) text-(--color-text-secondary) mt-1 max-w-[300px] mx-auto">
+              Add the first one and we&apos;ll tell you what it&apos;s worth fixed up and
+              whether the numbers work.
+            </p>
             <Link
               href="/properties/new"
-              className="inline-block mt-3 text-[13px] text-(--color-accent) font-medium"
+              className="inline-flex items-center min-h-(--tap-min) mt-3 px-5 rounded-(--radius-pill) bg-(--color-accent) text-(--color-base) text-(length:--type-body-size) font-semibold"
             >
-              Add some addresses →
+              Add a house
             </Link>
           </div>
         )}
@@ -224,7 +209,9 @@ export function PropertiesPage() {
         )}
 
         {rows.length > 0 && (
-          <div className="flex items-center gap-2 mb-2.5 flex-wrap">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
+            {/* Each pill is 36px inside a 44px target, per the design
+                system's tap sizes. */}
             {(["all", "finalists"] as const).map((f) => (
               <button
                 key={f}
@@ -232,14 +219,18 @@ export function PropertiesPage() {
                 onClick={() => setFilter(f)}
                 data-testid={`filter-${f}`}
                 aria-pressed={filter === f}
-                className={`h-8 px-3 rounded-[var(--radius-pill)] text-[12px] transition-colors ${
-                  filter === f
-                    ? "bg-(--color-accent) text-(--color-base) font-semibold"
-                    : "border border-(--color-border-default) text-(--color-text-secondary)"
-                }`}
+                className="min-h-(--tap-min) inline-flex items-center"
               >
-                {f === "all" ? "All" : "Finalists"}
-                {f === "finalists" && finalistCount > 0 ? ` (${finalistCount})` : ""}
+                <span
+                  className={`h-(--control-pill) px-4 inline-flex items-center rounded-(--radius-pill) text-(length:--type-body-sm-size) transition-colors ${
+                    filter === f
+                      ? "bg-(--color-accent) text-(--color-base) font-semibold"
+                      : "border border-(--color-border-strong) text-(--color-text-secondary)"
+                  }`}
+                >
+                  {f === "all" ? "All" : "Finalists"}
+                  {f === "finalists" && finalistCount > 0 ? ` (${finalistCount})` : ""}
+                </span>
               </button>
             ))}
 
@@ -251,9 +242,11 @@ export function PropertiesPage() {
               <Link
                 href={`/compare?ids=${picked.slice(0, 4).join(",")}`}
                 data-testid="compare-picked"
-                className="h-8 px-3 inline-flex items-center rounded-[var(--radius-pill)] bg-(--color-accent) text-(--color-base) text-[12px] font-semibold"
+                className="min-h-(--tap-min) inline-flex items-center"
               >
-                Compare {Math.min(picked.length, 4)}
+                <span className="h-(--control-pill) px-4 inline-flex items-center rounded-(--radius-pill) bg-(--color-accent) text-(--color-base) text-(length:--type-body-sm-size) font-semibold">
+                  Compare {Math.min(picked.length, 4)}
+                </span>
               </Link>
             ) : finalistCount >= 2 ? (
               <Link
@@ -263,16 +256,39 @@ export function PropertiesPage() {
                   .map((r) => r.propertyId)
                   .join(",")}`}
                 data-testid="compare-finalists"
-                className="h-8 px-3 inline-flex items-center rounded-[var(--radius-pill)] border border-(--color-accent) text-(--color-accent) text-[12px]"
+                className="min-h-(--tap-min) inline-flex items-center"
               >
-                Compare finalists
+                <span className="h-(--control-pill) px-4 inline-flex items-center rounded-(--radius-pill) border border-(--color-accent) text-(--color-accent) text-(length:--type-body-sm-size)">
+                  Compare finalists
+                </span>
               </Link>
             ) : null}
           </div>
         )}
 
+        {/* A filter hiding everything is not an empty screen: the houses
+            exist and the user hid them. A line and a way back, per the
+            design system's EmptyState rules. */}
+        {rows.length > 0 && visible.length === 0 && (
+          <div data-testid="screen-filter-empty" className="py-8 text-center">
+            <p className="text-(length:--type-body-size) leading-(--type-body-leading) text-(--color-text-secondary)">
+              No finalists yet. Tap the star on a house to make it one.
+            </p>
+            <button
+              type="button"
+              onClick={() => setFilter("all")}
+              className="min-h-(--tap-min) mt-2 px-5 rounded-(--radius-pill) border border-(--color-border-strong) text-(length:--type-body-size) text-(--color-text-primary)"
+            >
+              Show all
+            </button>
+          </div>
+        )}
+
         {rows.length > 0 && (
-          <ul data-testid="screen-table" className="flex flex-col gap-2.5">
+          <ul
+            data-testid="screen-table"
+            className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3"
+          >
             {visible.map((row) => (
               <ScreenCard
                 key={row.propertyId}
@@ -307,6 +323,11 @@ export function PropertiesPage() {
 /**
  * One house. Hoisted to module scope — a component declared during render is a
  * new type every pass and remounts the whole list.
+ *
+ * The photo card from plans/properties-design-change.md: photo, both verdicts
+ * on its fade, asking price, address, the spec line and the reason. The
+ * eight-figure grid left the card on purpose — the figures live on the house
+ * page and on Compare, where they are explained.
  */
 function ScreenCard({
   row,
@@ -352,254 +373,260 @@ function ScreenCard({
   // entry, that was every house: the row looked like a link and did nothing.
   const href = `/properties/${row.propertyId}`;
 
+  const stepsDone = FLOW_STEPS.filter((step) => step.done(row)).length;
+  // The count is a way in, not just a score: it opens the first step still
+  // to do, or the deal once everything is.
+  const nextStep = FLOW_STEPS.find((step) => !step.done(row)) ?? FLOW_STEPS[FLOW_STEPS.length - 1];
+  const specs = specLine(row);
+
   return (
-    // `relative` is what the stretched link below anchors to.
+    // `relative` is what the stretched link below anchors to. No
+    // overflow-hidden here: the photo clips its own corners, so nothing on
+    // the card can be cut off by the card.
     <li
       data-testid={`screen-row-${row.propertyId}`}
-      className="relative rounded-xl border border-(--color-border-default) bg-(--color-elevated) p-3 transition-colors hover:border-(--color-border-strong)"
+      className="relative flex flex-col rounded-(--radius-lg) border border-(--color-border-default) bg-(--color-surface) transition-colors hover:border-(--color-border-strong)"
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          {/* The whole card is still the target — at 390px a line of text is a
-              thin thing to hit — but it is reached with an overlay rather than
-              by wrapping the card. The listing link used to be a descendant of
-              this one, which is invalid HTML and threw a hydration error. */}
-          <span className="flex gap-2.5 items-start">
-            {row.photoUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={row.photoUrl}
-                alt=""
-                data-testid={`screen-photo-${row.propertyId}`}
-                className="w-12 h-12 rounded-md object-cover shrink-0 border border-(--color-border-subtle)"
-              />
-            )}
-            <Link
-              href={href}
-              data-testid={`screen-open-${row.propertyId}`}
-              className="text-[13px] font-medium leading-snug wrap-break-word text-(--color-text-primary) after:absolute after:inset-0 after:rounded-xl after:content-['']"
-            >
-              {row.address}
-            </Link>
-          </span>
+      <CardHero photoUrl={row.photoUrl} propertyId={row.propertyId}>
+        {/* Both verdicts, because they disagree often enough that hiding one
+            misleads. They sit on the fade, where the photo has already
+            turned into card colour — a tint over a photograph cannot be
+            read. Each one opens what it means for this house. */}
+        <div className="absolute left-4 bottom-2 right-14 flex flex-wrap gap-1.5">
+          <VerdictTag
+            label={AFFORDABILITY_LABEL[row.affordability.verdict]}
+            toneClassName={AFFORDABILITY_STYLE[row.affordability.verdict]}
+            explanation={row.explanations.afford}
+            breakdownHref={`${href}?step=deal`}
+            testId={`verdict-afford-${row.propertyId}`}
+          />
+          <VerdictTag
+            label={row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : NO_RESALE_PRICE_LABEL}
+            toneClassName={DEAL_STYLE[row.deal.verdict]}
+            explanation={row.explanations.deal}
+            breakdownHref={`${href}?step=deal`}
+            testId={`verdict-deal-${row.propertyId}`}
+          />
         </div>
 
-        {/* Both sit above the card-wide link overlay, as siblings of it. */}
-        <div className="relative z-10 flex items-center gap-2 shrink-0">
+        {/* Above the card-wide link overlay, as a sibling of it. */}
+        <button
+          type="button"
+          onClick={() => void toggleFinalist()}
+          disabled={busy}
+          data-testid={`finalist-${row.propertyId}`}
+          aria-pressed={row.isFinalist}
+          aria-label={row.isFinalist ? "Remove from finalists" : "Mark as a finalist"}
+          className={`absolute top-1 right-1 z-10 size-(--tap-min) inline-flex items-center justify-center rounded-(--radius-pill) bg-(--color-base)/55 transition-colors disabled:opacity-40 ${
+            row.isFinalist
+              ? "text-(--color-accent)"
+              : "text-(--color-text-primary) hover:text-(--color-accent)"
+          }`}
+        >
+          <Star size={18} fill={row.isFinalist ? "currentColor" : "none"} />
+        </button>
+      </CardHero>
+
+      <div className="px-4 pt-1.5 pb-2 flex flex-col flex-1">
+        {/* The house's own asking price. Not `row.price`, which falls back to
+            the calculator's $350,000 default — that default once read as a
+            fact about every new house. */}
+        {row.listPrice === null ? (
+          <p
+            data-testid={`screen-price-${row.propertyId}`}
+            className="text-(length:--type-body-size) leading-(--type-figure-leading) text-(--color-text-secondary)"
+          >
+            No asking price yet
+          </p>
+        ) : (
+          <p
+            data-testid={`screen-price-${row.propertyId}`}
+            className="font-(--font-display) font-bold text-(length:--type-figure-size) leading-(--type-figure-leading) text-(--color-text-primary)"
+          >
+            {dollars(row.listPrice)}
+          </p>
+        )}
+
+        {/* The whole card is still the target — at 390px a line of text is a
+            thin thing to hit — but it is reached with an overlay rather than
+            by wrapping the card. The listing link used to be a descendant of
+            this one, which is invalid HTML and threw a hydration error. */}
+        <Link
+          href={href}
+          data-testid={`screen-open-${row.propertyId}`}
+          className="mt-0.5 text-(length:--type-body-size) leading-(--type-body-leading) font-semibold wrap-break-word text-(--color-text-primary) after:absolute after:inset-0 after:rounded-(--radius-lg) after:content-['']"
+        >
+          {row.address}
+        </Link>
+
+        {specs.length > 0 && (
+          <p
+            data-testid={`screen-specs-${row.propertyId}`}
+            className="text-(length:--type-label-size) leading-(--type-label-leading) text-(--color-text-secondary) mt-0.5"
+          >
+            {specs.map((label, i) => (
+              <span key={label}>
+                {i > 0 && (
+                  <span aria-hidden="true" className="text-(--color-text-tertiary)">
+                    {" · "}
+                  </span>
+                )}
+                {label}
+              </span>
+            ))}
+          </p>
+        )}
+
+        {row.needsAddressReview && (
+          <p
+            data-testid={`screen-review-${row.propertyId}`}
+            className="flex gap-1 text-(length:--type-body-sm-size) text-(--color-warning) mt-1"
+          >
+            <AlertTriangle size={12} className="shrink-0 mt-[3px]" />
+            <span>Address needs a check</span>
+          </p>
+        )}
+
+        {/* Why, not just what. A bare verdict on a screen of fifteen houses is
+            not actionable. */}
+        <p
+          data-testid={`verdict-reason-${row.propertyId}`}
+          className="text-(length:--type-body-size) leading-(--type-body-leading) text-(--color-text-secondary) mt-2"
+        >
+          {row.affordability.summary}
+          {row.deal.hasArv ? ` · ${row.deal.summary}` : ""}
+        </p>
+
+        {/* "Checked or not", in plain words. This was an "ARV" / "Review
+            comps" tag, and the design system keeps both words out of the
+            interface. A checked price says nothing here: the verdict already
+            rests on it. */}
+        {row.arv === null && (
+          <Link
+            href={`${href}?tab=arv`}
+            data-testid={`resale-unchecked-${row.propertyId}`}
+            className="relative z-10 self-start min-h-(--tap-min) inline-flex items-center text-(length:--type-body-sm-size) text-(--color-accent)"
+          >
+            Resale price not checked yet →
+          </Link>
+        )}
+
+        {flagError && (
+          <p className="text-(length:--type-body-sm-size) text-(--color-danger) mt-1">{flagError}</p>
+        )}
+
+        <div className="mt-auto pt-1 flex items-center gap-1 border-t border-(--color-border-default)">
+          {/* A real checkbox inside the pill, so it is still a checkbox to a
+              screen reader and to the tests. */}
           <label
-            className="flex items-center gap-1 cursor-pointer"
+            className="relative z-10 min-h-(--tap-min) inline-flex items-center cursor-pointer"
             title="Pick for comparison"
           >
-            <input
-              type="checkbox"
-              checked={picked}
-              onChange={(e) => onPick(e.target.checked)}
-              data-testid={`compare-pick-${row.propertyId}`}
-              aria-label={`Compare ${row.address}`}
-              className="accent-(--color-accent)"
-            />
-            <span className="text-[10px] text-(--color-text-tertiary)">Compare</span>
-          </label>
-
-          <button
-            type="button"
-            onClick={() => void toggleFinalist()}
-            disabled={busy}
-            data-testid={`finalist-${row.propertyId}`}
-            aria-pressed={row.isFinalist}
-            aria-label={row.isFinalist ? "Remove from finalists" : "Mark as a finalist"}
-            className={`p-1 transition-colors disabled:opacity-40 ${
-              row.isFinalist
-                ? "text-(--color-accent)"
-                : "text-(--color-text-tertiary) hover:text-(--color-accent)"
-            }`}
-          >
-            <Star size={14} fill={row.isFinalist ? "currentColor" : "none"} />
-          </button>
-        </div>
-
-        {row.listingUrl && (
-          <a
-            href={row.listingUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Open the listing"
-            data-testid={`screen-listing-${row.propertyId}`}
-            // A sibling of the card link now, lifted above its overlay. No
-            // stopPropagation: nothing is nested, so nothing bubbles.
-            className="relative z-10 shrink-0 text-(--color-text-tertiary) hover:text-(--color-accent) transition-colors"
-          >
-            <ExternalLink size={13} />
-          </a>
-        )}
-      </div>
-
-      {flagError && (
-        <p className="text-[10px] text-(--color-danger) mt-1">{flagError}</p>
-      )}
-
-      {row.needsAddressReview && (
-        <p
-          data-testid={`screen-review-${row.propertyId}`}
-          className="flex gap-1 text-[10px] text-amber-400 mt-1"
-        >
-          <AlertTriangle size={11} className="shrink-0 mt-0.5" />
-          <span>Address needs a check</span>
-        </p>
-      )}
-
-      {/* The two verdicts, first, because they are the reason to look. Each
-          one opens what it means for this house. */}
-      <div className="flex flex-wrap gap-1.5 mt-2">
-        <VerdictTag
-          label={AFFORDABILITY_LABEL[row.affordability.verdict]}
-          toneClassName={AFFORDABILITY_STYLE[row.affordability.verdict]}
-          explanation={row.explanations.afford}
-          breakdownHref={`${href}?step=deal`}
-          testId={`verdict-afford-${row.propertyId}`}
-        />
-
-        <VerdictTag
-          label={row.deal.hasArv ? DEAL_LABEL[row.deal.verdict] : NO_RESALE_PRICE_LABEL}
-          toneClassName={DEAL_STYLE[row.deal.verdict]}
-          explanation={row.explanations.deal}
-          breakdownHref={`${href}?step=deal`}
-          testId={`verdict-deal-${row.propertyId}`}
-        />
-
-        {/* What the comps actually say, from the same calculation the ARV
-            tab runs. This used to read "ARV not checked" on every house whose
-            comps had never been hand-edited — including houses showing an ARV
-            right beside it — because review state was guessed at rather than
-            recorded. */}
-        <VerdictTag
-          label={
-            row.arv === null
-              ? "Review comps"
-              : `ARV ${dollars(row.arv)} · ${row.approvedComps} approved`
-          }
-          toneClassName={
-            row.arv === null
-              ? "bg-(--color-base) text-(--color-text-tertiary)"
-              : "bg-(--color-accent-glow) text-(--color-accent)"
-          }
-          explanation={{
-            whatsWrong:
-              row.arv === null
-                ? `No comps approved yet${row.compsToReview > 0 ? `, and ${row.compsToReview} are waiting` : ""}.`
-                : `Built from ${row.approvedComps} comp${row.approvedComps === 1 ? "" : "s"} you approved.`,
-            target:
-              row.compsToReview > 0
-                ? `${row.compsToReview} comp${row.compsToReview === 1 ? "" : "s"} still to review.`
-                : "Every comp has been reviewed.",
-            fix:
-              row.arv === null
-                ? "Open the ARV tab and mark the comps you would use."
-                : undefined,
-          }}
-          breakdownHref={`${href}?tab=arv`}
-          action={{ label: "Review the comps →", href: `${href}?tab=arv` }}
-          testId={`verdict-arv-${row.propertyId}`}
-        />
-      </div>
-
-      {/* Why, not just what. A bare verdict on a screen of fifteen houses is
-          not actionable. */}
-      <p
-        data-testid={`verdict-reason-${row.propertyId}`}
-        className="text-[11px] text-(--color-text-secondary) mt-1.5 leading-relaxed"
-      >
-        {row.affordability.summary}
-        {row.deal.hasArv ? ` · ${row.deal.summary}` : ""}
-      </p>
-
-      {/* Walk-away is what lands in the account; true profit is what the deal
-          made. Both, because either alone misleads. */}
-      <p
-        data-testid={`deal-headline-${row.propertyId}`}
-        className="text-[12px] mt-1.5 font-(--font-mono)"
-      >
-        {row.walkAwayCash === null || row.trueProfit === null ? (
-          <span className="text-(--color-text-tertiary)">
-            Walk-away — · True profit — <span className="font-sans">(no ARV yet)</span>
-          </span>
-        ) : (
-          <>
-            <span className="text-(--color-accent)">Walk-away {dollars(row.walkAwayCash)}</span>
-            <span className="text-(--color-text-tertiary)"> · </span>
             <span
-              className={
-                row.trueProfit < 0 ? "text-(--color-danger)" : "text-(--color-text-primary)"
-              }
-            >
-              True profit {dollars(row.trueProfit)}
-            </span>
-          </>
-        )}
-      </p>
-
-      <dl className="grid grid-cols-3 gap-x-3 gap-y-1.5 mt-2.5 text-[11px]">
-        <Figure label="Price" value={dollars(row.price)} />
-        <Figure label="PITI" value={`${dollars(row.piti)}/mo`} />
-        <Figure
-          label="Back DTI"
-          value={row.backDti === null ? "—" : `${row.backDti.toFixed(0)}%`}
-        />
-        <Figure label="Cash to close" value={dollars(row.cashToClose)} />
-        <Figure label="ARV" value={row.arv === null ? "—" : dollars(row.arv)} />
-        <Figure label="Max offer" value={row.arv === null ? "—" : dollars(row.maxOffer)} />
-        <Figure
-          label="Walk-away"
-          value={row.walkAwayCash === null ? "—" : dollars(row.walkAwayCash)}
-        />
-        <Figure
-          label="True profit"
-          value={row.trueProfit === null ? "—" : dollars(row.trueProfit)}
-        />
-      </dl>
-
-      {/* Progress: Numbers · Comps · Estimate · Visit, all derived. */}
-      <div
-        data-testid={`checklist-${row.propertyId}`}
-        className="flex items-center gap-1.5 mt-2.5 flex-wrap"
-      >
-        {FLOW_STEPS.map((step) => {
-          const done = step.done(row);
-          const label = step.label;
-          return (
-            // A link, not a label. These name the four things to do on a
-            // house, so each one opens that house on the tab that does it.
-            <Link
-              key={step.label}
-              href={`${href}?tab=${step.tab}`}
-              data-testid={`checklist-${step.label.toLowerCase()}-${row.propertyId}`}
-              data-done={done ? "yes" : "no"}
-              // relative z-10: the address link stretches an ::after over the
-              // whole card, and without this these sit under it and cannot be
-              // tapped at all.
-              className={`relative z-10 min-h-11 inline-flex items-center text-[10px] px-2 rounded border ${
-                done
+              className={`h-(--control-pill) px-3 inline-flex items-center gap-1.5 rounded-(--radius-pill) border text-(length:--type-body-sm-size) ${
+                picked
                   ? "border-(--color-accent) text-(--color-accent)"
-                  : "border-(--color-border-default) text-(--color-text-tertiary)"
+                  : "border-(--color-border-strong) text-(--color-text-secondary)"
               }`}
             >
-              {label}
-            </Link>
-          );
-        })}
-        <span className="text-[10px] text-(--color-text-tertiary)">
-          {FLOW_STEPS.filter((s2) => s2.done(row)).length}/4
-        </span>
+              <input
+                type="checkbox"
+                checked={picked}
+                onChange={(e) => onPick(e.target.checked)}
+                data-testid={`compare-pick-${row.propertyId}`}
+                aria-label={`Compare ${row.address}`}
+                className="accent-(--color-accent)"
+              />
+              Compare
+            </span>
+          </label>
+
+          <Link
+            href={`${href}?tab=${nextStep.tab}`}
+            data-testid={`checklist-${row.propertyId}`}
+            data-done={stepsDone}
+            className="relative z-10 min-h-(--tap-min) inline-flex items-center px-2 text-(length:--type-body-sm-size) text-(--color-accent)"
+          >
+            {stepsDone} of {FLOW_STEPS.length} steps done
+          </Link>
+
+          <span className="flex-1" />
+
+          {row.listingUrl && (
+            <a
+              href={row.listingUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid={`screen-listing-${row.propertyId}`}
+              // A sibling of the card link, lifted above its overlay. No
+              // stopPropagation: nothing is nested, so nothing bubbles.
+              className="relative z-10 min-h-(--tap-min) inline-flex items-center gap-1 px-1 text-(length:--type-body-sm-size) text-(--color-text-secondary) hover:text-(--color-accent) transition-colors"
+            >
+              Listing
+              <ExternalLink size={13} aria-hidden="true" />
+            </a>
+          )}
+        </div>
       </div>
     </li>
   );
 }
 
-function Figure({ label, value }: { label: string; value: string }) {
+/**
+ * The top of the card: the photo, or a short band when there is none.
+ *
+ * The band is the common case, not a fallback — photos are pasted by hand and
+ * most houses have none. A full-height grey box for each of them would make
+ * the list mostly holes.
+ */
+function CardHero({
+  photoUrl,
+  propertyId,
+  children,
+}: {
+  photoUrl: string | null;
+  propertyId: string;
+  children: ReactNode;
+}) {
+  // A pasted link points at somebody else's site and can die. A dead one shows
+  // the band, not a broken-image icon.
+  const [failed, setFailed] = useState(false);
+  const showPhoto = photoUrl !== null && !failed;
+
+  if (!showPhoto) {
+    return (
+      <div
+        data-testid={`screen-nophoto-${propertyId}`}
+        className="relative h-24 rounded-t-(--radius-lg) bg-(--color-elevated)"
+      >
+        <Home
+          size={24}
+          aria-hidden="true"
+          className="absolute left-1/2 top-5 -translate-x-1/2 text-(--color-text-tertiary)"
+        />
+        {children}
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <dt className="text-(--color-text-tertiary)">{label}</dt>
-      <dd className="text-(--color-text-primary)">{value}</dd>
+    <div className="relative">
+      <div className="aspect-[4/3] lg:aspect-auto lg:h-[220px] overflow-hidden rounded-t-(--radius-lg)">
+        {/* eslint-disable-next-line @next/next/no-img-element -- a pasted link
+            to any host, which next/image would need allow-listing for */}
+        <img
+          src={photoUrl}
+          alt=""
+          data-testid={`screen-photo-${propertyId}`}
+          onError={() => setFailed(true)}
+          className="size-full object-cover"
+        />
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-gradient-to-b from-transparent from-45% to-(--color-surface)"
+        />
+      </div>
+      {children}
     </div>
   );
 }
