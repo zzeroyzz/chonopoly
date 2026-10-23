@@ -9,10 +9,16 @@ import {
   hardMoneyInterest,
   defaultDraws,
   HARD_MONEY_DEFAULTS,
+  hardMoneyFees,
   type HardMoneyTerms,
 } from "@/lib/mortgage/hardMoney";
 import { resolveRehab, splitRehabFunding } from "@/lib/rehab/resolveRehab";
-import { VERDICT_THRESHOLDS } from "@/lib/mortgage/defaults";
+import { VERDICT_THRESHOLDS, defaultInputs } from "@/lib/mortgage/defaults";
+import { calculateMortgage } from "@/lib/mortgage/calculate";
+import { buildDeal, holdingFrom } from "@/lib/deal/buildDeal";
+import { flipInputs, flipStartingTerms } from "@/lib/mortgage/flip";
+import { type BuyerProfile } from "@/lib/profile/types";
+import { rateForLoanSwitch } from "@/lib/mortgage/loanTypes";
 
 /**
  * The deal calculation, against the owner's three worked examples.
@@ -291,5 +297,146 @@ describe("payoffAfterMonths", () => {
   it("never returns a negative balance", () => {
     const schedule = Array.from({ length: 12 }, () => ({ principal: 5_000 }));
     expect(payoffAfterMonths(schedule, 10_000, 12)).toBe(0);
+  });
+});
+
+// ── One hard money house, the same on every screen ───────────────────────────
+
+describe("hard money, one house on every screen", () => {
+  // $200,000 house, $50,000 of work, $400,000 resale price, 15% and 2 points.
+  const inputs = {
+    ...defaultInputs(),
+    loanType: "hardMoney" as const,
+    homeValue: 200_000,
+    renovationBudget: 50_000,
+    arv: 400_000,
+    interestRate: 15,
+    points: 2,
+    propertyTaxYearly: 2_400,
+    insuranceRateAuto: false,
+    insuranceYearly: 1_200,
+    hoaMonthly: 0,
+  };
+  const result = calculateMortgage(inputs);
+  const house = {
+    inputs,
+    result,
+    arv: 400_000,
+    rehab: resolveRehab(null, 50_000),
+    sellerClosingPct: 6,
+  };
+
+  it("Numbers and Deal size the same loan and the same down payment", () => {
+    const deal = buildDeal(house);
+    // 85% of $200,000 plus all $50,000 of work.
+    expect(result.loanAmount).toBeCloseTo(220_000, 6);
+    expect(deal.hardMoney?.loan.total).toBeCloseTo(220_000, 6);
+    expect(result.downPaymentAmount).toBeCloseTo(30_000, 6);
+    expect(deal.params.downPayment.value).toBeCloseTo(30_000, 6);
+  });
+
+  it("counts lender and title fees in closing, beside the points", () => {
+    const deal = buildDeal(house);
+    expect(deal.params.buyerClosingCosts.value).toBeCloseTo(hardMoneyFees(200_000, 2), 6);
+    expect(deal.params.points.value).toBeCloseTo(4_400, 6);
+  });
+
+  it("adds tax and insurance to hard money's carry, every month held", () => {
+    const deal = buildDeal(house, { holdMonths: 6 });
+    const interestOnly = deal.hardMoney!.schedule.total;
+    // $200 a month of tax and $100 of insurance, for six months.
+    expect(deal.params.carry.value).toBeCloseTo(interestOnly + 300 * 6, 6);
+    expect(deal.params.oneMoreMonthCarry).toBeCloseTo(deal.hardMoney!.schedule.oneMoreMonth + 300, 6);
+  });
+
+  it("uses Settings' holding cost and period when they are set", () => {
+    const deal = buildDeal({ ...house, holding: { monthly: 750, months: 5 } });
+    expect(deal.holdMonths).toBe(5);
+    expect(deal.params.monthlyExtras.value).toBe(750);
+    expect(deal.params.monthlyExtras.overridden).toBe(false);
+  });
+
+  it("falls back to the loan's default hold and no extras without Settings", () => {
+    const deal = buildDeal(house);
+    expect(deal.holdMonths).toBe(6);
+    expect(deal.params.monthlyExtras.value).toBe(0);
+  });
+
+  it("lets a typed hold and extras win over Settings", () => {
+    const deal = buildDeal({ ...house, holding: { monthly: 750, months: 5 } }, { holdMonths: 9, monthlyExtras: 100 });
+    expect(deal.holdMonths).toBe(9);
+    expect(deal.params.monthlyExtras.value).toBe(100);
+  });
+
+  it("sizes the loan before there is an ARV, rather than lending nothing", () => {
+    const deal = buildDeal({ ...house, arv: null });
+    expect(deal.hardMoney?.loan.total).toBeCloseTo(220_000, 6);
+    expect(deal.hardMoney?.loan.capped).toBe(false);
+  });
+
+  it("reads Settings' holding figures from a profile", () => {
+    expect(holdingFrom(null)).toBeNull();
+    const defaults = { holdingMonthly: 750, holdingMonths: 5 } as BuyerProfile["defaults"];
+    expect(holdingFrom(defaults)).toEqual({ monthly: 750, months: 5 });
+  });
+});
+
+describe("the Flip calculator's inputs", () => {
+  it("starts hard money on its own rate and points, with nothing typed down", () => {
+    expect(flipStartingTerms("hardMoney")).toEqual({ ratePct: 15, pointsPct: 2, downPct: 0 });
+  });
+
+  it("starts a mortgage on the app's rate, no points and its minimum down", () => {
+    const fha = flipStartingTerms("fha");
+    expect(fha.pointsPct).toBe(0);
+    expect(fha.downPct).toBe(3.5);
+    expect(fha.ratePct).toBe(defaultInputs().interestRate);
+  });
+
+  it("works a mortgage down payment out from the price, not a fixed figure", () => {
+    const inputs = flipInputs({
+      product: "fha", price: 200_000, rehab: 50_000, arv: 325_000, ratePct: 6.75, pointsPct: 0, downPct: 3.5,
+    });
+    expect(inputs.downPayment).toBeCloseTo(7_000, 6);
+  });
+
+  it("includes the financed work on a renovation loan", () => {
+    const inputs = flipInputs({
+      product: "fha203k", price: 200_000, rehab: 50_000, arv: 325_000, ratePct: 6.75, pointsPct: 0, downPct: 3.5,
+    });
+    const work = 50_000 * (1 + inputs.renovationContingencyPct / 100);
+    expect(inputs.downPayment).toBeCloseTo((200_000 + work) * 0.035, 6);
+  });
+
+  it("keeps every typed loan setting, which is what a save stores", () => {
+    const inputs = flipInputs({
+      product: "hardMoney", price: 180_000, rehab: 40_000, arv: 300_000, ratePct: 12, pointsPct: 3, downPct: 0,
+    });
+    expect(inputs).toMatchObject({
+      loanType: "hardMoney",
+      homeValue: 180_000,
+      renovationBudget: 40_000,
+      arv: 300_000,
+      interestRate: 12,
+      points: 3,
+    });
+  });
+});
+
+describe("switching the loan type on Numbers", () => {
+  it("moves onto hard money's own rate and points", () => {
+    expect(rateForLoanSwitch("fha", "hardMoney", 6.75)).toEqual({ interestRate: 15, points: 2 });
+  });
+
+  it("goes back to the Settings rate and no points when leaving hard money", () => {
+    expect(rateForLoanSwitch("hardMoney", "conventional", 7.1)).toEqual({ interestRate: 7.1, points: 0 });
+  });
+
+  it("falls back to the app's rate with no Settings", () => {
+    expect(rateForLoanSwitch("hardMoney", "fha", null)?.interestRate).toBe(defaultInputs().interestRate);
+  });
+
+  it("leaves a typed rate alone between two mortgages", () => {
+    expect(rateForLoanSwitch("fha", "conventional", 6.75)).toBeNull();
   });
 });

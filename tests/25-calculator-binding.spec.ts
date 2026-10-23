@@ -138,6 +138,15 @@ async function stubHouse(page: Page, recorded: Recorded) {
         body: JSON.stringify({ rows: [] }),
       });
     }
+    // The Deal tab reads the house's offers too; answered with a house body it
+    // had no `offers` list and the tab crashed.
+    if (url.includes("/offers")) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ offers: [], available: true }),
+      });
+    }
     if (url.includes("/comps")) {
       return route.fulfill({
         status: 200,
@@ -282,3 +291,37 @@ test("the modal scrolls inside and Save stays visible at 390px", async ({ page }
  * 22-navigation); the unsaved-changes confirm and "no address field" (no rule
  * behind either — the journey above proves a save sends no address).
  */
+
+/*
+ * Hard money was worked out three ways: Numbers sized it like a mortgage, Deal
+ * the hard money way, and Numbers had no rehab box for it at all. Every figure
+ * is a Jest case (flip.test.ts, mortgage.test.ts); this proves the two tabs
+ * show the owner the same down payment for the same house.
+ */
+test("hard money on Numbers shows the down payment Deal uses, with the rehab asked for", async ({
+  page,
+}) => {
+  const recorded = recorder();
+  await stubHouse(page, recorded);
+  await openNumbers(page);
+
+  await page.getByRole("combobox", { name: /Loan type/i }).selectOption("hardMoney");
+  // Hard money takes its own rate; it used to keep the mortgage's 6.75%.
+  await expect(page.getByLabel("Interest rate")).toHaveValue("15");
+  // The box that was missing: hard money funds the work.
+  await page.getByTestId("hm-rehab").fill("50000");
+  const numbersDown = await page.getByTestId("hm-down-payment").textContent();
+  const down = /\$[\d,]+/.exec(numbersDown ?? "")?.[0];
+  expect(down).toBeTruthy();
+
+  await page.getByTestId("numbers-label").fill("hard money");
+  await page.getByTestId("numbers-save").click();
+  await expect(page.getByTestId("numbers-modal")).toHaveCount(0);
+
+  // Saved with the loan and the rehab, not just a price.
+  expect(recorded.saves).toHaveLength(1);
+  expect(recorded.saves[0].inputs).toMatchObject({ loanType: "hardMoney", renovationBudget: 50_000 });
+
+  await page.getByTestId("tab-deal").click();
+  await expect(page.getByTestId("deal-line-down-payment")).toContainText(down!);
+});

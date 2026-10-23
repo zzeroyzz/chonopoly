@@ -3,7 +3,7 @@ import { resolveInputs, type HouseInputs } from "../mortgage/resolveInputs";
 import { calculateMortgage } from "../mortgage/calculate";
 import { calculateDti } from "../mortgage/dti";
 import { calculate203kCap } from "../mortgage/renovationCap";
-import { buildDeal } from "../deal/buildDeal";
+import { buildDeal, holdingFrom } from "../deal/buildDeal";
 import { resolveRehab, type RehabEstimateInput } from "../rehab/resolveRehab";
 import {
   assessAffordability,
@@ -244,6 +244,7 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     arv,
     rehab,
     sellerClosingPct: profile?.defaults.sellingPct ?? 8,
+    holding: holdingFrom(profile?.defaults),
   });
   const deal = built.result;
 
@@ -267,7 +268,11 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
   const ceilingFor = (floor: number) =>
     needsOffer
       ? offerCeiling({
-          house: { arv, rehab, sellerClosingPct: profile?.defaults.sellingPct ?? 8 },
+          house: {
+            arv, rehab,
+            sellerClosingPct: profile?.defaults.sellingPct ?? 8,
+            holding: holdingFrom(profile?.defaults),
+          },
           inputs,
           profitFloor: floor,
         }).price

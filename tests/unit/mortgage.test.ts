@@ -193,6 +193,10 @@ describe("VA", () => {
 });
 
 describe("hard money", () => {
+  // Sized the hard money way, as the Deal tab sizes it: 85% of the price plus
+  // the funded rehab, under 75% of the ARV. These used to expect "price minus a
+  // typed down payment" ($160,000 here), which is a mortgage's rule; the typed
+  // $40,000 below is deliberately ignored now.
   const result = calculateMortgage(
     inputs({
       loanType: "hardMoney",
@@ -205,13 +209,19 @@ describe("hard money", () => {
     })
   );
 
+  it("sizes the loan off the price, not a typed down payment", () => {
+    expect(result.loanAmount).toBeCloseTo(170000, 6);
+    expect(result.downPaymentAmount).toBeCloseTo(30000, 6);
+    expect(result.downPaymentPercent).toBeCloseTo(15, 6);
+  });
+
   it("is interest-only with a balloon equal to the full principal", () => {
     expect(result.isInterestOnly).toBe(true);
-    expect(result.balloonAmount).toBeCloseTo(160000, 6);
+    expect(result.balloonAmount).toBeCloseTo(170000, 6);
   });
 
   it("charges points as a percent of the loan", () => {
-    expect(result.pointsCost).toBeCloseTo(3200, 6);
+    expect(result.pointsCost).toBeCloseTo(3400, 6);
   });
 
   it("sizes the term in months, not years", () => {
@@ -219,11 +229,38 @@ describe("hard money", () => {
   });
 
   it("reports loan-to-ARV when an ARV is supplied", () => {
-    expect(result.loanToArv).toBeCloseTo(50, 6);
+    expect(result.loanToArv).toBeCloseTo(53.125, 6);
   });
 
   it("charges no mortgage insurance", () => {
     expect(result.monthlyMortgageInsurance).toBe(0);
+  });
+
+  it("funds the rehab, so the rehab box changes the loan", () => {
+    const withRehab = calculateMortgage(
+      inputs({ loanType: "hardMoney", homeValue: 200000, renovationBudget: 50000, arv: 400000, points: 2 })
+    );
+    expect(withRehab.loanAmount).toBeCloseTo(220000, 6);
+  });
+
+  it("holds the loan under the ARV ceiling", () => {
+    // 75% of $250,000 is $187,500, below the $220,000 the terms would fund.
+    const capped = calculateMortgage(
+      inputs({ loanType: "hardMoney", homeValue: 200000, renovationBudget: 50000, arv: 250000, points: 2 })
+    );
+    expect(capped.loanAmount).toBeCloseTo(187500, 6);
+  });
+
+  it("counts lender and title fees as closing costs, beside the points", () => {
+    // 2% of the $200,000 price, not the mortgage closing percent.
+    expect(result.closingCosts).toBeCloseTo(4000, 6);
+    // Cash to close: the $30,000 down, $4,000 of fees and $3,400 of points.
+    expect(result.cashToClose).toBeCloseTo(37400, 6);
+  });
+
+  it("still sizes a loan before there is an ARV", () => {
+    const noArv = calculateMortgage(inputs({ loanType: "hardMoney", homeValue: 200000, arv: null }));
+    expect(noArv.loanAmount).toBeCloseTo(170000, 6);
   });
 });
 

@@ -1,4 +1,7 @@
-import { VERDICT_THRESHOLDS } from "./defaults";
+import { VERDICT_THRESHOLDS, defaultInputs } from "./defaults";
+import { HARD_MONEY_DEFAULTS } from "./hardMoney";
+import { LOAN_PRODUCTS, LOAN_TYPE_CONFIG } from "./loanTypes";
+import { type LoanType, type MortgageInputs } from "./types";
 
 /**
  * The one profit calculation in the app.
@@ -204,4 +207,78 @@ export function payoffAfterMonths(
     .slice(0, Math.max(0, Math.round(months)))
     .reduce((sum, row) => sum + row.principal, 0);
   return Math.max(0, loanAmount - paid);
+}
+
+
+// ── The Flip calculator's inputs ─────────────────────────────────────────────
+
+/** What the Flip calculator lets you type. Everything else is a default. */
+export interface FlipTyped {
+  /** A `LOAN_PRODUCTS` value, such as "hardMoney" or "fha203k". */
+  product: string;
+  price: number;
+  rehab: number;
+  arv: number;
+  ratePct: number;
+  pointsPct: number;
+  /** Down payment as a percent of price plus financed work. Ignored on hard money. */
+  downPct: number;
+}
+
+/**
+ * The rate, points and down payment a loan starts on in the Flip calculator.
+ *
+ * Hard money keeps its own: 15% and 2 points. The calculator used to open on
+ * an FHA 203(k) carrying those, which modelled a mortgage at a hard money
+ * rate. A mortgage starts on the app's rate, no points and its minimum down.
+ */
+export function flipStartingTerms(loanType: LoanType): {
+  ratePct: number;
+  pointsPct: number;
+  downPct: number;
+} {
+  if (loanType === "hardMoney") {
+    return { ratePct: HARD_MONEY_DEFAULTS.ratePct, pointsPct: HARD_MONEY_DEFAULTS.pointsPct, downPct: 0 };
+  }
+  return {
+    ratePct: defaultInputs().interestRate,
+    pointsPct: 0,
+    downPct: LOAN_TYPE_CONFIG[loanType].minDownPercent,
+  };
+}
+
+/** The loan a `LOAN_PRODUCTS` value names, falling back to hard money. */
+export function flipProduct(product: string) {
+  return LOAN_PRODUCTS.find((p) => p.value === product) ?? LOAN_PRODUCTS.find((p) => p.value === "hardMoney")!;
+}
+
+/**
+ * The full inputs for what was typed — the same object the page calculates
+ * and the save stores, so a saved flip reopens on the loan it was run on. The
+ * save used to keep only price, rehab and ARV, and dropped the rest.
+ */
+export function flipInputs(typed: FlipTyped): MortgageInputs {
+  const chosen = flipProduct(typed.product);
+  const base = defaultInputs();
+  const inputs: MortgageInputs = {
+    ...base,
+    loanType: chosen.loanType,
+    renovationProgram: chosen.renovationProgram,
+    homeValue: typed.price,
+    renovationBudget: typed.rehab,
+    interestRate: typed.ratePct,
+    points: typed.pointsPct,
+    arv: typed.arv > 0 ? typed.arv : null,
+    afterRepairValue: typed.arv > 0 ? typed.arv : null,
+  };
+
+  // A mortgage's down payment is a percent of price plus the work it finances
+  // (renovation loans roll the rehab in). The default was a fixed $12,250 —
+  // 3.5% of a $350,000 house — whatever the price. Hard money sizes itself.
+  const financedWork =
+    inputs.renovationProgram === "none"
+      ? 0
+      : typed.rehab * (1 + inputs.renovationContingencyPct / 100);
+  inputs.downPayment = ((typed.price + financedWork) * Math.max(0, typed.downPct)) / 100;
+  return inputs;
 }

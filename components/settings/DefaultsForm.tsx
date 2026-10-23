@@ -253,6 +253,7 @@ export function DefaultsForm() {
             onChange={(holdingMonthly) => patch({ holdingMonthly })}
             prefix="$"
             hint="per month"
+            note="Utilities, lawn and upkeep while you own it. Tax and insurance are added on their own, so leave them out."
             min={0}
           />
           <NumberField

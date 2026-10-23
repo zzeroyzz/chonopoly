@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { type MortgageInputs } from "@/lib/mortgage/types";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { resolveInputs } from "@/lib/mortgage/resolveInputs";
-import { buildDeal } from "@/lib/deal/buildDeal";
+import { buildDeal, holdingFrom } from "@/lib/deal/buildDeal";
 import { offerCeiling } from "@/lib/offers/offerCeiling";
 import { type ResolvedRehab } from "@/lib/rehab/resolveRehab";
 import { taxDefaultsFrom } from "@/lib/mortgage/capitalGains";
@@ -75,6 +75,7 @@ export function OfferPanel({
       arv,
       rehab,
       sellerClosingPct: profile?.defaults.sellingPct ?? 8,
+      holding: holdingFrom(profile?.defaults),
       taxes: taxDefaultsFrom(profile?.defaults),
       state,
     }),

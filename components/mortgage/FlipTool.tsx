@@ -5,14 +5,14 @@ import { useRouter } from "next/navigation";
 import { Home } from "lucide-react";
 import { ToolSwitch } from "./ToolSwitch";
 import { loadProfile } from "@/lib/supabase/profile";
-import { defaultInputs } from "@/lib/mortgage/defaults";
 import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { buildDeal } from "@/lib/deal/buildDeal";
 import { resolveRehab } from "@/lib/rehab/resolveRehab";
 import { DEFAULT_TAX_DEFAULTS } from "@/lib/mortgage/capitalGains";
 import { saveAnalysis } from "@/lib/mortgage/scenarioClient";
-import { type LoanType } from "@/lib/mortgage/types";
 import { LOAN_PRODUCTS } from "@/lib/mortgage/loanTypes";
+import { flipInputs, flipProduct, flipStartingTerms } from "@/lib/mortgage/flip";
+import { dollars } from "./format";
 import { Card, SectionLabel, NumberField, SelectField } from "./fields";
 import { ProfitCard, type ProfitCardEdits } from "./ProfitCard";
 
@@ -56,12 +56,25 @@ export default function FlipTool() {
   }, []);
 
   // Everything typed. No profile, no house, no ARV required to start.
-  const [product, setProduct] = useState("fha203k");
+  // Opens on hard money, the loan a flip usually uses, with its own rate and
+  // points. It opened on an FHA 203(k) carrying hard money's 15% and 2 points.
+  const opening = flipStartingTerms("hardMoney");
+  const [product, setProduct] = useState("hardMoney");
   const [price, setPrice] = useState(200_000);
   const [rehab, setRehab] = useState(50_000);
   const [arv, setArv] = useState(325_000);
-  const [rate, setRate] = useState(15);
-  const [points, setPoints] = useState(2);
+  const [rate, setRate] = useState(opening.ratePct);
+  const [points, setPoints] = useState(opening.pointsPct);
+  const [downPct, setDownPct] = useState(opening.downPct);
+
+  /** A new loan starts on its own rate, points and down payment. */
+  function chooseProduct(next: string) {
+    setProduct(next);
+    const terms = flipStartingTerms(flipProduct(next).loanType);
+    setRate(terms.ratePct);
+    setPoints(terms.pointsPct);
+    setDownPct(terms.downPct);
+  }
   const [sellerClosingPct, setSellerClosingPct] = useState(6);
   const [edits, setEdits] = useState<ProfitCardEdits>({});
 
@@ -71,23 +84,15 @@ export default function FlipTool() {
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
-  const built = useMemo(() => {
-    const chosen = LOAN_PRODUCTS.find((p) => p.value === product);
-    const loanType: LoanType = chosen?.loanType ?? "fha";
+  // Built directly rather than through resolveInputs: there is no profile
+  // here, and every figure on this page is typed. The same inputs are saved.
+  const inputs = useMemo(
+    () => flipInputs({ product, price, rehab, arv, ratePct: rate, pointsPct: points, downPct }),
+    [product, price, rehab, arv, rate, points, downPct]
+  );
+  const isHardMoney = inputs.loanType === "hardMoney";
 
-    // Built directly rather than through resolveInputs: there is no profile
-    // here, and every figure on this page is typed.
-    const inputs = {
-      ...defaultInputs(),
-      loanType,
-      renovationProgram: chosen?.renovationProgram ?? "none",
-      homeValue: price,
-      renovationBudget: rehab,
-      interestRate: rate,
-      points,
-      arv,
-      afterRepairValue: arv,
-    };
+  const built = useMemo(() => {
     const result = calculateMortgage(inputs);
 
     return buildDeal(
@@ -104,7 +109,7 @@ export default function FlipTool() {
       },
       edits
     );
-  }, [product, price, rehab, arv, rate, points, sellerClosingPct, edits]);
+  }, [inputs, rehab, arv, sellerClosingPct, edits]);
 
   async function loadHouses() {
     try {
@@ -123,9 +128,7 @@ export default function FlipTool() {
     try {
       await saveAnalysis({
         label: `Deal · ${address}`,
-        inputs: built.params.arv
-          ? { ...defaultInputs(), homeValue: price, renovationBudget: rehab, arv }
-          : { ...defaultInputs(), homeValue: price, renovationBudget: rehab },
+        inputs,
         monthlyPayment: built.result.trueProfit ?? 0,
         propertyId,
         kind: "flip",
@@ -162,7 +165,7 @@ export default function FlipTool() {
               <SelectField
                 label="Loan"
                 value={product}
-                onChange={setProduct}
+                onChange={chooseProduct}
                 options={LOAN_PRODUCTS.map((p) => ({ value: p.value, label: p.label }))}
               />
               <NumberField label="Purchase price" testId="flip-price" value={price} onChange={setPrice} prefix="$" min={0} />
@@ -172,6 +175,26 @@ export default function FlipTool() {
                 <NumberField label="Rate" value={rate} onChange={setRate} suffix="%" min={0} />
                 <NumberField label="Points" value={points} onChange={setPoints} suffix="%" min={0} />
               </div>
+              {isHardMoney ? (
+                <p data-testid="flip-hm-down" className="text-[12px] text-(--color-text-secondary) leading-relaxed">
+                  <span className="text-(--color-text-primary) font-semibold">
+                    {dollars(built.params.downPayment.value, 0)} down
+                  </span>
+                  {" "}— the lender lends {inputs.hardMoneyPurchaseLtvPct}% of the price, so you bring
+                  the rest.
+                </p>
+              ) : (
+                <NumberField
+                  label="Down payment"
+                  testId="flip-down"
+                  value={downPct}
+                  onChange={setDownPct}
+                  suffix="%"
+                  hint={inputs.renovationProgram === "none" ? "of the price" : "of price plus the work"}
+                  note={`${dollars(inputs.downPayment, 0)}.`}
+                  min={0}
+                />
+              )}
               <NumberField
                 label="Seller closing"
                 value={sellerClosingPct}

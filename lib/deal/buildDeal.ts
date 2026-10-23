@@ -1,4 +1,5 @@
 import { type MortgageInputs, type MortgageResult } from "../mortgage/types";
+import { type BuyerProfile } from "../profile/types";
 import {
   calculateDeal,
   line,
@@ -12,6 +13,7 @@ import {
   hardMoneyInterest,
   defaultDraws,
   HARD_MONEY_DEFAULTS,
+  hardMoneyTermsFrom,
   type Draw,
   type HardMoneyLoan,
   type HardMoneyTerms,
@@ -41,6 +43,22 @@ import {
 /** Hold months by loan type, when the user has not said otherwise. */
 export const DEFAULT_HOLD_MONTHS = { financed: 12, hardMoney: 6 } as const;
 
+/** Settings' holding cost and period: utilities and upkeep, and how long. */
+export interface HoldingDefaults {
+  /** Per month, on top of tax and insurance, which are counted on their own. */
+  monthly: number;
+  months: number;
+}
+
+/**
+ * Settings' holding figures, for every screen that builds a deal. They were
+ * saved and read by nothing, so every deal carried $0 a month of utilities.
+ */
+export function holdingFrom(defaults: BuyerProfile["defaults"] | null | undefined): HoldingDefaults | null {
+  if (!defaults) return null;
+  return { monthly: Math.max(0, defaults.holdingMonthly), months: Math.max(0, defaults.holdingMonths) };
+}
+
 export function defaultHoldMonths(inputs: MortgageInputs): number {
   return inputs.loanType === "hardMoney"
     ? DEFAULT_HOLD_MONTHS.hardMoney
@@ -61,6 +79,8 @@ export interface DealHouse {
   taxes?: TaxDefaults;
   /** Two-letter state, for the state rate. */
   state?: string | null;
+  /** Settings' holding cost and period. Absent falls back to $0 and the loan's default. */
+  holding?: HoldingDefaults | null;
 }
 
 /** Everything a person can type over. Absent means "use the derived figure". */
@@ -91,7 +111,9 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
   const { inputs, result, arv, rehab } = house;
   const isHardMoney = inputs.loanType === "hardMoney";
 
-  const holdMonths = overrides.holdMonths ?? defaultHoldMonths(inputs);
+  const settingsMonths = house.holding?.months ?? 0;
+  const holdMonths =
+    overrides.holdMonths ?? (settingsMonths > 0 ? settingsMonths : defaultHoldMonths(inputs));
 
   // ── Hard money, when that is the loan ──────────────────────────────────────
   let hardMoney: BuiltDeal["hardMoney"] = null;
@@ -100,12 +122,7 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
     // inputs rather than being re-chosen here.
     const terms: HardMoneyTerms = {
       ...HARD_MONEY_DEFAULTS,
-      ratePct: inputs.interestRate,
-      pointsPct: inputs.points,
-      purchaseLtvPct: inputs.hardMoneyPurchaseLtvPct,
-      rehabFundedPct: inputs.hardMoneyRehabFundedPct,
-      maxLoanToArvPct: inputs.hardMoneyMaxLoanToArvPct,
-      interestStyle: inputs.hardMoneyInterestStyle,
+      ...hardMoneyTermsFrom(inputs),
       ...overrides.hardMoney,
     };
     const loan = sizeHardMoneyLoan(
@@ -113,7 +130,8 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
       // Sized on what the lender underwrote, which is the budget on the
       // financing analysis — not on an estimate produced afterwards.
       Math.min(rehab.total, inputs.renovationBudget),
-      arv ?? 0,
+      // Null is "no ARV yet": no ceiling, rather than a ceiling of $0.
+      arv,
       terms
     );
     const stored = inputs.hardMoneyDraws;
@@ -165,16 +183,24 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
   // ── Out of pocket ─────────────────────────────────────────────────────────
   const derivedDownPayment = hardMoney ? hardMoney.loan.downPayment : result.downPaymentAmount;
   const derivedPoints = hardMoney ? hardMoney.loan.points : (result.pointsCost ?? 0);
-  // Hard money closing costs are the points, which are their own line.
-  const derivedBuyerClosing = hardMoney ? 0 : result.closingCosts;
+  // The calculation's own closing costs on every loan. For hard money those
+  // are the lender and title fees — the points are their own line. This used
+  // to be $0 for hard money, which understated cash to close.
+  const derivedBuyerClosing = result.closingCosts;
+
+  // Tax, insurance and any HOA are owed while the house is held whatever the
+  // loan. A financed loan's payment already carries them (PITI); hard money's
+  // interest does not, so they are added to it — left out, hard money looked
+  // cheaper to hold than it is.
+  const heldMonthly = result.monthlyTax + result.monthlyInsurance + result.monthlyHoa;
 
   // ── Carry ─────────────────────────────────────────────────────────────────
   const derivedCarry = hardMoney
-    ? hardMoney.schedule.total
+    ? hardMoney.schedule.total + heldMonthly * holdMonths
     : result.totalMonthlyWithMortgageInsurance * holdMonths;
 
   const oneMoreMonthCarry = hardMoney
-    ? hardMoney.schedule.oneMoreMonth
+    ? hardMoney.schedule.oneMoreMonth + heldMonthly
     : result.totalMonthlyWithMortgageInsurance;
 
   // ── Tax on the sale ───────────────────────────────────────────────────────
@@ -265,13 +291,19 @@ export function buildDeal(house: DealHouse, overrides: DealOverrides = {}): Buil
             derivedCarry,
             hardMoney ? "hard_money_terms" : "financing_analysis",
             false,
-            hardMoney ? "From the interest table" : `PITI × ${holdMonths} months`
+            hardMoney
+              ? `Interest from the table, plus tax and insurance × ${holdMonths} months`
+              : `PITI × ${holdMonths} months`
           ),
-    monthlyExtras: line(
-      overrides.monthlyExtras ?? 0,
-      "manual",
+    monthlyExtras:
       overrides.monthlyExtras !== undefined
-    ),
+        ? line(overrides.monthlyExtras, "manual", true)
+        : line(
+            house.holding?.monthly ?? 0,
+            "defaults",
+            false,
+            house.holding?.monthly ? "Utilities and upkeep, from Settings" : undefined
+          ),
     oneMoreMonthCarry,
 
     purchasePrice: inputs.homeValue,
