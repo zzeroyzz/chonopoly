@@ -352,63 +352,71 @@ function ReviewSheet({
         className="absolute inset-0 bg-black/50"
       />
 
+      {/* Two layers on purpose. The outer one slides up; the inner one
+          scrolls. On one element, iPhone Safari kept the scrolling area's tap
+          region where the slide started — off-screen — and nothing inside the
+          sheet could be tapped, though it looked fine. */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Was it fixed up like yours will be?"
         data-testid="comp-review-sheet"
-        className="relative wizard-slide-up bg-(--color-elevated) border-t border-(--color-border-strong)
-          rounded-t-(--radius-xl) p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] flex flex-col gap-3
-          max-h-[85dvh] overflow-y-auto overscroll-contain"
+        className="relative sheet-slide-up bg-(--color-elevated) border-t border-(--color-border-strong)
+          rounded-t-(--radius-xl) overflow-hidden"
       >
-        <div className="flex flex-col gap-0.5">
-          <p className="text-[14px] font-semibold">Was it fixed up like yours will be?</p>
-          <p className="text-[11px] text-(--color-text-secondary) wrap-break-word">
-            {comp.formattedAddress}
-          </p>
-        </div>
-
-        <div role="radiogroup" aria-label="Was it fixed up like yours will be?" className="flex flex-col gap-1.5">
-          {options.map((key) => (
-            <button
-              key={key}
-              type="button"
-              role="radio"
-              aria-checked={comp.review === key}
-              onClick={() => onPick(key)}
-              data-testid={`comp-review-choice-${key}`}
-              className="w-full min-h-11 flex items-start gap-3 p-3 text-left rounded-(--radius-md)
-                border border-(--color-border-default) bg-(--color-base)
-                hover:border-(--color-border-strong) transition-colors"
-            >
-              <span
-                className={`mt-0.5 shrink-0 w-[18px] h-[18px] rounded-full border flex items-center justify-center ${
-                  comp.review === key
-                    ? "border-(--color-accent) bg-(--color-accent) text-(--color-base)"
-                    : "border-(--color-border-strong)"
-                }`}
-              >
-                {comp.review === key && <Check size={12} />}
-              </span>
-              <span className="flex flex-col gap-0.5 min-w-0">
-                <span className="text-[13px]">{COMP_REVIEW_LABELS[key]}</span>
-                <span className="text-[11px] text-(--color-text-secondary) leading-relaxed">
-                  {REVIEW_CONSEQUENCE[key]}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <button
-          type="button"
-          onClick={onClose}
-          data-testid="comp-review-sheet-cancel"
-          className="min-h-11 px-4 rounded-(--radius-pill) border border-(--color-border-default)
-            text-[13px] font-medium self-start"
+        <div
+          className="p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] flex flex-col gap-3
+            max-h-[85dvh] overflow-y-auto overscroll-contain"
         >
-          Not yet
-        </button>
+          <div className="flex flex-col gap-0.5">
+            <p className="text-[14px] font-semibold">Was it fixed up like yours will be?</p>
+            <p className="text-[11px] text-(--color-text-secondary) wrap-break-word">
+              {comp.formattedAddress}
+            </p>
+          </div>
+
+          <div role="radiogroup" aria-label="Was it fixed up like yours will be?" className="flex flex-col gap-1.5">
+            {options.map((key) => (
+              <button
+                key={key}
+                type="button"
+                role="radio"
+                aria-checked={comp.review === key}
+                onClick={() => onPick(key)}
+                data-testid={`comp-review-choice-${key}`}
+                className="w-full min-h-11 flex items-start gap-3 p-3 text-left rounded-(--radius-md)
+                  border border-(--color-border-default) bg-(--color-base)
+                  hover:border-(--color-border-strong) transition-colors"
+              >
+                <span
+                  className={`mt-0.5 shrink-0 w-[18px] h-[18px] rounded-full border flex items-center justify-center ${
+                    comp.review === key
+                      ? "border-(--color-accent) bg-(--color-accent) text-(--color-base)"
+                      : "border-(--color-border-strong)"
+                  }`}
+                >
+                  {comp.review === key && <Check size={12} />}
+                </span>
+                <span className="flex flex-col gap-0.5 min-w-0">
+                  <span className="text-[13px]">{COMP_REVIEW_LABELS[key]}</span>
+                  <span className="text-[11px] text-(--color-text-secondary) leading-relaxed">
+                    {REVIEW_CONSEQUENCE[key]}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            data-testid="comp-review-sheet-cancel"
+            className="min-h-11 px-4 rounded-(--radius-pill) border border-(--color-border-default)
+              text-[13px] font-medium self-start"
+          >
+            Not yet
+          </button>
+        </div>
       </div>
     </div>,
     document.body
