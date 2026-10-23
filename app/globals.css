@@ -137,6 +137,25 @@ body {
   --shadow-lg:   0 8px 32px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
   --shadow-glow: 0 0 20px var(--color-accent-glow);
 
+  /*
+   * Tap sizes, from the design system. A phone is the main device, and a
+   * target under 44px gets missed — the finalist star was 22px.
+   */
+  --tap-min:      44px;
+  --control-pill: 36px;
+
+  /*
+   * Type scale, from the design system's tokens.json. The app shipped with no
+   * size tokens, so every size was an arbitrary text-[13px]. Added as screens
+   * adopt them; values must match the system exactly.
+   */
+  --type-heading-size:       20px; --type-heading-leading:     26px;
+  --type-body-size:          13px; --type-body-leading:        20px;
+  --type-body-sm-size:       12px; --type-body-sm-leading:     18px;
+  --type-label-size:         11px; --type-label-leading:       15px;
+  --type-caption-size:       10px; --type-caption-leading:     14px;
+  --type-figure-size:        24px; --type-figure-leading:      28px;
+
   /* Font families — resolved from Next.js font variables added in layout.tsx */
   --font-display: var(--font-syne);
   --font-body:    var(--font-dm-sans);
