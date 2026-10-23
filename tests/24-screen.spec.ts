@@ -310,3 +310,67 @@ test("pasting several addresses adds them, at 390px, and links on", async ({ pag
   }
   await expect(page.getByTestId("batch-to-screen")).toHaveAttribute("href", "/properties");
 });
+
+// ─── Pasting one address ──────────────────────────────────────────────────────
+
+/*
+ * The owner's daily path: copy an address from Zillow or Maps, paste it into
+ * the street field, and city, state and ZIP fill themselves. Every shape the
+ * parser reads is a Jest case (parseAddressLines.test.ts); this proves the
+ * paste reaches the form and the save, which only a browser can.
+ */
+test("pasting a full address fills the form, keeps a typed city, and saves it", async ({
+  page,
+  context,
+}) => {
+  await stubDataEndpoints(page);
+  const posted: Record<string, unknown>[] = [];
+  await page.route("**/api/properties", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    posted.push(JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>);
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ property: { id: "prop-new" }, matchedOn: "created" }),
+    });
+  });
+
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/properties/new");
+
+  // A real paste, from the real clipboard, the way Zillow copies it.
+  const street = page.getByTestId("add-address");
+  await page.evaluate(() => navigator.clipboard.writeText("2012 Shalimar Dr NE, Atlanta, GA 30345, USA"));
+  await street.click();
+  await page.keyboard.press("ControlOrMeta+V");
+
+  await expect(street).toHaveValue("2012 Shalimar Dr NE");
+  await expect(page.getByTestId("add-city")).toHaveValue("Atlanta");
+  await expect(page.getByTestId("add-state")).toHaveValue("GA");
+  await expect(page.getByTestId("add-zip")).toHaveValue("30345");
+  await expect(page.getByTestId("add-address-filled")).toBeVisible();
+
+  const fits = await page.evaluate(
+    () => document.documentElement.scrollWidth <= document.documentElement.clientWidth
+  );
+  expect(fits, "the add form fits 390px").toBe(true);
+
+  // A city typed before the paste survives it.
+  await street.fill("");
+  await page.getByTestId("add-city").fill("Brookhaven");
+  await street.click();
+  await page.keyboard.press("ControlOrMeta+V");
+  await expect(street).toHaveValue("2012 Shalimar Dr NE");
+  await expect(page.getByTestId("add-city")).toHaveValue("Brookhaven");
+
+  // And what the form shows is what gets saved.
+  await page.getByTestId("add-city").fill("Atlanta");
+  await page.getByTestId("add-one-form").getByRole("button", { name: /add|save/i }).last().click();
+  await expect.poll(() => posted.length).toBe(1);
+  expect(posted[0]).toMatchObject({
+    address_line1: "2012 Shalimar Dr NE",
+    city: "Atlanta",
+    state: "GA",
+    zip: "30345",
+  });
+});
