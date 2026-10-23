@@ -125,3 +125,22 @@ instruction. **It is not independent.**
 
 **Recommendation:** approve. (#67 merged before this started, so no branch
 exception was needed.)
+
+## Outcome (2026-10-23)
+
+- **Pasting into the street field** fills street, city, state and ZIP. Typing
+  is unchanged. A city, state or ZIP already typed is kept, and the untouched
+  default "GA" counts as not typed.
+- **The parser now reads** commas or none, a trailing USA, a spelled-out state,
+  a tab before the price, and a street line followed by a "City, ST ZIP" line.
+- **Jest**: 619 pass. `parseAddressLines.test.ts` has a case for every shape,
+  plus `parseOneAddress` and `fillFromPaste`.
+- **Playwright**: 36 pass, including the new journey. It pastes from the real
+  clipboard and checks what is saved. Run against the old build, it failed
+  with the whole address left in the street field.
+- `tsc` and the build pass. Lint is unchanged (33 issues, none in these
+  files).
+- Checked by eye at 390px.
+- **Dropped at the owner's word ("Nvm then")**: prefilling beds, baths and
+  size from RentCast. It would spend a second request per house, on top of the
+  comps lookup.
