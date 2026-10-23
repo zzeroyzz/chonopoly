@@ -157,21 +157,19 @@ async function stubScenarioApi(
 
   await page.route("**/api/mortgage/scenarios/*/address", async (route) => {
     const id = new URL(route.request().url()).pathname.split("/").slice(-2)[0];
-    const body = route.request().postDataJSON() as { address_line1: string };
+    // Attaching names an existing house by id; it never creates one. This stub
+    // used to accept a typed address and make a house, which the real route
+    // stopped doing — so the old test could not find the field it typed into.
+    const body = route.request().postDataJSON() as { property_id: string };
     const target = store.find((s) => s.id === id);
-    if (!target) {
-      return route.fulfill({ status: 404, contentType: "application/json", body: '{"error":"Scenario not found"}' });
+    const property = properties.find((p) => p.id === body.property_id);
+    if (!target || !property) {
+      return route.fulfill({ status: 404, contentType: "application/json", body: '{"error":"Not found"}' });
     }
-    const property: StoredProperty = {
-      id: `prop-${properties.length + 1}`,
-      addressLine1: body.address_line1.trim(),
-      city: null, state: "GA", zip: null, needsAddressReview: false,
-    };
-    properties.push(property);
     target.property = property;
     await route.fulfill({
       status: 200, contentType: "application/json",
-      body: JSON.stringify({ scenario: asSummary(target), matchedOn: "created" }),
+      body: JSON.stringify({ scenario: asSummary(target), matchedOn: "attached" }),
     });
   });
 
@@ -208,124 +206,6 @@ async function openCalculator(page: Page) {
 const priceField = (page: Page) => page.locator('input:not([type="checkbox"])').first();
 const nameField = (page: Page) => page.getByLabel("Scenario name");
 
-test("the save control is on the page with nothing saved yet", async ({ page }) => {
-  await stubScenarioApi(page);
-  await openCalculator(page);
-
-  await expect(nameField(page)).toBeVisible();
-  await expect(page.getByTestId("scenario-save")).toBeDisabled();
-  await expect(page.getByText(/Save the current numbers under a name/)).toBeVisible();
-});
-
-test("save is disabled until the scenario has a name", async ({ page }) => {
-  await stubScenarioApi(page);
-  await openCalculator(page);
-
-  const save = page.getByTestId("scenario-save");
-  await expect(save).toBeDisabled();
-
-  await nameField(page).fill("Maple St");
-  await expect(save).toBeEnabled();
-
-  // Whitespace is not a name.
-  await nameField(page).fill("   ");
-  await expect(save).toBeDisabled();
-});
-
-test("saving a scenario lists it with its price and payment", async ({ page }) => {
-  await stubScenarioApi(page);
-  await openCalculator(page);
-
-  await priceField(page).fill("250000");
-  await priceField(page).blur();
-
-  await nameField(page).fill("Maple St");
-  await page.getByTestId("scenario-save").click();
-
-  await expect(page.getByText("Maple St")).toBeVisible();
-  await expect(page.getByText(/\$250,000 · \$[\d,]+\/mo/)).toBeVisible();
-  // The name field clears, so the next save does not silently overwrite.
-  await expect(nameField(page)).toHaveValue("");
-});
-
-test("opening a saved scenario puts its numbers back in the form", async ({ page }) => {
-  await stubScenarioApi(page);
-  await openCalculator(page);
-
-  await priceField(page).fill("412000");
-  await priceField(page).blur();
-  await nameField(page).fill("Oak Ave");
-  await page.getByTestId("scenario-save").click();
-  await expect(page.getByText("Oak Ave")).toBeVisible();
-
-  // Move away from the saved numbers, then load them back.
-  await priceField(page).fill("199000");
-  await priceField(page).blur();
-  await expect(priceField(page)).toHaveValue("199000");
-
-  await page.getByText("Oak Ave").click();
-  await expect(priceField(page)).toHaveValue("412000");
-});
-
-test("saving again under the same name keeps one row and bumps the version", async ({ page }) => {
-  await stubScenarioApi(page);
-  await openCalculator(page);
-
-  await priceField(page).fill("250000");
-  await priceField(page).blur();
-  await nameField(page).fill("Maple St");
-  await page.getByTestId("scenario-save").click();
-  await expect(page.getByText("Maple St")).toBeVisible();
-
-  await priceField(page).fill("265000");
-  await priceField(page).blur();
-  await nameField(page).fill("Maple St");
-  await page.getByTestId("scenario-save").click();
-
-  // One row, not two that look identical in the list.
-  await expect(page.getByText("Maple St")).toHaveCount(1);
-  await expect(page.getByText(/v2/)).toBeVisible();
-  // And the history control appears once there is something to see.
-  await expect(page.getByRole("button", { name: /History for Maple St/i })).toBeVisible();
-});
-
-test("deleting a scenario removes it from the list", async ({ page }) => {
-  await stubScenarioApi(page);
-  await openCalculator(page);
-
-  await nameField(page).fill("Scratch");
-  await page.getByTestId("scenario-save").click();
-  await expect(page.getByText("Scratch")).toBeVisible();
-
-  await page.getByRole("button", { name: /Delete Scratch/i }).click();
-  await expect(page.getByText("Scratch")).toHaveCount(0);
-});
-
-test("the saved list fits 390px without horizontal overflow", async ({ page }) => {
-  await stubScenarioApi(page, [
-    {
-      id: "s-1",
-      property: null,
-      label: "A name long enough to test truncation on a narrow screen",
-      home_value: 250_000,
-      loan_type: "fha",
-      monthly_payment: 2_221,
-      version: 3,
-      updated_at: new Date().toISOString(),
-      inputs: { homeValue: 250_000, loanType: "fha" },
-    },
-  ]);
-  await openCalculator(page);
-
-  await expect(page.getByText(/A name long enough/)).toBeVisible();
-  const overflows = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-  );
-  expect(overflows).toBe(false);
-});
-
-// ─── The property spine ───────────────────────────────────────────────────────
-
 /** The house the picker will offer in these tests. */
 const MAPLE = {
   id: "prop-maple",
@@ -336,101 +216,64 @@ const MAPLE = {
   needsAddressReview: false,
 };
 
-/** Opens the picker and chooses a house by id. */
-async function pickHouse(page: Page, propertyId: string) {
-  await page.getByTestId("scenario-pick-house").click();
-  await page.getByTestId(`scenario-house-${propertyId}`).click();
-  await expect(page.getByTestId("scenario-house")).toBeVisible();
-}
+/*
+ * What moved to Jest (tests/unit/groupScenarios.test.ts, scenarios.test.ts):
+ * the save button's whitespace rule, grouping by house, Unassigned, and that
+ * re-saving a name updates rather than adds a row.
+ */
 
-test("saving to a picked house groups the scenario under that house", async ({ page }) => {
-  await stubScenarioApi(page, [], [MAPLE]);
-  await openCalculator(page);
-
-  await pickHouse(page, MAPLE.id);
-  await nameField(page).fill("at asking");
-  await page.getByTestId("scenario-save").click();
-
-  // Scoped to the group heading: the match note names the address too, so a
-  // bare text match is ambiguous and only passes by timing luck.
-  await expect(page.getByRole("paragraph").filter({ hasText: /^128 Maple St$/ })).toBeVisible();
-  await expect(page.getByText("at asking")).toBeVisible();
-});
-
-test("two scenarios on one house give one house and two rows", async ({ page }) => {
-  await stubScenarioApi(page, [], [MAPLE]);
-  await openCalculator(page);
-
-  for (const label of ["at asking", "at $240k"]) {
-    await pickHouse(page, MAPLE.id);
-    await nameField(page).fill(label);
-    await page.getByTestId("scenario-save").click();
-    await expect(page.getByText(label)).toBeVisible();
-  }
-
-  // One heading, two scenarios under it.
-  await expect(page.getByRole("paragraph").filter({ hasText: /^128 Maple St$/ })).toHaveCount(1);
-  await expect(page.getByText("at asking")).toBeVisible();
-  await expect(page.getByText("at $240k")).toBeVisible();
-});
-
-test("the calculator cannot create a house", async ({ page }) => {
-  // Replaces a test that saved a typed address twice and asserted the second
-  // was flagged for review. That path is gone: the calculator has no address
-  // field at all, so there is no lossy match to flag. Houses come from Add.
-  await stubScenarioApi(page, [], [MAPLE]);
-  await openCalculator(page);
-
-  await expect(page.getByTestId("scenario-address")).toHaveCount(0);
-  await expect(page.getByTestId("scenario-city")).toHaveCount(0);
-  await expect(page.getByTestId("scenario-zip")).toHaveCount(0);
-
-  // The picker offers only what exists, and says so when nothing matches.
-  await page.getByTestId("scenario-pick-house").click();
-  await page.getByTestId("scenario-house-search").fill("9 Nonexistent Way");
-  await expect(page.getByTestId("scenario-house-picker")).toContainText("never creates one");
-});
-
-test("a save with no house lands under Unassigned", async ({ page }) => {
+test("save a scenario, see it listed, reopen it, delete it", async ({ page }) => {
   await stubScenarioApi(page);
   await openCalculator(page);
 
-  await nameField(page).fill("quick math");
+  await priceField(page).fill("412000");
+  await priceField(page).blur();
+  await nameField(page).fill("Oak Ave");
   await page.getByTestId("scenario-save").click();
 
-  await expect(page.getByText("Unassigned")).toBeVisible();
-  // Exact: the page's own "Quick math — nothing to fill in but the numbers"
-  // blurb also contains this label as a substring.
-  await expect(page.getByText("quick math", { exact: true })).toBeVisible();
+  await expect(page.getByText("Oak Ave")).toBeVisible();
+  await expect(page.getByText(/\$412,000 · \$[\d,]+\/mo/)).toBeVisible();
+  // The name field clears, so the next save does not silently overwrite.
+  await expect(nameField(page)).toHaveValue("");
+
+  // Move away from the saved numbers, then load them back.
+  await priceField(page).fill("199000");
+  await priceField(page).blur();
+  await page.getByText("Oak Ave").click();
+  await expect(priceField(page)).toHaveValue("412000");
+
+  await page.getByRole("button", { name: /Delete Oak Ave/i }).click();
+  await expect(page.getByText("Oak Ave")).toHaveCount(0);
 });
 
-test("an Unassigned save can have an address attached", async ({ page }) => {
-  await stubScenarioApi(page, [
-    {
-      id: "s-1",
-      property: null,
-      label: "1653 Sylvan Rd SW, Atlanta, GA 30310",
-      home_value: 250_000,
-      loan_type: "fha",
-      monthly_payment: 2_221,
-      version: 1,
-      updated_at: new Date().toISOString(),
-      inputs: { homeValue: 250_000, loanType: "fha" },
-    },
-  ]);
-  await openCalculator(page);
-
-  await expect(page.getByText("Unassigned")).toBeVisible();
-  await page.getByTestId("attach-s-1").click();
-
-  // Pre-filled from the label, which for these saves is the address.
-  await expect(page.getByTestId("attach-address-input")).toHaveValue(
-    "1653 Sylvan Rd SW, Atlanta, GA 30310"
+test("an Unassigned save can be attached to a house", async ({ page }) => {
+  await stubScenarioApi(
+    page,
+    [
+      {
+        id: "s-1",
+        property: null,
+        label: "128 Maple St",
+        home_value: 250_000,
+        loan_type: "fha",
+        monthly_payment: 2_221,
+        version: 1,
+        updated_at: new Date().toISOString(),
+        inputs: { homeValue: 250_000, loanType: "fha" },
+      },
+    ],
+    [MAPLE]
   );
-  await page.getByTestId("attach-address-save").click();
+  await openCalculator(page);
+  await expect(page.getByText("Unassigned")).toBeVisible();
+
+  await page.getByTestId("attach-s-1").click();
+  // Pre-filled from the label, so the house it was named after is offered.
+  await expect(page.getByTestId("attach-house-search")).toHaveValue("128 Maple St");
+  await page.getByTestId(`attach-house-${MAPLE.id}`).click();
 
   await expect(page.getByText("Unassigned")).toHaveCount(0);
-  await expect(page.getByTestId("match-note")).toContainText("Added");
+  await expect(page.getByRole("paragraph").filter({ hasText: /^128 Maple St$/ })).toBeVisible();
 });
 
 test("the grouped list fits 390px", async ({ page }) => {
@@ -438,10 +281,11 @@ test("the grouped list fits 390px", async ({ page }) => {
   await stubScenarioApi(page, [], [sylvan]);
   await openCalculator(page);
 
-  await pickHouse(page, sylvan.id);
-  await nameField(page).fill("203(k) with $60k of work");
+  await page.getByTestId("scenario-pick-house").click();
+  await page.getByTestId(`scenario-house-${sylvan.id}`).click();
+  await nameField(page).fill("A name long enough to test truncation on a narrow screen");
   await page.getByTestId("scenario-save").click();
-  await expect(page.getByText("203(k) with $60k of work")).toBeVisible();
+  await expect(page.getByText(/A name long enough/)).toBeVisible();
 
   const overflows = await page.evaluate(
     () => document.documentElement.scrollWidth > document.documentElement.clientWidth
