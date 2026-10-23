@@ -43,6 +43,7 @@ import { DealPanel } from "./DealPanel";
 import { EditHouseForm, type EditableHouse } from "./EditHouseForm";
 import { searchUrls } from "./CompLinks";
 import { propertyTypeLabel } from "@/lib/property/types";
+import { specLabels } from "@/lib/screen/specLine";
 import { useCrmContext } from "./useCrmContext";
 
 const ACTIVITY_LABEL: Record<ActivityType, string> = {
@@ -181,6 +182,7 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
   }
 
   const property = detail?.property;
+  const specs = property ? specLabels(property) : null;
 
   // This house's financing analyses. Fetched once the property is known, since
   // the Numbers tab is scoped to it. A useCallback rather than a bare effect so
@@ -543,9 +545,9 @@ export function PropertyDetailPage({ entryId }: { entryId: string }) {
                   {property && (
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1 text-[12px] text-(--color-text-primary)">
                       {[
-                        [<BedDouble key="b" size={14} />, property.beds === null ? null : `${property.beds} bed`],
-                        [<Bath key="t" size={14} />, property.baths === null ? null : `${property.baths} bath`],
-                        [<Ruler key="r" size={14} />, property.sqft === null ? null : `${property.sqft.toLocaleString()} sq ft`],
+                        [<BedDouble key="b" size={14} />, specs?.beds ?? null],
+                        [<Bath key="t" size={14} />, specs?.baths ?? null],
+                        [<Ruler key="r" size={14} />, specs?.sqft ?? null],
                         [<CalendarDays key="c" size={14} />, property.year_built === null ? null : `${property.year_built}`],
                         [<Home key="h" size={14} />, propertyTypeLabel(property.property_type)],
                       ]
