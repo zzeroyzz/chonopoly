@@ -4,6 +4,7 @@ import { type Database } from "../supabase/database.types";
 type PropertyInsert = Database["public"]["Tables"]["properties"]["Insert"];
 import { RequestContext } from "../context";
 import { addressHash } from "./address";
+import { geocodeAddress } from "../census/geocode";
 import {
   type Property,
   type PropertyInput,
@@ -128,6 +129,19 @@ export async function upsertProperty(
   // This was because `list_price` was not in the generated types. It is now
   // (confirmed 2026-10-21), so the cast is no longer load-bearing and can go
   // with the tolerating write above. Left together, as one decision.
+  // Placed on the map as it is saved, unless the caller already knows where
+  // it is. Null when the geocoder finds nothing or is down; the house saves
+  // either way.
+  const located =
+    input.latitude != null && input.longitude != null
+      ? null
+      : await geocodeAddress({
+          addressLine1: input.address_line1,
+          city: input.city ?? null,
+          state: input.state ?? "GA",
+          zip: input.zip ?? null,
+        });
+
   const insertRow = (withPrice: boolean) =>
     ({
       owner_type: ctx.type,
@@ -147,8 +161,8 @@ export async function upsertProperty(
       sqft: input.sqft ?? null,
       lot_sqft: input.lot_sqft ?? null,
       year_built: input.year_built ?? null,
-      latitude: input.latitude ?? null,
-      longitude: input.longitude ?? null,
+      latitude: input.latitude ?? located?.latitude ?? null,
+      longitude: input.longitude ?? located?.longitude ?? null,
       description: input.description ?? null,
       photo_url: input.photo_url ?? null,
       listing_url: input.listing_url ?? null,
@@ -323,14 +337,21 @@ export async function updatePropertyFacts(
   if (patch.zip !== undefined) update.zip = patch.zip;
 
   if (addressChanged) {
-    update.address_hash = addressHash({
+    const nextAddress = {
       addressLine1: (update.address_line1 as string) ?? existing.address_line1,
       city: (patch.city !== undefined ? patch.city : existing.city) ?? null,
       state: (patch.state !== undefined ? patch.state : existing.state) ?? null,
       zip: (patch.zip !== undefined ? patch.zip : existing.zip) ?? null,
-    });
+    };
+    update.address_hash = addressHash(nextAddress);
     // Typing the address by hand is the review the flag was asking for.
     update.needs_address_review = false;
+
+    // The old point belongs to the old address, so it is replaced — with null
+    // when the new one cannot be placed, rather than kept and wrong.
+    const located = await geocodeAddress(nextAddress);
+    update.latitude = located?.latitude ?? null;
+    update.longitude = located?.longitude ?? null;
   }
 
   // Facts. Only the keys actually sent, so an omitted field is left alone
