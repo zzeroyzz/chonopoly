@@ -108,6 +108,22 @@ describe("the row's figures", () => {
     expect([row.beds, row.baths, row.sqft]).toEqual([3, 2, 1_180]);
   });
 
+  it("carries the house's map point", () => {
+    const row = buildScreenRow(house({ latitude: 33.56, longitude: -84.58 }), {
+      profile: profile(),
+      now: NOW,
+    });
+    expect([row.latitude, row.longitude]).toEqual([33.56, -84.58]);
+  });
+
+  it("drops a half-known map point rather than pinning it at zero", () => {
+    const row = buildScreenRow(house({ latitude: 33.56, longitude: null }), {
+      profile: profile(),
+      now: NOW,
+    });
+    expect([row.latitude, row.longitude]).toEqual([null, null]);
+  });
+
   it("reads missing facts as null, not zero", () => {
     const row = buildScreenRow(house({ sqft: null }), { profile: profile(), now: NOW });
     expect([row.beds, row.baths, row.sqft]).toEqual([null, null, null]);

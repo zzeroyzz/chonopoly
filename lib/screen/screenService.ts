@@ -41,6 +41,8 @@ const PROPERTY_FIELDS: PropertyColumn[] = [
   "annual_taxes",
   "listing_url",
   "photo_url",
+  "latitude",
+  "longitude",
   "needs_address_review",
   "visit_completed_at",
   "created_at",
@@ -78,6 +80,9 @@ export async function loadScreenRows(
     annual_taxes: number | null;
     listing_url: string | null;
     photo_url: string | null;
+    // `numeric` columns, which PostgREST can send as strings.
+    latitude: number | string | null;
+    longitude: number | string | null;
     needs_address_review: boolean;
     visit_completed_at: string | null;
   }[];
@@ -187,6 +192,8 @@ export async function loadScreenRows(
       annualTaxes: row.annual_taxes,
       listingUrl: row.listing_url,
       photoUrl: row.photo_url,
+      latitude: row.latitude === null ? null : Number(row.latitude),
+      longitude: row.longitude === null ? null : Number(row.longitude),
       needsAddressReview: row.needs_address_review,
       visitCompletedAt: row.visit_completed_at,
       isFinalist: row.is_finalist ?? false,

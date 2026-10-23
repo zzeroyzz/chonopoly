@@ -55,6 +55,9 @@ export interface ScreenHouse {
   annualTaxes: number | null;
   listingUrl: string | null;
   photoUrl?: string | null;
+  /** Where the map puts the house. Null until it has been geocoded. */
+  latitude?: number | null;
+  longitude?: number | null;
   needsAddressReview: boolean;
   visitCompletedAt: string | null;
   /**
@@ -116,6 +119,9 @@ export interface ScreenRow {
   beds: number | null;
   baths: number | null;
   sqft: number | null;
+  /** The map pin. Both null, or both set — a half-known point is no point. */
+  latitude: number | null;
+  longitude: number | null;
   /** Everything the compare view needs, from the same build as the card. */
   loanType: string;
   /** True profit over cash in. Null when no cash went in. */
@@ -154,6 +160,19 @@ export interface ScreenRow {
 export interface ScreenContext {
   profile: BuyerProfile | null;
   now?: Date;
+}
+
+/** Both coordinates, finite, or neither. */
+function mapPoint(
+  latitude: number | null,
+  longitude: number | null
+): { latitude: number | null; longitude: number | null } {
+  const usable =
+    latitude !== null &&
+    longitude !== null &&
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude);
+  return usable ? { latitude, longitude } : { latitude: null, longitude: null };
 }
 
 export function buildScreenRow(house: ScreenHouse, context: ScreenContext): ScreenRow {
@@ -309,6 +328,7 @@ export function buildScreenRow(house: ScreenHouse, context: ScreenContext): Scre
     beds: house.beds ?? null,
     baths: house.baths,
     sqft: house.sqft,
+    ...mapPoint(house.latitude ?? null, house.longitude ?? null),
     loanType: inputs.loanType,
     roiPct: deal.roiPct,
     cashIn: deal.cashIn,
