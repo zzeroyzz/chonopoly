@@ -503,58 +503,64 @@ test("the Comps tab, its lock row, the confirm and the manual form fit 390px", a
   expect(await fits(), "the manual form").toBe(true);
 });
 
-test("the review sheet sits above the bottom bar and holds the list still, at 390px", async ({
-  page,
-}) => {
-  // On a phone the sheet rendered inside the house page's sheet (a stacking
-  // context), so the bottom bar painted over it, and it locked the body while
-  // the app scrolls its own container, so a swipe moved the list behind it.
-  await stubComps(page, { unreviewed: true });
-  await openCompsTab(page);
-  const reviews: string[] = [];
-  page.on("request", (req) => {
-    if (req.method() === "PATCH" && /\/comps\/[^/?]+/.test(req.url())) reviews.push(req.postData() ?? "");
-  });
+// Touch, not a mouse: the owner reviews on a phone, and a sheet a mouse can
+// click is not proof a thumb can tap it.
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true, isMobile: true });
 
-  await page.getByTestId("comp-review-answer").click();
-  const sheet = page.getByTestId("comp-review-sheet");
-  await expect(sheet).toBeVisible();
-
-  // Where the bottom bar is, the sheet is on top of it.
-  const bar = page.locator("nav").filter({ has: page.getByTestId("nav-properties") }).last();
-  const barBox = await bar.boundingBox();
-  expect(barBox).not.toBeNull();
-  const onTop = await page.evaluate(
-    ({ x, y }) => {
-      const hit = document.elementFromPoint(x, y);
-      return hit?.closest("nav") ? "bar" : "sheet";
-    },
-    { x: barBox!.x + barBox!.width / 2, y: barBox!.y + barBox!.height / 2 }
-  );
-  expect(onTop).toBe("sheet");
-
-  // A swipe on the sheet does not move the list behind it.
-  const scrollerTop = () =>
-    page.getByTestId("comp-review-sheet").evaluate(() => {
-      const card = document.querySelector('[data-testid^="comp-review-card-"]');
-      for (let n = card?.parentElement ?? null; n; n = n.parentElement) {
-        if (n.scrollHeight > n.clientHeight && /auto|scroll|hidden/.test(getComputedStyle(n).overflowY)) {
-          return n.scrollTop;
-        }
-      }
-      return window.scrollY;
+  test("the review sheet sits above the bottom bar and holds the list still, at 390px", async ({
+    page,
+  }) => {
+    // On a phone the sheet rendered inside the house page's sheet (a stacking
+    // context), so the bottom bar painted over it, and it locked the body while
+    // the app scrolls its own container, so a swipe moved the list behind it.
+    await stubComps(page, { unreviewed: true });
+    await openCompsTab(page);
+    const reviews: string[] = [];
+    page.on("request", (req) => {
+      if (req.method() === "PATCH" && /\/comps\/[^/?]+/.test(req.url())) reviews.push(req.postData() ?? "");
     });
-  const before = await scrollerTop();
-  const sheetBox = await sheet.boundingBox();
-  await page.mouse.move(sheetBox!.x + sheetBox!.width / 2, sheetBox!.y + 40);
-  await page.mouse.wheel(0, 600);
-  await page.waitForTimeout(300);
-  expect(await scrollerTop()).toBe(before);
 
-  // Every choice is reachable, and choosing one closes the sheet and records it.
-  const last = sheet.locator('[role="radio"]').last();
-  await last.scrollIntoViewIfNeeded();
-  await last.click();
-  await expect(sheet).toHaveCount(0);
-  await expect.poll(() => reviews.length).toBe(1);
+    await page.getByTestId("comp-review-answer").tap();
+    const sheet = page.getByTestId("comp-review-sheet");
+    await expect(sheet).toBeVisible();
+
+    // Where the bottom bar is, the sheet is on top of it.
+    const bar = page.locator("nav").filter({ has: page.getByTestId("nav-properties") }).last();
+    const barBox = await bar.boundingBox();
+    expect(barBox).not.toBeNull();
+    const onTop = await page.evaluate(
+      ({ x, y }) => {
+        const hit = document.elementFromPoint(x, y);
+        return hit?.closest("nav") ? "bar" : "sheet";
+      },
+      { x: barBox!.x + barBox!.width / 2, y: barBox!.y + barBox!.height / 2 }
+    );
+    expect(onTop).toBe("sheet");
+
+    // A swipe on the sheet does not move the list behind it.
+    const scrollerTop = () =>
+      page.getByTestId("comp-review-sheet").evaluate(() => {
+        const card = document.querySelector('[data-testid^="comp-review-card-"]');
+        for (let n = card?.parentElement ?? null; n; n = n.parentElement) {
+          if (n.scrollHeight > n.clientHeight && /auto|scroll|hidden/.test(getComputedStyle(n).overflowY)) {
+            return n.scrollTop;
+          }
+        }
+        return window.scrollY;
+      });
+    const before = await scrollerTop();
+    const sheetBox = await sheet.boundingBox();
+    await page.mouse.move(sheetBox!.x + sheetBox!.width / 2, sheetBox!.y + 40);
+    await page.mouse.wheel(0, 600);
+    await page.waitForTimeout(300);
+    expect(await scrollerTop()).toBe(before);
+
+    // Every choice is reachable, and choosing one closes the sheet and records it.
+    const last = sheet.locator('[role="radio"]').last();
+    await last.scrollIntoViewIfNeeded();
+    await last.tap();
+    await expect(sheet).toHaveCount(0);
+    await expect.poll(() => reviews.length).toBe(1);
+  });
 });
