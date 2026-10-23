@@ -396,8 +396,15 @@ test("the row and the map point at the same house", async ({ page }) => {
   // The first card is chosen until something else is.
   await expect(page.getByTestId("screen-row-a")).toHaveAttribute("data-selected", "yes");
 
-  // Tapping a pin chooses its house.
+  // Tapping a pin chooses its house, brings its card into the row's view,
+  // and keeps it chosen once the row has stopped moving. It used to flip
+  // back to the first card when the row settled.
   await page.locator('.leaflet-marker-icon[title="$100k"] span').click();
+  await expect(page.getByTestId("screen-row-b")).toHaveAttribute("data-selected", "yes");
+  await expect
+    .poll(() => page.getByTestId("screen-table").evaluate((row) => row.scrollLeft))
+    .toBeGreaterThan(0);
+  await page.waitForTimeout(600);
   await expect(page.getByTestId("screen-row-b")).toHaveAttribute("data-selected", "yes");
   await expect(page.getByTestId("screen-row-a")).toHaveAttribute("data-selected", "no");
 

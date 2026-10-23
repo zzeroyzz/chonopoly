@@ -33,6 +33,8 @@ const HouseMap = dynamic(() => import("./HouseMap").then((module) => module.Hous
 
 /** How long the row has to sit still before the card in the middle counts as chosen. */
 const SCROLL_SETTLE_MS = 120;
+/** Within this of either end, the row counts as at that end. */
+const ROW_END_SLACK_PX = 4;
 
 /**
  * Every house, with its numbers and both verdicts.
@@ -72,6 +74,13 @@ export function PropertiesPage({ mapTilesKey }: { mapTilesKey: string | null }) 
   const rowRef = useRef<HTMLUListElement>(null);
   const cardRefs = useRef(new Map<string, HTMLLIElement>());
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * Set while the row is scrolling because a pin was tapped. That scroll is
+   * the app's, not the owner's, so when it settles it must not re-pick a card:
+   * the last card cannot reach the middle, and re-picking chose its
+   * neighbour instead of the house that was tapped.
+   */
+  const scrollingToPin = useRef(false);
 
   useEffect(
     () => () => {
@@ -158,6 +167,21 @@ export function PropertiesPage({ mapTilesKey }: { mapTilesKey: string | null }) 
     settleTimer.current = setTimeout(() => {
       const row = rowRef.current;
       if (!row) return;
+      if (scrollingToPin.current) {
+        scrollingToPin.current = false;
+        return;
+      }
+      // The ends of the row choose its ends: the first and last cards cannot
+      // be scrolled to the middle, so "nearest the middle" never picks them.
+      const ids = visible.map((r) => r.propertyId);
+      if (row.scrollLeft <= ROW_END_SLACK_PX) {
+        setSelectedId(ids[0] ?? null);
+        return;
+      }
+      if (row.scrollLeft + row.clientWidth >= row.scrollWidth - ROW_END_SLACK_PX) {
+        setSelectedId(ids[ids.length - 1] ?? null);
+        return;
+      }
       const box = row.getBoundingClientRect();
       const middle = box.left + box.width / 2;
       let nearest: string | null = null;
@@ -174,12 +198,26 @@ export function PropertiesPage({ mapTilesKey }: { mapTilesKey: string | null }) 
     }, SCROLL_SETTLE_MS);
   }
 
-  /** A pin was tapped: choose that house and bring its card to the middle. */
+  /**
+   * A pin was tapped: choose that house and bring its card to the middle.
+   *
+   * The row is scrolled directly rather than with scrollIntoView, which also
+   * scrolled the page up to the row — away from the map that was just tapped.
+   */
   function selectFromMap(propertyId: string) {
     setSelectedId(propertyId);
-    cardRefs.current
-      .get(propertyId)
-      ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+    const row = rowRef.current;
+    const card = cardRefs.current.get(propertyId);
+    if (!row || !card) return;
+
+    const rowBox = row.getBoundingClientRect();
+    const cardBox = card.getBoundingClientRect();
+    const left = row.scrollLeft + (cardBox.left - rowBox.left) - (rowBox.width - cardBox.width) / 2;
+    const reachable = Math.max(0, Math.min(left, row.scrollWidth - row.clientWidth));
+    if (Math.abs(reachable - row.scrollLeft) < 1) return;
+
+    scrollingToPin.current = true;
+    row.scrollTo({ left: reachable, behavior: "smooth" });
   }
 
   return (
@@ -414,7 +452,9 @@ export function PropertiesPage({ mapTilesKey }: { mapTilesKey: string | null }) 
               {pins.length === 0 && (
                 <p
                   data-testid="map-empty"
-                  className="absolute inset-x-4 top-4 z-[1000] rounded-(--radius-md) bg-(--color-overlay) px-3 py-2.5 text-(length:--type-body-sm-size) leading-(--type-body-sm-leading) text-(--color-text-primary)"
+                  // At the bottom, clear of the zoom buttons it used to cover
+                  // and above the map credit.
+                  className="absolute inset-x-4 bottom-8 z-[1000] rounded-(--radius-md) bg-(--color-overlay) px-3 py-2.5 text-(length:--type-body-sm-size) leading-(--type-body-sm-leading) text-(--color-text-primary)"
                 >
                   We don&apos;t know where these houses are yet. We place a house when
                   it&apos;s added or its address changes.
