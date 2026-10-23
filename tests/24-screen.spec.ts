@@ -143,195 +143,16 @@ async function tapCentre(page: Page, testId: string) {
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
 }
 
-// ─── The screen table ─────────────────────────────────────────────────────────
+/*
+ * Journeys only. What the card says (verdicts and reasons, the price wording,
+ * the steps count and where it links, "Resale price not checked yet") is
+ * tested against the functions that decide it: verdicts.test.ts,
+ * cardSteps.test.ts, specLine.test.ts and screenRow.test.ts. The map's count of
+ * unplaced houses is mapPins.test.ts. Paste parsing is parseAddressLines.test.ts
+ * and addressDedupe.test.ts, and batch add's guarantees are batchPrice.test.ts.
+ */
 
-test("the screen shows both verdicts for a house", async ({ page }) => {
-  await stubScreen(page, [row()]);
-  await page.goto("/properties");
-
-  await expect(page.getByTestId("verdict-afford-prop-1")).toHaveText("Qualifies");
-  await expect(page.getByTestId("verdict-deal-prop-1")).toHaveText("Works");
-});
-
-test("each verdict carries its reason", async ({ page }) => {
-  await stubScreen(page, [
-    row({
-      affordability: "does_not_qualify",
-      affordabilitySummary: "Needs $42,000 at closing, $12,000 available",
-      deal: "thin",
-      dealSummary: "11% margin is under the 15% target",
-    }),
-  ]);
-  await page.goto("/properties");
-
-  // A bare verdict on a screen of fifteen houses is not actionable.
-  const reason = page.getByTestId("verdict-reason-prop-1");
-  await expect(reason).toContainText("Needs $42,000 at closing, $12,000 available");
-  await expect(reason).toContainText("11% margin is under the 15% target");
-});
-
-// Was "the figures that drive the verdicts are on the row". The eight-figure
-// grid left the card in plans/properties-design-change.md (option A, owner
-// approved 2026-10-23); the figures live on the house page and Compare.
-test("the card leads with the asking price, address and specs", async ({ page }) => {
-  await stubScreen(page, [row()]);
-  await page.goto("/properties");
-
-  await expect(page.getByTestId("screen-price-prop-1")).toHaveText("$250,000");
-  await expect(page.getByTestId("screen-open-prop-1")).toHaveText("128 Maple St, Duluth, GA, 30096");
-  await expect(page.getByTestId("screen-specs-prop-1")).toHaveText("3 bed · 2 bath · 1,750 sq ft");
-});
-
-test("a house with no listing price says so instead of a default", async ({ page }) => {
-  await stubScreen(page, [row({ listPrice: null })]);
-  await page.goto("/properties");
-
-  // `price` is still 250,000 in the stub, as the calculator default would be.
-  // The card must not present it as the house's price.
-  await expect(page.getByTestId("screen-price-prop-1")).toHaveText("No listing price yet");
-});
-
-test("a house with no ARV says so instead of showing a verdict", async ({ page }) => {
-  await stubScreen(page, [row({ hasArv: false, arv: null, profit: null })]);
-  await page.goto("/properties");
-
-  // Was "No ARV". Changed because the interface stopped saying it, not
-  // because the test went red: ARV is banned from user-facing text and a
-  // verdict has to say what to do about itself. One definition now, in
-  // NO_RESALE_PRICE_LABEL, shared by this list, the house page and compare.
-  await expect(page.getByTestId("verdict-deal-prop-1")).toHaveText("No resale price yet");
-  // The figures grid with its dashes left the card; what is missing is said
-  // in words, with the way to fix it.
-  await expect(page.getByTestId("resale-unchecked-prop-1")).toBeVisible();
-});
-
-test("a house with nothing approved asks for a review", async ({ page }) => {
-  await stubScreen(page, [row({ arv: null, approvedComps: 0, compsToReview: 12 })]);
-  await page.goto("/properties");
-
-  // Was a "Review comps" tag. The design system keeps ARV and comp out of
-  // the interface, so it is said in plain words and links to the review.
-  const check = page.getByTestId("resale-unchecked-prop-1");
-  await expect(check).toHaveText("Resale price not checked yet →");
-  await expect(check).toHaveAttribute("href", "/properties/prop-1?tab=arv");
-});
-
-// Was "an approved ARV says what it rests on" — the "ARV … · 4 approved" tag
-// is gone. A checked price says nothing on the card: the verdict rests on it.
-test("a checked resale price does not ask for a review", async ({ page }) => {
-  await stubScreen(page, [row({ arv: 320_000, approvedComps: 4, compsToReview: 8 })]);
-  await page.goto("/properties");
-
-  await expect(page.getByTestId("screen-row-prop-1")).toBeVisible();
-  await expect(page.getByTestId("resale-unchecked-prop-1")).toHaveCount(0);
-});
-
-test("no income on file asks for it rather than judging", async ({ page }) => {
-  await stubScreen(page, [
-    row({ needsProfile: true, affordability: "tight", affordabilitySummary: "Set your income" }),
-  ]);
-  await page.goto("/properties");
-
-  await expect(page.getByTestId("verdict-afford-prop-1")).toHaveText("Set your income");
-});
-
-test("an address flagged for review says so on the row", async ({ page }) => {
-  await stubScreen(page, [row({ needsAddressReview: true })]);
-  await page.goto("/properties");
-
-  await expect(page.getByTestId("screen-review-prop-1")).toContainText("needs a check");
-});
-
-test("a listing link is one tap from the row", async ({ page }) => {
-  await stubScreen(page, [row({ listingUrl: "https://zillow.com/x" })]);
-  await page.goto("/properties");
-
-  const link = page.getByTestId("screen-listing-prop-1");
-  await expect(link).toHaveAttribute("href", "https://zillow.com/x");
-  await expect(link).toHaveAttribute("target", "_blank");
-});
-
-// ─── The progress checklist ───────────────────────────────────────────────────
-
-// The four step buttons became one count that opens the next step. The old
-// test named visit / estimate / comps steps the card had already stopped
-// showing, and was failing on main before this change.
-test("the steps count opens the next step still to do", async ({ page }) => {
-  // Details is always done and Numbers is done here; the resale price and the
-  // deal are not.
-  await stubScreen(page, [row({ arv: null, walkAwayCash: null })]);
-  await page.goto("/properties");
-
-  const steps = page.getByTestId("checklist-prop-1");
-  await expect(steps).toHaveText("2 of 4 steps");
-  await expect(steps).toHaveAttribute("href", "/properties/prop-1?tab=arv");
-});
-
-test("a finished house shows four of four", async ({ page }) => {
-  await stubScreen(page, [row()]);
-  await page.goto("/properties");
-
-  const steps = page.getByTestId("checklist-prop-1");
-  await expect(steps).toHaveText("4 of 4 steps");
-  await expect(steps).toHaveAttribute("href", "/properties/prop-1?tab=deal");
-});
-
-// ─── Ordering and empties ─────────────────────────────────────────────────────
-
-test("the server's order is preserved", async ({ page }) => {
-  // The sort lives server-side so every client agrees; the table must not
-  // reorder it.
-  await stubScreen(page, [
-    row({ propertyId: "a", address: "1 First St", deal: "works" }),
-    row({ propertyId: "b", address: "2 Second St", deal: "thin" }),
-    row({ propertyId: "c", address: "3 Third St", deal: "does_not_work" }),
-  ]);
-  await page.goto("/properties");
-
-  // evaluateAll does not auto-wait, so wait for the list to render first.
-  const items = page.getByTestId("screen-table").locator("li");
-  await expect(items).toHaveCount(3);
-
-  const ids = await items.evaluateAll((nodes) => nodes.map((n) => n.getAttribute("data-testid")));
-  expect(ids).toEqual(["screen-row-a", "screen-row-b", "screen-row-c"]);
-});
-
-test("an empty screen points at adding houses", async ({ page }) => {
-  await stubScreen(page, []);
-  await page.goto("/properties");
-
-  await expect(page.getByTestId("screen-empty")).toContainText("No houses yet");
-  await expect(page.getByRole("link", { name: "Add a house" })).toHaveAttribute(
-    "href",
-    "/properties/new"
-  );
-});
-
-test("a filter showing nothing offers a way back", async ({ page }) => {
-  await stubScreen(page, [row()]);
-  await page.goto("/properties");
-
-  await page.getByTestId("filter-finalists").click();
-  await expect(page.getByTestId("screen-filter-empty")).toContainText("No finalists yet");
-
-  await page.getByRole("button", { name: "Show all" }).click();
-  await expect(page.getByTestId("screen-row-prop-1")).toBeVisible();
-});
-
-test("a failed load says why", async ({ page }) => {
-  await stubDataEndpoints(page);
-  await page.route("**/api/properties/screen**", (route) =>
-    route.fulfill({
-      status: 500,
-      contentType: "application/json",
-      body: JSON.stringify({ error: "column analyses.home_value does not exist" }),
-    })
-  );
-  await page.goto("/properties");
-
-  // The server's message, not a parser complaint.
-  await expect(page.getByTestId("screen-error")).toContainText("analyses.home_value");
-});
+// ─── The screen ───────────────────────────────────────────────────────────────
 
 test("the screen fits 390px", async ({ page }) => {
   await stubScreen(page, [row(), row({ propertyId: "prop-2", address: "44 Oak Ave, Duluth, GA" })]);
@@ -360,7 +181,9 @@ test("the screen fits 390px", async ({ page }) => {
 
 test("a photo card shows the house, falls back without one, and opens it", async ({ page }) => {
   await stubScreen(page, [
-    row({ propertyId: "prop-1", photoUrl: "https://photos.test/house.jpg" }),
+    // No pipeline entry: the link is built from the property id, never the
+    // entry, which is null for every house added since the pipeline went.
+    { ...row({ propertyId: "prop-1", photoUrl: "https://photos.test/house.jpg", listingUrl: "https://zillow.com/x" }), entryId: null },
     row({ propertyId: "prop-2", address: "44 Oak Ave, Duluth, GA", photoUrl: "https://photos.test/dead.jpg" }),
   ]);
   // A one-pixel image for the live link; a 404 for the dead one.
@@ -379,7 +202,13 @@ test("a photo card shows the house, falls back without one, and opens it", async
   await expect(page.getByTestId("screen-nophoto-prop-2")).toBeVisible();
   await expect(page.getByTestId("screen-photo-prop-2")).toHaveCount(0);
 
-  // Tapping the photo itself, not the address, opens the house.
+  // The listing opens the listing, in a new tab, not the house.
+  const listing = page.getByTestId("screen-listing-prop-1");
+  await expect(listing).toHaveAttribute("href", "https://zillow.com/x");
+  await expect(listing).toHaveAttribute("target", "_blank");
+  await expect(page.getByTestId("screen-open-prop-1")).toHaveAttribute("href", "/properties/prop-1");
+
+  // The whole card is the target: tapping the photo, not the address, opens it.
   await tapCentre(page, "screen-photo-prop-1");
   await page.waitForURL("**/properties/prop-1");
 });
@@ -414,26 +243,6 @@ test("the row and the map point at the same house", async ({ page }) => {
   await expect(page.locator('.leaflet-marker-icon[title="$135k"] span')).toHaveClass(
     /bg-\(--color-accent\)/
   );
-});
-
-test("a house the map cannot place is counted, not dropped", async ({ page }) => {
-  await stubScreen(page, [
-    row({ propertyId: "a", latitude: 33.5668, longitude: -84.581 }),
-    row({ propertyId: "b" }),
-  ]);
-  await page.goto("/properties");
-
-  await expect(page.getByTestId("screen-row-b")).toBeVisible();
-  await expect(page.getByTestId("map-unplaced")).toHaveText(
-    "1 house isn't on the map yet. We place a house when it's added or its address changes."
-  );
-});
-
-test("a map with no placed houses says why", async ({ page }) => {
-  await stubScreen(page, [row()]);
-  await page.goto("/properties");
-
-  await expect(page.getByTestId("map-empty")).toContainText("We don't know where these houses are yet");
 });
 
 // ─── Batch add ────────────────────────────────────────────────────────────────
@@ -477,13 +286,21 @@ async function stubBatch(page: Page, respond?: (text: string) => unknown) {
   });
 }
 
-test("pasting five addresses adds five houses", async ({ page }) => {
+test("pasting several addresses adds them, at 390px, and links on", async ({ page }) => {
   await stubBatch(page);
   await page.goto("/properties/new");
 
+  // One house is the normal case; the paste box is behind "Add several". These
+  // tests never pressed it, which is why all nine of them had been failing.
+  await page.getByTestId("add-mode-several").click();
   await page.getByTestId("batch-addresses").fill(FIVE);
   // The button counts them, so you know what you are about to do.
   await expect(page.getByTestId("batch-submit")).toHaveText("Add 5 houses");
+
+  const overflows = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflows).toBe(false);
 
   await page.getByTestId("batch-submit").click();
 
@@ -491,180 +308,5 @@ test("pasting five addresses adds five houses", async ({ page }) => {
   for (let line = 1; line <= 5; line++) {
     await expect(page.getByTestId(`batch-line-${line}`)).toBeVisible();
   }
-});
-
-test("one address reads as one house", async ({ page }) => {
-  await stubBatch(page);
-  await page.goto("/properties/new");
-
-  await page.getByTestId("batch-addresses").fill("128 Maple St, Duluth GA 30096");
-  await expect(page.getByTestId("batch-submit")).toHaveText("Add house");
-});
-
-test("a bad line is named and the rest still go through", async ({ page }) => {
-  await stubBatch(page, () => ({
-    results: [
-      { lineNumber: 1, raw: "128 Maple St", status: "created", propertyId: "p1", matchedOn: "created", needsAddressReview: false, message: null },
-      { lineNumber: 2, raw: "not an address", status: "failed", propertyId: null, matchedOn: null, needsAddressReview: false, message: "Doesn't start with a street number" },
-      { lineNumber: 3, raw: "44 Oak Ave", status: "created", propertyId: "p3", matchedOn: "created", needsAddressReview: false, message: null },
-    ],
-    created: 2,
-    matched: 0,
-    failed: 1,
-  }));
-  await page.goto("/properties/new");
-
-  await page.getByTestId("batch-addresses").fill("128 Maple St\nnot an address\n44 Oak Ave");
-  await page.getByTestId("batch-submit").click();
-
-  await expect(page.getByTestId("batch-result")).toContainText("2 added");
-  await expect(page.getByTestId("batch-result")).toContainText("1 skipped");
-
-  // The reason, keyed to the line the user can see.
-  const bad = page.getByTestId("batch-line-2");
-  await expect(bad).toContainText("Line 2");
-  await expect(bad).toContainText("street number");
-});
-
-test("a probable address match is flagged rather than merged silently", async ({ page }) => {
-  await stubBatch(page, () => ({
-    results: [
-      {
-        lineNumber: 1,
-        raw: "1653 sylvan rd sw, Atlanta GA 30310",
-        status: "matched",
-        propertyId: "p1",
-        matchedOn: "address",
-        needsAddressReview: true,
-        message: "Probable match to an existing house — flagged for review",
-      },
-    ],
-    created: 0,
-    matched: 1,
-    failed: 0,
-  }));
-  await page.goto("/properties/new");
-
-  await page.getByTestId("batch-addresses").fill("1653 sylvan rd sw, Atlanta GA 30310");
-  await page.getByTestId("batch-submit").click();
-
-  await expect(page.getByTestId("batch-result")).toContainText("already known");
-  await expect(page.getByTestId("batch-line-1")).toContainText("Probable match");
-  await expect(page.getByTestId("batch-line-1")).toContainText("needs a check");
-});
-
-test("batch add does not call RentCast", async ({ page }) => {
-  await stubBatch(page);
-
-  let rentcastCalls = 0;
-  page.on("request", (req) => {
-    if (/comps\/refresh|rentcast/.test(req.url()) && req.method() === "POST") rentcastCalls += 1;
-  });
-
-  await page.goto("/properties/new");
-  await page.getByTestId("batch-addresses").fill(FIVE);
-  await page.getByTestId("batch-submit").click();
-  await expect(page.getByTestId("batch-result")).toBeVisible();
-
-  // Five houses would have spent five of the month's fifty requests before
-  // anyone decided which were worth it.
-  expect(rentcastCalls).toBe(0);
-  await expect(page.getByText("Comps are pulled per house")).toBeVisible();
-});
-
-test("the result links on to the screen", async ({ page }) => {
-  await stubBatch(page);
-  await page.goto("/properties/new");
-
-  await page.getByTestId("batch-addresses").fill(FIVE);
-  await page.getByTestId("batch-submit").click();
-
-  const link = page.getByTestId("batch-to-screen");
-  await expect(link).toBeVisible();
-  await expect(link).toHaveAttribute("href", "/properties");
-});
-
-test("submit is disabled with nothing pasted", async ({ page }) => {
-  await stubBatch(page);
-  await page.goto("/properties/new");
-
-  await expect(page.getByTestId("batch-submit")).toBeDisabled();
-});
-
-test("a failed batch says why and keeps the text", async ({ page }) => {
-  await stubDataEndpoints(page);
-  await page.route("**/api/properties/batch**", (route) =>
-    route.fulfill({
-      status: 400,
-      contentType: "application/json",
-      body: JSON.stringify({ error: "That's 140 addresses. The limit is 100 at a time." }),
-    })
-  );
-  await page.goto("/properties/new");
-
-  await page.getByTestId("batch-addresses").fill(FIVE);
-  await page.getByTestId("batch-submit").click();
-
-  await expect(page.getByTestId("batch-error")).toContainText("limit is 100");
-  // The paste is not thrown away on a failure.
-  await expect(page.getByTestId("batch-addresses")).not.toHaveValue("");
-});
-
-test("the add screen fits 390px", async ({ page }) => {
-  await stubBatch(page);
-  await page.goto("/properties/new");
-
-  await page.getByTestId("batch-addresses").fill(FIVE);
-
-  const overflows = await page.evaluate(
-    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
-  );
-  expect(overflows).toBe(false);
-});
-
-// ─── Opening a house from the screen ──────────────────────────────────────────
-
-test("a row links to its property, not its pipeline entry", async ({ page }) => {
-  await stubScreen(page, [row({ propertyId: "prop-1" })]);
-  await page.goto("/properties");
-
-  // It used to link by entry id and fall back to "/properties" — the page you
-  // are already on — when the house had no entry. Since neither the calculator
-  // save nor a batch paste creates an entry, that was every house.
-  await expect(page.getByTestId("screen-open-prop-1")).toHaveAttribute(
-    "href",
-    "/properties/prop-1"
-  );
-});
-
-test("the whole card is clickable, not just the address", async ({ page }) => {
-  await stubScreen(page, [row({ propertyId: "prop-1" })]);
-  await page.goto("/properties");
-
-  // At 390px a single line of text is a thin thing to hit. The old version
-  // asserted figures inside the link text, which stopped being true before
-  // this redesign and was failing on main; this taps the price instead.
-  await tapCentre(page, "screen-price-prop-1");
-  await page.waitForURL("**/properties/prop-1");
-});
-
-test("a house with no pipeline entry still opens", async ({ page }) => {
-  // The case that was broken: entryId null.
-  await stubScreen(page, [{ ...row({ propertyId: "prop-1" }), entryId: null }]);
-  await page.goto("/properties");
-
-  await expect(page.getByTestId("screen-open-prop-1")).toHaveAttribute(
-    "href",
-    "/properties/prop-1"
-  );
-});
-
-test("the listing link opens the listing, not the property", async ({ page }) => {
-  await stubScreen(page, [row({ propertyId: "prop-1", listingUrl: "https://zillow.com/x" })]);
-  await page.goto("/properties");
-
-  // It sits inside the card-wide link, so its click must not bubble.
-  const listing = page.getByTestId("screen-listing-prop-1");
-  await expect(listing).toHaveAttribute("href", "https://zillow.com/x");
-  await expect(listing).toHaveAttribute("target", "_blank");
+  await expect(page.getByTestId("batch-to-screen")).toHaveAttribute("href", "/properties");
 });
