@@ -412,3 +412,49 @@ component for a plain function, with no behaviour change.
 **Totals:** 153 → **35** Playwright tests. 34 were planned. The extra one is
 comps' "a failed refresh keeps the comps", kept because the tab emptying
 itself was a real bug once, and only a browser shows it.
+
+## Outcome (2026-10-23)
+
+| | Before | After |
+|---|---|---|
+| Playwright tests | 153 | **35** |
+| Playwright result | 146 passed, 24 failed | **35 passed, 0 failed** |
+| Playwright run time | 8.6 min | **48 s** |
+| Jest tests | 548 | **600** (all pass) |
+| `tsc`, `npm run build` | pass | pass |
+| Lint | 13 errors, 22 warnings | 13 errors, 20 warnings (the errors pre-date this branch, in files or lines it did not change) |
+
+**Every spec now runs on its own.** `23-comps` used to fail 13 when run alone.
+
+**Rules lifted out of components** (no behaviour change), each now tested in
+Jest:
+- `lib/comps/refreshControls.ts`, from `CompsPanel`
+- `lib/comps/refreshMessages.ts`, from the refresh route
+- `lib/http/readJsonResponse.ts`, one copy instead of two, shared by
+  `CompsPanel` and `PropertiesPage`
+- `lib/rentcast/integrationStatus.ts`, from `IntegrationsPanel`
+- `lib/screen/cardSteps.ts`, from `PropertiesPage`
+- `lib/mortgage/groupScenarios.ts`, from `ScenarioBar`
+- `needsSalePrice` in `lib/comps/types.ts`, from `CompsPanel`
+
+There is also a shared test helper, `tests/unit/fakeDatabase.ts`.
+
+**Why the kept journeys had been failing.** All were stale tests or stubs, and
+none was a product bug:
+- **Batch add** never pressed "Add several".
+- **The attach stub** still created a house from a typed address.
+- **The calculator stub** answered the Properties list with a house body, and
+  sent analyses without `inputs`. The page crashed on both.
+
+**Departures from the mapping table:**
+- "Tools lists only calculators that exist" is **D**, not J. It checks that
+  two cards are absent, which is static. The redirects test sends those old
+  routes to Properties.
+- The dead pipeline fixtures `ROWS` and `COUNTS` in `19-crm.spec.ts` were
+  removed. Nothing had read them since the pipeline went.
+- The comps stub's five unused refresh modes went with the tests that used
+  them.
+
+**Follow-up, not done:** re-enabling the Playwright job in
+`.github/workflows/ci.yml`. At 48 seconds and green, it is now cheap to run
+on every PR. It is a config change, so it is the owner's call.
