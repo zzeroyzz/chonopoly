@@ -33,6 +33,7 @@ import {
   FieldLabel,
 } from "./fields";
 import { MONTH_OPTIONS, dollars } from "./format";
+import { hardMoneyFees, hardMoneyTermsFrom, sizeHardMoneyLoan } from "@/lib/mortgage/hardMoney";
 import { PropertyTaxLookup } from "./PropertyTaxLookup";
 
 interface Props {
@@ -124,6 +125,11 @@ export function InputPanel({
   const config = LOAN_TYPE_CONFIG[inputs.loanType];
   const [downMode, setDownMode] = useState<"currency" | "percent">("currency");
 
+  // The same sizing Numbers and Deal use, so the card shows what they compute.
+  const hardMoneyLoan = config.isHardMoney
+    ? sizeHardMoneyLoan(inputs.homeValue, inputs.renovationBudget, inputs.arv, hardMoneyTermsFrom(inputs))
+    : null;
+
   const downPercent = downPaymentPercent(inputs);
   const derivedLoan = baseLoanAmount(inputs);
 
@@ -200,57 +206,62 @@ export function InputPanel({
             min={0}
           />
 
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
-                Down payment
-              </span>
-              <SegmentedControl
-                ariaLabel="Down payment mode"
-                value={downMode}
-                onChange={setDownMode}
-                options={[
-                  { value: "currency", label: "$" },
-                  { value: "percent", label: "%" },
-                ]}
-              />
+          {/* Hard money has no typed down payment: the loan is sized off the
+              deal and the down payment is what it leaves, shown in the hard
+              money card. A box here would be a figure the maths ignores. */}
+          {!config.isHardMoney && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] uppercase tracking-widest text-(--color-text-tertiary) font-medium">
+                  Down payment
+                </span>
+                <SegmentedControl
+                  ariaLabel="Down payment mode"
+                  value={downMode}
+                  onChange={setDownMode}
+                  options={[
+                    { value: "currency", label: "$" },
+                    { value: "percent", label: "%" },
+                  ]}
+                />
+              </div>
+              {downMode === "currency" ? (
+                <NumberField
+                  label=""
+                  value={Math.round(inputs.downPayment)}
+                  onChange={(downPayment) => onChange({ downPayment })}
+                  prefix="$"
+                  note={downBasisNote}
+                  min={0}
+                />
+              ) : (
+                <NumberField
+                  label=""
+                  value={Number(downPercent.toFixed(2))}
+                  // Against total acquisition cost, which is what downPaymentPercent
+                  // displays. These used to disagree — typing 3.5% wrote 3.5% of the
+                  // price, then redisplayed it over price-plus-renovation and came
+                  // back as something smaller.
+                  onChange={(pct) => onChange({ downPayment: (acquisitionCost * pct) / 100 })}
+                  suffix="%"
+                  note={downBasisNote}
+                  min={0}
+                />
+              )}
+              {coveredByAssistance > 0 && (
+                <p className="text-[11px] text-(--color-accent) mt-1">
+                  {dollars(coveredByAssistance, 0)} covered by assistance — you pay{" "}
+                  {dollars(Math.max(0, inputs.downPayment - coveredByAssistance), 0)} of this.
+                </p>
+              )}
+              {downPercent < config.minDownPercent && (
+                <p className="text-[11px] text-(--color-warning) mt-1">
+                  {config.label} typically requires at least {config.minDownPercent}% down
+                  {isRenovationLoan(inputs) ? " of price plus the work" : ""}.
+                </p>
+              )}
             </div>
-            {downMode === "currency" ? (
-              <NumberField
-                label=""
-                value={Math.round(inputs.downPayment)}
-                onChange={(downPayment) => onChange({ downPayment })}
-                prefix="$"
-                note={downBasisNote}
-                min={0}
-              />
-            ) : (
-              <NumberField
-                label=""
-                value={Number(downPercent.toFixed(2))}
-                // Against total acquisition cost, which is what downPaymentPercent
-                // displays. These used to disagree — typing 3.5% wrote 3.5% of the
-                // price, then redisplayed it over price-plus-renovation and came
-                // back as something smaller.
-                onChange={(pct) => onChange({ downPayment: (acquisitionCost * pct) / 100 })}
-                suffix="%"
-                note={downBasisNote}
-                min={0}
-              />
-            )}
-            {coveredByAssistance > 0 && (
-              <p className="text-[11px] text-(--color-accent) mt-1">
-                {dollars(coveredByAssistance, 0)} covered by assistance — you pay{" "}
-                {dollars(Math.max(0, inputs.downPayment - coveredByAssistance), 0)} of this.
-              </p>
-            )}
-            {downPercent < config.minDownPercent && (
-              <p className="text-[11px] text-(--color-warning) mt-1">
-                {config.label} typically requires at least {config.minDownPercent}% down
-                {isRenovationLoan(inputs) ? " of price plus the work" : ""}.
-              </p>
-            )}
-          </div>
+          )}
 
           {/* Assistance sits with the down payment because it is the same
               decision: who pays it. The award is fixed, so this is yes or no. */}
@@ -540,6 +551,29 @@ export function InputPanel({
         <Card>
           <SectionLabel>Hard money</SectionLabel>
           <div className="grid gap-3.5">
+            {/* Hard money funds the work, so the loan cannot be sized without
+                it. This box only appeared on renovation loans, so it was
+                missing here and every hard money rehab came out as cash. */}
+            <NumberField
+              label="Rehab amount"
+              testId="hm-rehab"
+              value={inputs.renovationBudget}
+              onChange={(renovationBudget) => onChange({ renovationBudget })}
+              prefix="$"
+              hint="what the work costs"
+              min={0}
+            />
+            {hardMoneyLoan && (
+              <p data-testid="hm-down-payment" className="text-[12px] text-(--color-text-secondary) -mt-1.5 leading-relaxed">
+                <span className="text-(--color-text-primary) font-semibold">
+                  {dollars(hardMoneyLoan.downPayment, 0)} down
+                </span>
+                {" "}— the lender lends {inputs.hardMoneyPurchaseLtvPct}% of the price, so you bring
+                the rest.
+                {hardMoneyLoan.rehabUnfunded + hardMoneyLoan.shortfall > 0 &&
+                  ` ${dollars(hardMoneyLoan.rehabUnfunded + hardMoneyLoan.shortfall, 0)} of the rehab is yours to pay too.`}
+              </p>
+            )}
             <NumberField
               label="Points"
               value={inputs.points}
@@ -547,6 +581,17 @@ export function InputPanel({
               suffix="%"
               step="0.25"
               hint="paid upfront"
+              min={0}
+            />
+            <NumberField
+              label="Lender and title fees"
+              testId="hm-fees"
+              value={inputs.hardMoneyFeesPct}
+              onChange={(hardMoneyFeesPct) => onChange({ hardMoneyFeesPct })}
+              suffix="%"
+              step="0.25"
+              hint="of the price"
+              note={`${dollars(hardMoneyFees(inputs.homeValue, inputs.hardMoneyFeesPct), 0)} for underwriting, title, the closing attorney and recording. Change it to your lender's quote.`}
               min={0}
             />
             <NumberField
