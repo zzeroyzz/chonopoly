@@ -1,7 +1,10 @@
 # Plan: the Properties page looks like houses
 
-Status: **Approver reviewed (rev 3)**: self-reviewed, see §Rev 3. Awaiting
-the owner. Stage 1 was **User approved** on 2026-10-23 ("Approved: Stage 1 as
+Status: **User approved (rev 3)** on 2026-10-23. Shown the rev 3 mockup and
+asked about the layout, the library and the existing houses, the owner
+replied "yes perfect". That is read as approving rev 3 as recommended:
+leaflet, and backfill option A **written, not run**. The backfill still needs
+its own "run the backfill". Stage 1 was **User approved** on 2026-10-23 ("Approved: Stage 1 as
 written in plans/properties-design-change.md, option A. Reason-copy fix as the
 next branch; Stage 2 later.") and is built and committed (`8e922f0`). Rev 3 is
 the owner's change to that layout, and none of it is built.
