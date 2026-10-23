@@ -31,6 +31,8 @@ interface RowOverrides {
   photoUrl?: string | null;
   walkAwayCash?: number | null;
   isFinalist?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 function row(overrides: RowOverrides = {}) {
@@ -101,11 +103,24 @@ function row(overrides: RowOverrides = {}) {
     walkAwayCash: overrides.walkAwayCash === undefined ? 41_000 : overrides.walkAwayCash,
     trueProfit: 52_000,
     isFinalist: overrides.isFinalist ?? false,
+    latitude: overrides.latitude ?? null,
+    longitude: overrides.longitude ?? null,
   };
 }
 
+/** A one-pixel PNG, standing in for every map tile. */
+const BLANK_TILE = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64"
+);
+
 async function stubScreen(page: Page, rows: unknown[]) {
   await stubDataEndpoints(page);
+  // No live map tiles: they spend the owner's Carto quota and the network
+  // makes the test slower, and none of these tests reads a street.
+  await page.route("**/basemaps.cartocdn.com/**", (route) =>
+    route.fulfill({ status: 200, contentType: "image/png", body: BLANK_TILE })
+  );
   await page.route("**/api/properties/screen**", (route) =>
     route.fulfill({
       status: 200,
@@ -248,7 +263,7 @@ test("the steps count opens the next step still to do", async ({ page }) => {
   await page.goto("/properties");
 
   const steps = page.getByTestId("checklist-prop-1");
-  await expect(steps).toHaveText("2 of 4 steps done");
+  await expect(steps).toHaveText("2 of 4 steps");
   await expect(steps).toHaveAttribute("href", "/properties/prop-1?tab=arv");
 });
 
@@ -257,7 +272,7 @@ test("a finished house shows four of four", async ({ page }) => {
   await page.goto("/properties");
 
   const steps = page.getByTestId("checklist-prop-1");
-  await expect(steps).toHaveText("4 of 4 steps done");
+  await expect(steps).toHaveText("4 of 4 steps");
   await expect(steps).toHaveAttribute("href", "/properties/prop-1?tab=deal");
 });
 
@@ -367,6 +382,51 @@ test("a photo card shows the house, falls back without one, and opens it", async
   // Tapping the photo itself, not the address, opens the house.
   await tapCentre(page, "screen-photo-prop-1");
   await page.waitForURL("**/properties/prop-1");
+});
+
+// ─── The row and the map ──────────────────────────────────────────────────────
+
+test("the row and the map point at the same house", async ({ page }) => {
+  await stubScreen(page, [
+    row({ propertyId: "a", address: "674 White Bird Way", listPrice: 135_000, latitude: 33.5668, longitude: -84.581 }),
+    row({ propertyId: "b", address: "1900 Windsor Dr SW", listPrice: 100_000, latitude: 33.7095, longitude: -84.4352 }),
+  ]);
+  await page.goto("/properties");
+
+  // The first card is chosen until something else is.
+  await expect(page.getByTestId("screen-row-a")).toHaveAttribute("data-selected", "yes");
+
+  // Tapping a pin chooses its house.
+  await page.locator('.leaflet-marker-icon[title="$100k"] span').click();
+  await expect(page.getByTestId("screen-row-b")).toHaveAttribute("data-selected", "yes");
+  await expect(page.getByTestId("screen-row-a")).toHaveAttribute("data-selected", "no");
+
+  // And scrolling the row back chooses the card that lands in the middle.
+  await page.getByTestId("screen-table").evaluate((row) => row.scrollTo({ left: 0 }));
+  await expect(page.getByTestId("screen-row-a")).toHaveAttribute("data-selected", "yes");
+  await expect(page.locator('.leaflet-marker-icon[title="$135k"] span')).toHaveClass(
+    /bg-\(--color-accent\)/
+  );
+});
+
+test("a house the map cannot place is counted, not dropped", async ({ page }) => {
+  await stubScreen(page, [
+    row({ propertyId: "a", latitude: 33.5668, longitude: -84.581 }),
+    row({ propertyId: "b" }),
+  ]);
+  await page.goto("/properties");
+
+  await expect(page.getByTestId("screen-row-b")).toBeVisible();
+  await expect(page.getByTestId("map-unplaced")).toHaveText(
+    "1 house isn't on the map yet. We place a house when it's added or its address changes."
+  );
+});
+
+test("a map with no placed houses says why", async ({ page }) => {
+  await stubScreen(page, [row()]);
+  await page.goto("/properties");
+
+  await expect(page.getByTestId("map-empty")).toContainText("We don't know where these houses are yet");
 });
 
 // ─── Batch add ────────────────────────────────────────────────────────────────

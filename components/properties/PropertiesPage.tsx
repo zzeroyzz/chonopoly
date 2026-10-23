@@ -1,10 +1,11 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Home, AlertTriangle, ExternalLink, Star } from "lucide-react";
-import { Skeleton, SkeletonList, SkeletonRegion } from "@/components/ui/Skeleton";
+import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import {
   VerdictTag,
   AFFORDABILITY_STYLE,
@@ -19,6 +20,19 @@ import {
 } from "@/lib/mortgage/verdicts";
 import { type ScreenRow } from "@/lib/screen/screenRow";
 import { specLine } from "@/lib/screen/specLine";
+import { mapPins } from "@/lib/screen/mapPins";
+
+/**
+ * Leaflet reads `window` as it loads, so the map is client-only and arrives
+ * in its own chunk — nothing else on the app pays for it.
+ */
+const HouseMap = dynamic(() => import("./HouseMap").then((module) => module.HouseMap), {
+  ssr: false,
+  loading: () => <div className="size-full bg-(--color-surface)" />,
+});
+
+/** How long the row has to sit still before the card in the middle counts as chosen. */
+const SCROLL_SETTLE_MS = 120;
 
 /**
  * Every house, with its numbers and both verdicts.
@@ -45,7 +59,7 @@ const FLOW_STEPS = [
   { label: "Deal", tab: "deal", done: (r: ScreenRow) => r.walkAwayCash !== null },
 ] as const;
 
-export function PropertiesPage() {
+export function PropertiesPage({ mapTilesKey }: { mapTilesKey: string | null }) {
   const { ctxParams } = useCrmContext();
   const [rows, setRows] = useState<ScreenRow[]>([]);
   const [filter, setFilter] = useState<"all" | "finalists">("all");
@@ -53,6 +67,18 @@ export function PropertiesPage() {
   const [picked, setPicked] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** The house the row and the map are both pointing at. */
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const rowRef = useRef<HTMLUListElement>(null);
+  const cardRefs = useRef(new Map<string, HTMLLIElement>());
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+    },
+    []
+  );
 
   /**
    * Re-read when the profile has changed since this list was built.
@@ -118,6 +144,43 @@ export function PropertiesPage() {
 
   const finalistCount = rows.filter((r) => r.isFinalist).length;
   const visible = filter === "finalists" ? rows.filter((r) => r.isFinalist) : rows;
+  const { pins, unplaced } = useMemo(() => mapPins(visible), [visible]);
+  // Until anything is chosen, the first card is: the map should point at the
+  // house the row opens on.
+  const selected =
+    selectedId !== null && visible.some((r) => r.propertyId === selectedId)
+      ? selectedId
+      : (visible[0]?.propertyId ?? null);
+
+  /** The card nearest the middle of the row, once the row stops moving. */
+  function onRowScroll() {
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => {
+      const row = rowRef.current;
+      if (!row) return;
+      const box = row.getBoundingClientRect();
+      const middle = box.left + box.width / 2;
+      let nearest: string | null = null;
+      let nearestDistance = Number.POSITIVE_INFINITY;
+      for (const [id, card] of cardRefs.current) {
+        const cardBox = card.getBoundingClientRect();
+        const distance = Math.abs(cardBox.left + cardBox.width / 2 - middle);
+        if (distance < nearestDistance) {
+          nearest = id;
+          nearestDistance = distance;
+        }
+      }
+      if (nearest) setSelectedId(nearest);
+    }, SCROLL_SETTLE_MS);
+  }
+
+  /** A pin was tapped: choose that house and bring its card to the middle. */
+  function selectFromMap(propertyId: string) {
+    setSelectedId(propertyId);
+    cardRefs.current
+      .get(propertyId)
+      ?.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }
 
   return (
     <>
@@ -132,26 +195,26 @@ export function PropertiesPage() {
 
         {loading && (
           <SkeletonRegion label="Loading your houses" testId="screen-loading">
-            <SkeletonList count={3} gap="gap-3">
-              {() => (
-                <div className="rounded-(--radius-lg) border border-(--color-border-default) bg-(--color-surface) overflow-hidden">
-                  {/* The photo is most of the card's height. Without it the
-                      list jumped when it loaded, which is the thing
-                      skeletons are for. */}
-                  <Skeleton className="aspect-[4/3] w-full rounded-none lg:aspect-auto lg:h-[220px]" />
+            {/* The row's first cards and the map, at their real sizes, so
+                nothing jumps when the houses arrive. */}
+            <div className="flex gap-3 overflow-hidden">
+              {[0, 1].map((i) => (
+                <div
+                  key={i}
+                  className="shrink-0 w-[280px] lg:w-[340px] rounded-(--radius-lg) border border-(--color-border-default) bg-(--color-surface) overflow-hidden"
+                >
+                  <Skeleton className="h-[130px] lg:h-[170px] w-full rounded-none" />
                   <div className="px-4 pt-2 pb-3 grid gap-1.5">
                     <Skeleton className="h-7 w-2/5" />
                     <Skeleton className="h-5 w-4/5" />
                     <Skeleton className="h-3.5 w-1/2" />
-                    <Skeleton className="h-5 w-full mt-1" />
-                    <div className="flex gap-2 mt-2">
-                      <Skeleton className="h-9 w-24 rounded-(--radius-pill)" />
-                      <Skeleton className="h-9 w-28 rounded-(--radius-pill)" />
-                    </div>
+                    <Skeleton className="h-9 w-full mt-1" />
+                    <Skeleton className="h-9 w-3/5 mt-2 rounded-(--radius-pill)" />
                   </div>
                 </div>
-              )}
-            </SkeletonList>
+              ))}
+            </div>
+            <Skeleton className="mt-3 h-[42dvh] min-h-[280px] lg:h-[50dvh] w-full rounded-(--radius-lg)" />
           </SkeletonRegion>
         )}
 
@@ -284,15 +347,24 @@ export function PropertiesPage() {
           </div>
         )}
 
-        {rows.length > 0 && (
+        {visible.length > 0 && (
+          // One row, sideways. Each card snaps to the middle and the next one
+          // peeks in, so the row reads as more than one house.
           <ul
+            ref={rowRef}
+            onScroll={onRowScroll}
             data-testid="screen-table"
-            className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3"
+            className="flex gap-3 overflow-x-auto snap-x snap-mandatory -mx-4 px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
             {visible.map((row) => (
               <ScreenCard
                 key={row.propertyId}
                 row={row}
+                selected={row.propertyId === selected}
+                cardRef={(card) => {
+                  if (card) cardRefs.current.set(row.propertyId, card);
+                  else cardRefs.current.delete(row.propertyId);
+                }}
                 picked={picked.includes(row.propertyId)}
                 onPick={(on) =>
                   setPicked((prev) =>
@@ -315,6 +387,42 @@ export function PropertiesPage() {
             ))}
           </ul>
         )}
+
+        {visible.length > 0 && (
+          <section aria-label="Map of your houses" className="mt-3">
+            {unplaced > 0 && pins.length > 0 && (
+              <p
+                data-testid="map-unplaced"
+                className="text-(length:--type-body-sm-size) leading-(--type-body-sm-leading) text-(--color-text-secondary) mb-2"
+              >
+                {`${unplaced === 1 ? "1 house isn't" : `${unplaced} houses aren't`} on the map yet. We place a house when it's added or its address changes.`}
+              </p>
+            )}
+            {/* `isolate` keeps Leaflet's own z-indexes (up to 1000) inside the
+                map. Without it its controls paint over the bottom bar — the
+                same trap as the house page's sheet. */}
+            <div
+              data-testid="screen-map"
+              className="relative isolate h-[42dvh] min-h-[280px] lg:h-[50dvh] overflow-hidden rounded-(--radius-lg) border border-(--color-border-default)"
+            >
+              <HouseMap
+                pins={pins}
+                selectedId={selected}
+                onSelect={selectFromMap}
+                tilesKey={mapTilesKey}
+              />
+              {pins.length === 0 && (
+                <p
+                  data-testid="map-empty"
+                  className="absolute inset-x-4 top-4 z-[1000] rounded-(--radius-md) bg-(--color-overlay) px-3 py-2.5 text-(length:--type-body-sm-size) leading-(--type-body-sm-leading) text-(--color-text-primary)"
+                >
+                  We don&apos;t know where these houses are yet. We place a house when
+                  it&apos;s added or its address changes.
+                </p>
+              )}
+            </div>
+          </section>
+        )}
       </div>
     </>
   );
@@ -331,12 +439,17 @@ export function PropertiesPage() {
  */
 function ScreenCard({
   row,
+  selected,
+  cardRef,
   picked,
   onPick,
   onFinalistChanged,
   ctxParams,
 }: {
   row: ScreenRow;
+  /** The house the map is pointing at. */
+  selected: boolean;
+  cardRef: (card: HTMLLIElement | null) => void;
   picked: boolean;
   onPick: (on: boolean) => void;
   onFinalistChanged: (isFinalist: boolean) => void;
@@ -384,8 +497,14 @@ function ScreenCard({
     // overflow-hidden here: the photo clips its own corners, so nothing on
     // the card can be cut off by the card.
     <li
+      ref={cardRef}
       data-testid={`screen-row-${row.propertyId}`}
-      className="relative flex flex-col rounded-(--radius-lg) border border-(--color-border-default) bg-(--color-surface) transition-colors hover:border-(--color-border-strong)"
+      data-selected={selected ? "yes" : "no"}
+      className={`relative flex flex-col shrink-0 snap-center w-[280px] lg:w-[340px] rounded-(--radius-lg) border bg-(--color-surface) transition-colors ${
+        selected
+          ? "border-(--color-accent)"
+          : "border-(--color-border-default) hover:border-(--color-border-strong)"
+      }`}
     >
       <CardHero photoUrl={row.photoUrl} propertyId={row.propertyId}>
         {/* Both verdicts, because they disagree often enough that hiding one
@@ -454,7 +573,9 @@ function ScreenCard({
         <Link
           href={href}
           data-testid={`screen-open-${row.propertyId}`}
-          className="mt-0.5 text-(length:--type-body-size) leading-(--type-body-leading) font-semibold wrap-break-word text-(--color-text-primary) after:absolute after:inset-0 after:rounded-(--radius-lg) after:content-['']"
+          title={row.address}
+          // One line in the row; the full address is on the house page.
+          className="mt-0.5 truncate text-(length:--type-body-size) leading-(--type-body-leading) font-semibold text-(--color-text-primary) after:absolute after:inset-0 after:rounded-(--radius-lg) after:content-['']"
         >
           {row.address}
         </Link>
@@ -491,7 +612,8 @@ function ScreenCard({
             not actionable. */}
         <p
           data-testid={`verdict-reason-${row.propertyId}`}
-          className="text-(length:--type-body-size) leading-(--type-body-leading) text-(--color-text-secondary) mt-2"
+          // Two lines, so one long reason cannot push the map down.
+          className="line-clamp-2 text-(length:--type-body-size) leading-(--type-body-leading) text-(--color-text-secondary) mt-2"
         >
           {row.affordability.summary}
           {row.deal.hasArv ? ` · ${row.deal.summary}` : ""}
@@ -547,7 +669,7 @@ function ScreenCard({
             data-done={stepsDone}
             className="relative z-10 min-h-(--tap-min) inline-flex items-center px-2 text-(length:--type-body-sm-size) text-(--color-accent)"
           >
-            {stepsDone} of {FLOW_STEPS.length} steps done
+            {stepsDone} of {FLOW_STEPS.length} steps
           </Link>
 
           <span className="flex-1" />
@@ -560,10 +682,12 @@ function ScreenCard({
               data-testid={`screen-listing-${row.propertyId}`}
               // A sibling of the card link, lifted above its overlay. No
               // stopPropagation: nothing is nested, so nothing bubbles.
-              className="relative z-10 min-h-(--tap-min) inline-flex items-center gap-1 px-1 text-(length:--type-body-sm-size) text-(--color-text-secondary) hover:text-(--color-accent) transition-colors"
+              aria-label="Open the listing"
+              // Icon only: a 280px card has no room for the word. The icon
+              // means "leaves the app" and nothing else, per the design system.
+              className="relative z-10 size-(--tap-min) inline-flex items-center justify-center text-(--color-text-secondary) hover:text-(--color-accent) transition-colors"
             >
-              Listing
-              <ExternalLink size={13} aria-hidden="true" />
+              <ExternalLink size={15} aria-hidden="true" />
             </a>
           )}
         </div>
@@ -597,12 +721,12 @@ function CardHero({
     return (
       <div
         data-testid={`screen-nophoto-${propertyId}`}
-        className="relative h-24 rounded-t-(--radius-lg) bg-(--color-elevated)"
+        className="relative h-20 rounded-t-(--radius-lg) bg-(--color-elevated)"
       >
         <Home
           size={24}
           aria-hidden="true"
-          className="absolute left-1/2 top-5 -translate-x-1/2 text-(--color-text-tertiary)"
+          className="absolute left-1/2 top-3 -translate-x-1/2 text-(--color-text-tertiary)"
         />
         {children}
       </div>
@@ -611,7 +735,7 @@ function CardHero({
 
   return (
     <div className="relative">
-      <div className="aspect-[4/3] lg:aspect-auto lg:h-[220px] overflow-hidden rounded-t-(--radius-lg)">
+      <div className="h-[130px] lg:h-[170px] overflow-hidden rounded-t-(--radius-lg)">
         {/* eslint-disable-next-line @next/next/no-img-element -- a pasted link
             to any host, which next/image would need allow-listing for */}
         <img
