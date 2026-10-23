@@ -21,7 +21,8 @@ import {
 import { type ScreenRow } from "@/lib/screen/screenRow";
 import { specLine } from "@/lib/screen/specLine";
 import { mapPins } from "@/lib/screen/mapPins";
-import { NO_LISTING_PRICE_LABEL } from "@/lib/property/types";
+import { cardSteps, missingPriceLabel, resaleUncheckedLine } from "@/lib/screen/cardSteps";
+import { readJsonResponse } from "@/lib/http/readJsonResponse";
 
 /**
  * Leaflet reads `window` as it loads, so the map is client-only and arrives
@@ -49,18 +50,6 @@ const ROW_END_SLACK_PX = 4;
  * scroll sideways, which hides the verdicts, or shrink past legibility. Each
  * card leads with the two verdicts, because they are the reason to look.
  */
-
-/**
- * The same four steps the property page shows, in the same order, so the card
- * and the page agree about where a house has got to.
- */
-const FLOW_STEPS = [
-  // A house exists the moment it is added, so this one is always done.
-  { label: "Details", tab: "details", done: () => true },
-  { label: "ARV", tab: "arv", done: (r: ScreenRow) => r.arv !== null },
-  { label: "Numbers", tab: "numbers", done: (r: ScreenRow) => r.checklist.numbers },
-  { label: "Deal", tab: "deal", done: (r: ScreenRow) => r.walkAwayCash !== null },
-] as const;
 
 export function PropertiesPage({ mapTilesKey }: { mapTilesKey: string | null }) {
   const { ctxParams } = useCrmContext();
@@ -124,18 +113,7 @@ export function PropertiesPage({ mapTilesKey }: { mapTilesKey: string | null }) 
     (async () => {
       try {
         const res = await fetch(`/api/properties/screen?${ctxParams}`);
-        const text = await res.text();
-        if (!res.ok) {
-          let message = `Failed to load (HTTP ${res.status})`;
-          try {
-            const parsed = JSON.parse(text) as { error?: string };
-            if (parsed.error) message = parsed.error;
-          } catch {
-            // Keep the status message.
-          }
-          throw new Error(message);
-        }
-        const body = JSON.parse(text) as { rows: ScreenRow[] };
+        const body = await readJsonResponse<{ rows: ScreenRow[] }>(res, "Failed to load");
         if (!cancelled) {
           setRows(body.rows);
           setError(null);
@@ -527,10 +505,8 @@ function ScreenCard({
   // entry, that was every house: the row looked like a link and did nothing.
   const href = `/properties/${row.propertyId}`;
 
-  const stepsDone = FLOW_STEPS.filter((step) => step.done(row)).length;
-  // The count is a way in, not just a score: it opens the first step still
-  // to do, or the deal once everything is.
-  const nextStep = FLOW_STEPS.find((step) => !step.done(row)) ?? FLOW_STEPS[FLOW_STEPS.length - 1];
+  const steps = cardSteps(row);
+  const resaleUnchecked = resaleUncheckedLine(row);
   const specs = specLine(row);
 
   return (
@@ -596,7 +572,7 @@ function ScreenCard({
             data-testid={`screen-price-${row.propertyId}`}
             className="text-(length:--type-body-size) leading-(--type-figure-leading) text-(--color-text-secondary)"
           >
-            {NO_LISTING_PRICE_LABEL}
+            {missingPriceLabel(row.listPrice)}
           </p>
         ) : (
           <p
@@ -664,13 +640,13 @@ function ScreenCard({
             comps" tag, and the design system keeps both words out of the
             interface. A checked price says nothing here: the verdict already
             rests on it. */}
-        {row.arv === null && (
+        {resaleUnchecked && (
           <Link
             href={`${href}?tab=arv`}
             data-testid={`resale-unchecked-${row.propertyId}`}
             className="relative z-10 self-start min-h-(--tap-min) inline-flex items-center text-(length:--type-body-sm-size) text-(--color-accent)"
           >
-            Resale price not checked yet →
+            {resaleUnchecked}
           </Link>
         )}
 
@@ -705,12 +681,12 @@ function ScreenCard({
           </label>
 
           <Link
-            href={`${href}?tab=${nextStep.tab}`}
+            href={`${href}?tab=${steps.nextTab}`}
             data-testid={`checklist-${row.propertyId}`}
-            data-done={stepsDone}
+            data-done={steps.done}
             className="relative z-10 min-h-(--tap-min) inline-flex items-center px-2 text-(length:--type-body-sm-size) text-(--color-accent)"
           >
-            {stepsDone} of {FLOW_STEPS.length} steps
+            {steps.label}
           </Link>
 
           <span className="flex-1" />
