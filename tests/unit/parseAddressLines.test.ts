@@ -1,4 +1,9 @@
-import { parseAddressLines, parsePrice } from "@/lib/property/parseAddressLines";
+import {
+  fillFromPaste,
+  parseAddressLines,
+  parseOneAddress,
+  parsePrice,
+} from "@/lib/property/parseAddressLines";
 
 /**
  * Batch add's parser. The realistic input is a paste from an email, not
@@ -150,5 +155,121 @@ describe("parseAddressLines", () => {
 
     expect(house.state).toBe("GA");
     expect(house.city).toBe("duluth");
+  });
+});
+
+describe("the shapes people paste", () => {
+  const SHALIMAR = { street: "2012 Shalimar Dr NE", city: "Atlanta", state: "GA", zip: "30345" };
+
+  function only(text: string) {
+    const { houses, errors } = parseAddressLines(text);
+    expect(errors).toEqual([]);
+    expect(houses).toHaveLength(1);
+    const [h] = houses;
+    return { street: h.addressLine1, city: h.city, state: h.state, zip: h.zip, price: h.price };
+  }
+
+  it.each([
+    ["with commas", "2012 Shalimar Dr NE, Atlanta, GA 30345"],
+    ["with no commas at all", "2012 Shalimar Dr NE Atlanta GA 30345"],
+    ["with a trailing country, as Google and Zillow copy it", "2012 Shalimar Dr NE, Atlanta, GA 30345, USA"],
+    ["with United States spelled out", "2012 Shalimar Dr NE, Atlanta, GA 30345, United States"],
+    ["with the state spelled out", "2012 Shalimar Dr NE, Atlanta, Georgia 30345"],
+    ["over two lines, as a listing header shows it", "2012 Shalimar Dr NE\nAtlanta, GA 30345"],
+  ])("reads an address %s", (_shape, text) => {
+    expect(only(text)).toMatchObject(SHALIMAR);
+  });
+
+  it("treats a tab as a field break, so a spreadsheet row keeps its price", () => {
+    expect(only("2012 Shalimar Dr NE, Atlanta, GA 30345\t$249,900")).toMatchObject({
+      ...SHALIMAR,
+      price: 249_900,
+    });
+  });
+
+  it("finds the city after other street types with no commas", () => {
+    expect(only("3484 Primrose Pl Decatur GA 30032")).toMatchObject({
+      street: "3484 Primrose Pl",
+      city: "Decatur",
+    });
+  });
+
+  it("does not take a spelled-out direction that starts the city", () => {
+    expect(only("123 Main St North Augusta SC 29841")).toMatchObject({
+      street: "123 Main St",
+      city: "North Augusta",
+      state: "SC",
+    });
+  });
+
+  it("reads a two-word state", () => {
+    expect(only("12 Oak Ln, Asheville, North Carolina 28801")).toMatchObject({ state: "NC" });
+  });
+
+  it("leaves a no-comma line whole when there is no street type to cut at", () => {
+    // A guess at where the city starts with nothing to go on would make up an
+    // address.
+    expect(only("12 Peachtree Atlanta GA 30303")).toMatchObject({
+      street: "12 Peachtree Atlanta GA 30303",
+      city: null,
+    });
+  });
+
+  it("keeps two complete addresses on two lines as two houses", () => {
+    const { houses } = parseAddressLines(
+      "2012 Shalimar Dr NE, Atlanta, GA 30345\n3484 Primrose Pl, Decatur, GA 30032"
+    );
+    expect(houses.map((h) => h.addressLine1)).toEqual(["2012 Shalimar Dr NE", "3484 Primrose Pl"]);
+  });
+});
+
+describe("parseOneAddress", () => {
+  it("splits one pasted address into its parts", () => {
+    expect(parseOneAddress("2012 Shalimar Dr NE, Atlanta, GA 30345, USA")).toEqual({
+      addressLine1: "2012 Shalimar Dr NE",
+      city: "Atlanta",
+      state: "GA",
+      zip: "30345",
+    });
+  });
+
+  it("leaves a bare street alone, since there is nothing to fill", () => {
+    expect(parseOneAddress("128 Maple St")).toBeNull();
+  });
+
+  it("does not guess at something that is not an address", () => {
+    expect(parseOneAddress("call me about the house")).toBeNull();
+  });
+
+  it("does not fill from a paste of several houses", () => {
+    expect(
+      parseOneAddress("2012 Shalimar Dr NE, Atlanta, GA 30345\n3484 Primrose Pl, Decatur, GA 30032")
+    ).toBeNull();
+  });
+});
+
+describe("fillFromPaste", () => {
+  const PASTED = { addressLine1: "2012 Shalimar Dr NE", city: "Atlanta", state: "GA", zip: "30345" };
+  const EMPTY = { address_line1: "", city: "", state: "GA", zip: "" };
+
+  it("fills every field of an empty form", () => {
+    expect(fillFromPaste(EMPTY, PASTED, "GA")).toEqual({
+      address_line1: "2012 Shalimar Dr NE",
+      city: "Atlanta",
+      state: "GA",
+      zip: "30345",
+    });
+  });
+
+  it("keeps a city or ZIP typed before the paste", () => {
+    const filled = fillFromPaste({ ...EMPTY, city: "Brookhaven", zip: "30319" }, PASTED, "GA");
+    expect(filled.city).toBe("Brookhaven");
+    expect(filled.zip).toBe("30319");
+  });
+
+  it("replaces the untouched default state, but not one that was typed", () => {
+    const florida = { ...PASTED, state: "FL" };
+    expect(fillFromPaste(EMPTY, florida, "GA").state).toBe("FL");
+    expect(fillFromPaste({ ...EMPTY, state: "AL" }, florida, "GA").state).toBe("AL");
   });
 });

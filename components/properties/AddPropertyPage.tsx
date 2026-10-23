@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { type ClipboardEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AlertTriangle, Check, Plus } from "lucide-react";
 import { useCrmContext } from "@/components/crm/useCrmContext";
+import { fillFromPaste, parseOneAddress } from "@/lib/property/parseAddressLines";
+
+/** What the State field starts as, so a paste can tell it from a typed state. */
+const DEFAULT_STATE = "GA";
 
 /**
  * Add houses by pasting a list.
@@ -58,7 +62,7 @@ export function AddPropertyPage() {
   const [form, setForm] = useState({
     address_line1: "",
     city: "",
-    state: "GA",
+    state: DEFAULT_STATE,
     zip: "",
     beds: "",
     baths: "",
@@ -69,6 +73,27 @@ export function AddPropertyPage() {
     sales_price: "",
   });
   const set = (patch: Partial<typeof form>) => setForm((f) => ({ ...f, ...patch }));
+
+  /** True after a paste filled the address, until the next edit to it. */
+  const [filledFromPaste, setFilledFromPaste] = useState(false);
+  const setAddress = (patch: Partial<typeof form>) => {
+    setFilledFromPaste(false);
+    set(patch);
+  };
+
+  /**
+   * A whole address pasted into the street field fills street, city, state and
+   * ZIP — copying one from Zillow or Maps used to mean backspacing it out of
+   * the street field and typing the rest again. A paste that is only a street,
+   * or not an address, goes in as typed.
+   */
+  function pasteAddress(e: ClipboardEvent<HTMLInputElement>) {
+    const parsed = parseOneAddress(e.clipboardData.getData("text"));
+    if (!parsed) return;
+    e.preventDefault();
+    setForm((f) => ({ ...f, ...fillFromPaste(f, parsed, DEFAULT_STATE) }));
+    setFilledFromPaste(true);
+  }
 
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -195,14 +220,20 @@ export function AddPropertyPage() {
               label="Street address"
               required
               value={form.address_line1}
-              onChange={(v) => set({ address_line1: v })}
+              onChange={(v) => setAddress({ address_line1: v })}
+              onPaste={pasteAddress}
               testId="add-address"
-              placeholder="1900 Windsor Dr SW"
+              placeholder="Paste a full address, or type the street"
             />
+            {filledFromPaste && (
+              <p data-testid="add-address-filled" className="-mt-1.5 text-[12px] text-(--color-text-secondary)">
+                Filled in from what you pasted. Check it.
+              </p>
+            )}
             <div className="grid grid-cols-3 gap-2">
-              <Field label="City" value={form.city} onChange={(v) => set({ city: v })} testId="add-city" />
-              <Field label="State" value={form.state} onChange={(v) => set({ state: v })} testId="add-state" />
-              <Field label="ZIP" value={form.zip} onChange={(v) => set({ zip: v })} testId="add-zip" />
+              <Field label="City" value={form.city} onChange={(v) => setAddress({ city: v })} testId="add-city" />
+              <Field label="State" value={form.state} onChange={(v) => setAddress({ state: v })} testId="add-state" />
+              <Field label="ZIP" value={form.zip} onChange={(v) => setAddress({ zip: v })} testId="add-zip" />
             </div>
             <div className="grid grid-cols-3 gap-2">
               <Field label="Beds" value={form.beds} onChange={(v) => set({ beds: v })} testId="add-beds" numeric />
@@ -389,12 +420,15 @@ function Field({
   placeholder,
   required = false,
   numeric = false,
+  onPaste,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   testId: string;
   placeholder?: string;
+  /** Only the street field uses this, to fill the rest from a pasted address. */
+  onPaste?: (e: ClipboardEvent<HTMLInputElement>) => void;
   required?: boolean;
   numeric?: boolean;
 }) {
@@ -407,6 +441,7 @@ function Field({
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onPaste={onPaste}
         placeholder={placeholder}
         inputMode={numeric ? "decimal" : undefined}
         data-testid={testId}
