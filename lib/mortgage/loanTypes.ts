@@ -1,4 +1,6 @@
 import { type LoanType, type MortgageInputs, type RenovationProgram } from "./types";
+import { HARD_MONEY_DEFAULTS } from "./hardMoney";
+import { defaultInputs } from "./defaults";
 
 /**
  * Which fields a loan type actually uses. The input panel and the calculator
@@ -213,4 +215,26 @@ export function allowsDownPaymentAssistance(loanType: LoanType): boolean {
 
 export function configFor(inputs: MortgageInputs): LoanTypeConfig {
   return LOAN_TYPE_CONFIG[inputs.loanType];
+}
+
+/**
+ * The rate and points to switch to when the loan type changes.
+ *
+ * Hard money charges far more than a mortgage, so moving onto it takes its
+ * own 15% and 2 points; moving off it goes back to the Settings rate and no
+ * points. Numbers kept whatever rate was there, which modelled hard money at
+ * a mortgage's 6.75%. Any other switch leaves a typed rate alone.
+ */
+export function rateForLoanSwitch(
+  from: LoanType,
+  to: LoanType,
+  settingsRate: number | null
+): Pick<MortgageInputs, "interestRate" | "points"> | null {
+  if (to === "hardMoney" && from !== "hardMoney") {
+    return { interestRate: HARD_MONEY_DEFAULTS.ratePct, points: HARD_MONEY_DEFAULTS.pointsPct };
+  }
+  if (from === "hardMoney" && to !== "hardMoney") {
+    return { interestRate: settingsRate ?? defaultInputs().interestRate, points: 0 };
+  }
+  return null;
 }

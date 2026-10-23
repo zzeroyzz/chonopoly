@@ -18,6 +18,7 @@ import { calculateMortgage } from "@/lib/mortgage/calculate";
 import { buildDeal, holdingFrom } from "@/lib/deal/buildDeal";
 import { flipInputs, flipStartingTerms } from "@/lib/mortgage/flip";
 import { type BuyerProfile } from "@/lib/profile/types";
+import { rateForLoanSwitch } from "@/lib/mortgage/loanTypes";
 
 /**
  * The deal calculation, against the owner's three worked examples.
@@ -419,5 +420,23 @@ describe("the Flip calculator's inputs", () => {
       interestRate: 12,
       points: 3,
     });
+  });
+});
+
+describe("switching the loan type on Numbers", () => {
+  it("moves onto hard money's own rate and points", () => {
+    expect(rateForLoanSwitch("fha", "hardMoney", 6.75)).toEqual({ interestRate: 15, points: 2 });
+  });
+
+  it("goes back to the Settings rate and no points when leaving hard money", () => {
+    expect(rateForLoanSwitch("hardMoney", "conventional", 7.1)).toEqual({ interestRate: 7.1, points: 0 });
+  });
+
+  it("falls back to the app's rate with no Settings", () => {
+    expect(rateForLoanSwitch("hardMoney", "fha", null)?.interestRate).toBe(defaultInputs().interestRate);
+  });
+
+  it("leaves a typed rate alone between two mortgages", () => {
+    expect(rateForLoanSwitch("fha", "conventional", 6.75)).toBeNull();
   });
 });

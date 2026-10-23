@@ -11,6 +11,7 @@ import {
   BORROWER_MINIMUM_INVESTMENT,
   allowsDownPaymentAssistance,
   productValueFor,
+  rateForLoanSwitch,
 } from "@/lib/mortgage/loanTypes";
 import { TERM_PRESETS, HARD_MONEY_TERM_PRESETS } from "@/lib/mortgage/defaults";
 import {
@@ -168,6 +169,12 @@ export function InputPanel({
                 renovationProgram: product.renovationProgram,
                 dpaEnabled:
                   inputs.dpaEnabled && allowsDownPaymentAssistance(product.loanType),
+                // Hard money has its own, much higher rate and points.
+                ...rateForLoanSwitch(
+                  inputs.loanType,
+                  product.loanType,
+                  profileState.kind === "ready" ? profileState.profile.defaults.interestRate : null
+                ),
               });
             }}
             options={LOAN_PRODUCTS.map((p) => ({ value: p.value, label: p.label }))}

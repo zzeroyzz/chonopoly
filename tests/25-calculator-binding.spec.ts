@@ -306,6 +306,8 @@ test("hard money on Numbers shows the down payment Deal uses, with the rehab ask
   await openNumbers(page);
 
   await page.getByRole("combobox", { name: /Loan type/i }).selectOption("hardMoney");
+  // Hard money takes its own rate; it used to keep the mortgage's 6.75%.
+  await expect(page.getByLabel("Interest rate")).toHaveValue("15");
   // The box that was missing: hard money funds the work.
   await page.getByTestId("hm-rehab").fill("50000");
   const numbersDown = await page.getByTestId("hm-down-payment").textContent();
