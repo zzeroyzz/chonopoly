@@ -182,13 +182,13 @@ test("the card leads with the asking price, address and specs", async ({ page })
   await expect(page.getByTestId("screen-specs-prop-1")).toHaveText("3 bed · 2 bath · 1,750 sq ft");
 });
 
-test("a house with no asking price says so instead of a default", async ({ page }) => {
+test("a house with no listing price says so instead of a default", async ({ page }) => {
   await stubScreen(page, [row({ listPrice: null })]);
   await page.goto("/properties");
 
   // `price` is still 250,000 in the stub, as the calculator default would be.
   // The card must not present it as the house's price.
-  await expect(page.getByTestId("screen-price-prop-1")).toHaveText("No asking price yet");
+  await expect(page.getByTestId("screen-price-prop-1")).toHaveText("No listing price yet");
 });
 
 test("a house with no ARV says so instead of showing a verdict", async ({ page }) => {

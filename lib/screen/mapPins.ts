@@ -20,8 +20,8 @@ export interface MapPin {
   label: string;
 }
 
-/** Said on the pin when nobody has entered an asking price. */
-export const NO_PRICE_PIN_LABEL = "No price";
+/** Said on the pin when nobody has entered a listing price. */
+export const NO_PRICE_PIN_LABEL = "No listing price";
 
 /**
  * Short enough to sit on a pin: "$135k", "$1.2M".

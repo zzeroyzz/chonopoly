@@ -1,6 +1,7 @@
 import { portfolioLine } from "@/components/crm/CompaniesPage";
 import { houseLine, priceLine } from "@/components/crm/CompanyDetailPage";
 import { type PortfolioHouse } from "@/lib/crm/types";
+import { NO_LISTING_PRICE_LABEL } from "@/lib/property/types";
 
 /**
  * What the companies screens say.
@@ -65,7 +66,7 @@ describe("what a portfolio house says about itself", () => {
    * same mistake the work tile made before it was fixed.
    */
   it("does not report a missing price as zero", () => {
-    expect(priceLine(house({ listPrice: null }))).toBe("No asking price yet");
+    expect(priceLine(house({ listPrice: null }))).toBe(NO_LISTING_PRICE_LABEL);
     expect(priceLine(house({ listPrice: null }))).not.toContain("$0");
   });
 

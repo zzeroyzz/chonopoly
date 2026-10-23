@@ -6,6 +6,7 @@ import { ArrowLeft, Building2, ExternalLink, MapPin, Phone, Plus } from "lucide-
 import { Skeleton, SkeletonRegion } from "@/components/ui/Skeleton";
 import { dollars } from "@/components/mortgage/format";
 import { type Company, type PortfolioHouse } from "@/lib/crm/types";
+import { NO_LISTING_PRICE_LABEL } from "@/lib/property/types";
 import { CopyButton } from "@/components/ui/CopyButton";
 import { useCrmContext } from "./useCrmContext";
 
@@ -31,7 +32,7 @@ export function houseLine(house: PortfolioHouse): string {
 
 /** The asking price, or the fact that nobody has recorded one. */
 export function priceLine(house: PortfolioHouse): string {
-  return house.listPrice === null ? "No asking price yet" : dollars(house.listPrice, 0);
+  return house.listPrice === null ? NO_LISTING_PRICE_LABEL : dollars(house.listPrice, 0);
 }
 
 export function CompanyDetailPage({ companyId }: { companyId: string }) {

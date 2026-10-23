@@ -84,6 +84,13 @@ export interface UpsertPropertyResult {
  * The column holds snake_case values, and showing "single_family" on a detail
  * page is showing the database to the user.
  */
+/**
+ * Said wherever a house has no listing price, rather than "$0" or the
+ * calculator's default. One wording everywhere: the same field was "Sales
+ * price" on Add, "Asking price" on Edit and "asking price" on the cards.
+ */
+export const NO_LISTING_PRICE_LABEL = "No listing price yet";
+
 export const PROPERTY_TYPE_LABEL: Record<string, string> = {
   single_family: "Single family",
   multi_family: "Multi-family",

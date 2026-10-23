@@ -82,6 +82,17 @@ Every house you're looking at. Tap one to see whether it works.
 - **The row card's footer** shows "2 of 4 steps", and the listing link is
   icon-only. "Steps done" and the word "Listing" didn't fit at 280px.
 
+### Added at the owner's request (2026-10-23)
+
+*"the 'no price' is the Sales price input value from the add a house form.. I
+think it should be changed to listing price."* The same field had four names:
+"Sales price" (Add), "Asking price" (Edit), "No asking price yet" (cards and
+the company page), and "No price" (pins). All now say **listing price**,
+through one constant, `NO_LISTING_PRICE_LABEL` in `lib/property/types.ts`.
+This touches `AddPropertyPage.tsx`, `EditHouseForm.tsx` and
+`CompanyDetailPage.tsx`, which are outside this plan's original scope. It is
+labels only, and the column (`list_price`) and the data are unchanged.
+
 ### Three things the map needs: OWNER DECIDES
 
 **1. A map library, which is a new dependency.**

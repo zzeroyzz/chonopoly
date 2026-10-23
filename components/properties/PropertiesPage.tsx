@@ -21,6 +21,7 @@ import {
 import { type ScreenRow } from "@/lib/screen/screenRow";
 import { specLine } from "@/lib/screen/specLine";
 import { mapPins } from "@/lib/screen/mapPins";
+import { NO_LISTING_PRICE_LABEL } from "@/lib/property/types";
 
 /**
  * Leaflet reads `window` as it loads, so the map is client-only and arrives
@@ -595,7 +596,7 @@ function ScreenCard({
             data-testid={`screen-price-${row.propertyId}`}
             className="text-(length:--type-body-size) leading-(--type-figure-leading) text-(--color-text-secondary)"
           >
-            No asking price yet
+            {NO_LISTING_PRICE_LABEL}
           </p>
         ) : (
           <p
