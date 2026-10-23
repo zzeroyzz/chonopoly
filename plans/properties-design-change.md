@@ -93,6 +93,25 @@ This touches `AddPropertyPage.tsx`, `EditHouseForm.tsx` and
 `CompanyDetailPage.tsx`, which are outside this plan's original scope. It is
 labels only, and the column (`list_price`) and the data are unchanged.
 
+### House page, at the owner's request (2026-10-23)
+
+*"when there isn't a photo added it messes up the card on inside
+properties/[id]"*, then *"the listing price is the asking price"*. Two fixes
+in `components/crm/PropertyDetailPage.tsx`, which is outside the original
+scope:
+
+- **Without a photo, the sheet covered the spec line.** The facts kept 12px
+  under them, but the sheet overlaps by 20px. They now keep 32px, as they
+  already did with a photo. Test: `22-navigation.spec.ts`, "without a photo,
+  the sheet does not cover the house's facts". It fails on the old padding
+  (8px covered) and passes on the new.
+- **The header price is the house's listing price**, labelled "listing", or
+  "No listing price yet" when there isn't one. It used to show the
+  calculator's price, labelled "asking". That price matched only until a
+  financing setup changed it, and showed the $350,000 default on a house with
+  no price. The `headline` object it came from had no other reader, so it went
+  too.
+
 ### Three things the map needs: OWNER DECIDES
 
 **1. A map library, which is a new dependency.**
