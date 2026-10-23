@@ -74,7 +74,10 @@ function Line({
   const [editing, setEditing] = useState(false);
 
   return (
-    <div className="py-1.5 border-b border-(--color-border-subtle) last:border-0">
+    <div
+      data-testid={`deal-line-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+      className="py-1.5 border-b border-(--color-border-subtle) last:border-0"
+    >
       <div className="flex items-baseline gap-2">
         <span className="flex-1 min-w-0 text-[12px] text-(--color-text-secondary)">
           {negative && "− "}
