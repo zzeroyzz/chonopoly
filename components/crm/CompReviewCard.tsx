@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AlertTriangle, Check, ChevronUp } from "lucide-react";
 import { dollars } from "@/components/mortgage/format";
 import {
@@ -109,6 +110,8 @@ export function CompReviewCard({
   onLater: () => void;
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  /** The card itself, so the sheet can find and still the list it sits in. */
+  const cardRef = useRef<HTMLDivElement>(null);
   const [notes, setNotes] = useState(comp.reviewNotes ?? "");
   /** Set only when the answer still needs a figure before it can be saved. */
   const [pendingSale, setPendingSale] = useState(false);
@@ -143,6 +146,7 @@ export function CompReviewCard({
 
   return (
     <div
+      ref={cardRef}
       data-testid={`comp-review-card-${comp.id}`}
       className="rounded-(--radius-xl) border border-(--color-border-default)
         bg-(--color-elevated) p-5 flex flex-col gap-4"
@@ -285,7 +289,12 @@ export function CompReviewCard({
       )}
 
       {sheetOpen && (
-        <ReviewSheet comp={comp} onPick={answer} onClose={() => setSheetOpen(false)} />
+        <ReviewSheet
+          comp={comp}
+          anchor={cardRef}
+          onPick={answer}
+          onClose={() => setSheetOpen(false)}
+        />
       )}
     </div>
   );
@@ -300,10 +309,13 @@ export function CompReviewCard({
  */
 function ReviewSheet({
   comp,
+  anchor,
   onPick,
   onClose,
 }: {
   comp: Comp;
+  /** The card that opened the sheet; the list it scrolls in is held still. */
+  anchor: RefObject<HTMLElement | null>;
   onPick: (review: CompReview) => void;
   onClose: () => void;
 }) {
@@ -316,16 +328,22 @@ function ReviewSheet({
       if (event.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
-    // The sheet scrolls, the page behind it must not.
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    // The sheet scrolls, the page behind it must not. This locked the body,
+    // but the app scrolls the shell's own container, not the body, so a swipe
+    // on the sheet moved the list behind it instead.
+    const scroller = scrollingAncestor(anchor.current);
+    const previous = scroller?.style.overflowY ?? "";
+    if (scroller) scroller.style.overflowY = "hidden";
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = previous;
+      if (scroller) scroller.style.overflowY = previous;
     };
-  }, [onClose]);
+  }, [onClose, anchor]);
 
-  return (
+  // Portalled to the body. Rendered in place, it sat inside the house page's
+  // sheet, a `relative z-10` stacking context, so its z-50 only counted inside
+  // that sheet and the bottom bar (z-40) painted over its last options.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex flex-col justify-end">
       <button
         type="button"
@@ -340,7 +358,8 @@ function ReviewSheet({
         aria-label="Was it fixed up like yours will be?"
         data-testid="comp-review-sheet"
         className="relative wizard-slide-up bg-(--color-elevated) border-t border-(--color-border-strong)
-          rounded-t-(--radius-xl) p-4 pb-8 flex flex-col gap-3 max-h-[80vh] overflow-y-auto"
+          rounded-t-(--radius-xl) p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] flex flex-col gap-3
+          max-h-[85dvh] overflow-y-auto overscroll-contain"
       >
         <div className="flex flex-col gap-0.5">
           <p className="text-[14px] font-semibold">Was it fixed up like yours will be?</p>
@@ -391,6 +410,18 @@ function ReviewSheet({
           Not yet
         </button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
+}
+
+/** The nearest ancestor that scrolls vertically, which is what must hold still. */
+function scrollingAncestor(element: HTMLElement | null): HTMLElement | null {
+  for (let node = element?.parentElement ?? null; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) {
+      return node;
+    }
+  }
+  return null;
 }
