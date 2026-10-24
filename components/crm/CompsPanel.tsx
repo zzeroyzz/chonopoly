@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw, Plus, Trash2, AlertTriangle, Lock } from "lucide-react";
 import { dollars } from "@/components/mortgage/format";
 import { type ActiveContext } from "@/lib/tenancy";
@@ -8,7 +8,6 @@ import {
   type Comp,
   type CompReview,
   COMP_STATUS_LABELS,
-  COMP_REVIEW_LABELS,
   compReviewOptions,
   isReviewable,
   isSkipped,
@@ -36,7 +35,7 @@ import {
 } from "@/lib/comps/refreshControls";
 import { readJsonResponse } from "@/lib/http/readJsonResponse";
 import { SalePricePrompt } from "./SalePricePrompt";
-import { Dropdown, type DropdownTone } from "@/components/ui/Dropdown";
+import { changedLine } from "@/lib/comps/reviewAnswer";
 import {
   CompControls,
   CompReviewTabs,
@@ -51,7 +50,7 @@ import {
   type CompSort,
   type ReviewTab,
 } from "./CompControls";
-import { CompReviewCard, STATUS_STYLE } from "./CompReviewCard";
+import { CompReviewCard, ReviewSheet, STATUS_STYLE, StatusButton } from "./CompReviewCard";
 
 /**
  * Comparable sales for one property, and the ARV they produce.
@@ -87,16 +86,6 @@ const CONFIDENCE_LABEL: Record<ArvResult["confidence"], string> = {
   low: "Low confidence",
   moderate: "Moderate confidence",
   good: "Good confidence",
-};
-
-/** Green counts, amber skips, grey undecided — the same at a glance. */
-const REVIEW_TONE: Record<CompReview, DropdownTone> = {
-  needs_review: "neutral",
-  renovated_use: "good",
-  not_renovated_skip: "warn",
-  took_off_market_skip: "warn",
-  not_comparable_skip: "warn",
-  cant_tell_skip: "warn",
 };
 
 export function CompsPanel({
@@ -837,6 +826,11 @@ function CompRow({
   onRemove: (comp: Comp) => void;
 }) {
   const [askingSale, setAskingSale] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  /** The answer this row was just changed to, confirmed under its button. */
+  const [changedTo, setChangedTo] = useState<CompReview | null>(null);
+  /** The row, so the sheet can hold still the lists it scrolls in. */
+  const rowRef = useRef<HTMLLIElement>(null);
   /**
    * Which site you last opened for this house, so you can find it again.
    *
@@ -863,8 +857,24 @@ function CompRow({
   const skipped = isSkipped(comp.review);
   const fixerNote = note?.fixerUpper ? fixerUpperNote(comp) : null;
 
+  function choose(next: CompReview) {
+    setSheetOpen(false);
+    if (next === comp.review) return;
+    // Approving a removed listing is a claim that it sold, so it needs the
+    // figure it sold for. Asking here rather than silently feeding the
+    // asking price into the ARV.
+    if (needsSalePrice(next, comp.status)) {
+      setAskingSale(true);
+      return;
+    }
+    setAskingSale(false);
+    setChangedTo(next);
+    onReview(comp, next);
+  }
+
   return (
     <li
+      ref={rowRef}
       data-testid={`comp-${comp.id}`}
       data-reviewing={opened ? "true" : undefined}
       className={`rounded-xl border p-3 transition-opacity ${
@@ -997,32 +1007,39 @@ function CompRow({
             <CompLinks comp={comp} opened={opened} onOpen={setOpened} />
           </div>
 
-          {/* The only control that moves the ARV. A native select, which is
-              the right thing to tap on a phone. Absent entirely on a house
-              that cannot be judged: an empty picker is worse than none. */}
+          {/* The only control that moves the ARV: the review card's Status
+              button and sheet, showing this house's answer. It was a dropdown
+              whose menu opened inside the house page's panel, under the bottom
+              bar or off the screen near the end of the list. Absent entirely
+              on a house that cannot be judged: an empty picker is worse than
+              none. */}
           {reviewOptions.length > 0 && (
-          <Dropdown
-            className="mt-2"
-            value={comp.review}
-            options={reviewOptions.map((key) => ({
-              value: key,
-              label: COMP_REVIEW_LABELS[key],
-              tone: REVIEW_TONE[key],
-            }))}
-            onChange={(next) => {
-              // Approving a removed listing is a claim that it sold, so it
-              // needs the figure it sold for. Asking here rather than
-              // silently feeding the asking price into the ARV.
-              if (needsSalePrice(next, comp.status)) {
-                setAskingSale(true);
-                return;
-              }
-              setAskingSale(false);
-              onReview(comp, next);
-            }}
-            label={`What to do with ${comp.formattedAddress}`}
-            testId={`comp-review-${comp.id}`}
-          />
+            <div className="mt-2 flex flex-col gap-1">
+              <StatusButton
+                answer={comp.review}
+                onOpen={() => setSheetOpen(true)}
+                testId={`comp-review-${comp.id}`}
+                label={`Answer for ${comp.formattedAddress}`}
+              />
+              {changedTo !== null && (
+                <p
+                  data-testid={`comp-review-changed-${comp.id}`}
+                  className="text-[11px] text-(--color-text-secondary)"
+                >
+                  {changedLine(changedTo)}
+                </p>
+              )}
+            </div>
+          )}
+
+          {sheetOpen && (
+            <ReviewSheet
+              comp={comp}
+              selected={comp.review}
+              anchor={rowRef}
+              onPick={choose}
+              onClose={() => setSheetOpen(false)}
+            />
           )}
 
           {askingSale && (
@@ -1031,6 +1048,7 @@ function CompRow({
               onCancel={() => setAskingSale(false)}
               onSave={(price, date) => {
                 setAskingSale(false);
+                setChangedTo("renovated_use");
                 onReview(comp, "renovated_use", { sale: { price, date } });
               }}
             />

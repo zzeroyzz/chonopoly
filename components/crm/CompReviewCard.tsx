@@ -11,7 +11,17 @@ import {
   COMP_REVIEW_LABELS,
   COMP_STATUS_LABELS,
   compReviewOptions,
+  needsSalePrice,
 } from "@/lib/comps/types";
+import {
+  type QueuePosition,
+  type ReviewTone,
+  reviewTone,
+  saveButtonLabel,
+  saveHint,
+  shouldRefuseSwipe,
+  statusButtonText,
+} from "@/lib/comps/reviewAnswer";
 import { type CompNote } from "@/lib/comps/arv";
 import {
   comparedToSubject,
@@ -39,6 +49,9 @@ import { SalePricePrompt } from "./SalePricePrompt";
  * The answers live in a sheet rather than on the card. Five options with a
  * line of consequence each is a lot of height for something touched once per
  * house, and the height belongs to the house.
+ *
+ * Picking an answer only marks it. The Status button then shows it, and
+ * nothing is saved until Save and next.
  */
 
 /**
@@ -101,7 +114,7 @@ export function CompReviewCard({
   /** The house being bought, so the card can say how this one differs. */
   subject: SubjectFacts;
   /** "3 of 7". A review you cannot see the end of is one nobody finishes. */
-  position: { index: number; total: number };
+  position: QueuePosition;
   onReview: (
     comp: Comp,
     review: CompReview,
@@ -110,6 +123,8 @@ export function CompReviewCard({
   onLater: () => void;
 }) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  /** The answer tapped in the sheet: on the Status button, not saved yet. */
+  const [picked, setPicked] = useState<CompReview | null>(null);
   /** The card itself, so the sheet can find and still the list it sits in. */
   const cardRef = useRef<HTMLDivElement>(null);
   const [notes, setNotes] = useState(comp.reviewNotes ?? "");
@@ -132,16 +147,23 @@ export function CompReviewCard({
     provenance,
   ].filter((part): part is string => part !== null && part !== "");
 
-  function answer(review: CompReview) {
+  // Marks the answer and nothing more. It used to save on the tap, which
+  // swapped in the next house the same instant, so the answer was never seen.
+  function pick(review: CompReview) {
+    setPicked(review);
     setSheetOpen(false);
+  }
+
+  function save() {
+    if (picked === null) return;
     // Approving a removed listing is a claim that it sold, so it needs the
     // figure it sold for: the route rejects the pair without one, and so does
-    // the database. Everything else saves on the tap.
-    if (review === "renovated_use" && comp.status === "removed") {
+    // the database.
+    if (needsSalePrice(picked, comp.status)) {
       setPendingSale(true);
       return;
     }
-    onReview(comp, review, { notes: notes.trim() || null });
+    onReview(comp, picked, { notes: notes.trim() || null });
   }
 
   return (
@@ -254,49 +276,126 @@ export function CompReviewCard({
           onCancel={() => setPendingSale(false)}
         />
       ) : (
-        <div className="flex gap-2 pt-3 border-t border-(--color-border-subtle)">
-          <button
-            type="button"
-            onClick={() => setSheetOpen(true)}
-            data-testid="comp-review-answer"
-            className="flex-1 min-h-11 px-4 flex items-center justify-center gap-1.5
-              rounded-(--radius-pill) bg-(--color-accent) text-(--color-base)
-              text-[13px] font-semibold"
-          >
-            Status
-            <ChevronUp size={14} className="shrink-0" />
-          </button>
-          <button
-            type="button"
-            onClick={onLater}
-            data-testid="comp-review-later"
-            /* Notes cannot be saved on their own — the route needs a review
-               to attach them to — so Later loses them, and says so rather
-               than letting the owner find out. */
-            title={notes.trim() ? "Your notes here won't be kept" : undefined}
-            className="min-h-11 px-4 rounded-(--radius-pill) border border-(--color-border-default)
-              text-[13px] font-medium"
-          >
-            Later
-          </button>
+        <div className="flex flex-col gap-2 pt-3 border-t border-(--color-border-subtle)">
+          <StatusButton
+            answer={picked}
+            onOpen={() => setSheetOpen(true)}
+            testId="comp-review-answer"
+          />
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={save}
+              disabled={picked === null}
+              data-testid="comp-review-save"
+              className="flex-1 min-h-11 px-4 rounded-(--radius-pill) bg-(--color-accent)
+                text-(--color-base) text-[13px] font-semibold
+                disabled:bg-(--color-overlay) disabled:text-(--color-text-tertiary)"
+            >
+              {saveButtonLabel(position)}
+            </button>
+            <button
+              type="button"
+              onClick={onLater}
+              data-testid="comp-review-later"
+              /* Notes cannot be saved on their own — the route needs a review
+                 to attach them to — so Later loses them, and says so rather
+                 than letting the owner find out. */
+              title={notes.trim() ? "Your notes here won't be kept" : undefined}
+              className="min-h-11 px-4 rounded-(--radius-pill) border border-(--color-border-default)
+                text-[13px] font-medium"
+            >
+              Later
+            </button>
+          </div>
+          {picked === null && (
+            <p data-testid="comp-review-save-hint" className="text-[11px] text-(--color-text-secondary)">
+              {saveHint(position)}
+            </p>
+          )}
         </div>
       )}
 
       {notes.trim() && (
         <p className="text-[11px] text-(--color-text-secondary) -mt-2">
-          Answer below to save these notes. &ldquo;Later&rdquo; won&apos;t keep them.
+          Your notes save with your answer. &ldquo;Later&rdquo; won&apos;t keep them.
         </p>
       )}
 
       {sheetOpen && (
         <ReviewSheet
           comp={comp}
+          selected={picked}
           anchor={cardRef}
-          onPick={answer}
+          onPick={pick}
           onClose={() => setSheetOpen(false)}
         />
       )}
     </div>
+  );
+}
+
+/** Each answer's dot, by what it does to the number. */
+const TONE_DOT: Record<ReviewTone, string> = {
+  good: "bg-(--color-accent)",
+  warn: "bg-amber-400",
+  neutral: "bg-(--color-text-tertiary)",
+};
+
+/**
+ * The answer, or the way to give one.
+ *
+ * Reads "Status" until there is an answer, then the answer in its colour, so
+ * what was picked stays on screen. The review card and the Checked rows share
+ * it, and the Checked rows are where a wrong answer gets put right.
+ */
+export function StatusButton({
+  answer,
+  onOpen,
+  testId,
+  label,
+}: {
+  answer: CompReview | null;
+  onOpen: () => void;
+  testId: string;
+  /** Names the house, on a list of rows that look alike. */
+  label?: string;
+}) {
+  const text = statusButtonText(answer);
+
+  if (answer === null || text.hint === null) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        data-testid={testId}
+        aria-label={label}
+        className="w-full min-h-11 px-4 flex items-center justify-center gap-1.5
+          rounded-(--radius-pill) bg-(--color-accent) text-(--color-base)
+          text-[13px] font-semibold"
+      >
+        {text.label}
+        <ChevronUp size={14} className="shrink-0" />
+      </button>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      data-testid={testId}
+      aria-label={label ? `${label}: ${text.label}. ${text.hint}` : undefined}
+      className="w-full min-h-11 px-4 py-1.5 flex items-center gap-2.5 text-left
+        rounded-(--radius-pill) border border-(--color-border-strong) bg-(--color-base)"
+    >
+      <span aria-hidden className={`w-2.5 h-2.5 shrink-0 rounded-full ${TONE_DOT[reviewTone(answer)]}`} />
+      <span className="flex-1 min-w-0 flex flex-col">
+        <span className="text-[13px] font-semibold leading-tight">{text.label}</span>
+        <span className="text-[11px] leading-tight text-(--color-text-secondary)">{text.hint}</span>
+      </span>
+      <ChevronUp size={14} className="shrink-0 text-(--color-text-secondary)" />
+    </button>
   );
 }
 
@@ -307,14 +406,17 @@ export function CompReviewCard({
  * again the moment one is picked. Reuses the slide-up the wizard already
  * defines in globals.css.
  */
-function ReviewSheet({
+export function ReviewSheet({
   comp,
+  selected,
   anchor,
   onPick,
   onClose,
 }: {
   comp: Comp;
-  /** The card that opened the sheet; the list it scrolls in is held still. */
+  /** The answer ticked: the one picked on the card, or the one saved on a row. */
+  selected: CompReview | null;
+  /** What opened the sheet; every list it scrolls in is held still. */
   anchor: RefObject<HTMLElement | null>;
   onPick: (review: CompReview) => void;
   onClose: () => void;
@@ -322,21 +424,54 @@ function ReviewSheet({
   const options = compReviewOptions(comp.status, comp.review).filter(
     (key) => key !== "needs_review"
   );
+  /** The sheet's own list: the one thing a swipe may move while it is open. */
+  const scrollArea = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
     }
     document.addEventListener("keydown", onKey);
+
     // The sheet scrolls, the page behind it must not. This locked the body,
     // but the app scrolls the shell's own container, not the body, so a swipe
-    // on the sheet moved the list behind it instead.
-    const scroller = scrollingAncestor(anchor.current);
-    const previous = scroller?.style.overflowY ?? "";
-    if (scroller) scroller.style.overflowY = "hidden";
+    // on the sheet moved the list behind it instead. Every scrolling list
+    // above is held now: only the nearest was, which left the rest free.
+    const held = scrollingAncestors(anchor.current).map((node) => ({
+      node,
+      previous: node.style.overflowY,
+    }));
+    for (const { node } of held) node.style.overflowY = "hidden";
+
+    // Holding the lists was not enough on an iPhone: Safari hands a swipe the
+    // sheet cannot use to the page behind it, so that swipe is refused here.
+    let lastY: number | null = null;
+    function onTouchStart(event: TouchEvent) {
+      lastY = event.touches[0]?.clientY ?? null;
+    }
+    function onTouchMove(event: TouchEvent) {
+      const y = event.touches[0]?.clientY;
+      if (y === undefined) return;
+      const area = scrollArea.current;
+      const refuse = shouldRefuseSwipe({
+        insideScrollArea:
+          area !== null && event.target instanceof Node && area.contains(event.target),
+        scrollTop: area?.scrollTop ?? 0,
+        scrollHeight: area?.scrollHeight ?? 0,
+        clientHeight: area?.clientHeight ?? 0,
+        fingerDeltaY: lastY === null ? 0 : y - lastY,
+      });
+      lastY = y;
+      if (refuse && event.cancelable) event.preventDefault();
+    }
+    document.addEventListener("touchstart", onTouchStart, { passive: true });
+    document.addEventListener("touchmove", onTouchMove, { passive: false });
+
     return () => {
       document.removeEventListener("keydown", onKey);
-      if (scroller) scroller.style.overflowY = previous;
+      document.removeEventListener("touchstart", onTouchStart);
+      document.removeEventListener("touchmove", onTouchMove);
+      for (const { node, previous } of held) node.style.overflowY = previous;
     };
   }, [onClose, anchor]);
 
@@ -349,7 +484,7 @@ function ReviewSheet({
         type="button"
         aria-label="Close without answering"
         onClick={onClose}
-        className="absolute inset-0 bg-black/50"
+        className="absolute inset-0 bg-black/50 touch-none"
       />
 
       {/* Two layers on purpose. The outer one slides up; the inner one
@@ -365,6 +500,7 @@ function ReviewSheet({
           rounded-t-(--radius-xl) overflow-hidden"
       >
         <div
+          ref={scrollArea}
           className="p-4 pb-[calc(2rem+env(safe-area-inset-bottom))] flex flex-col gap-3
             max-h-[85dvh] overflow-y-auto overscroll-contain"
         >
@@ -381,7 +517,7 @@ function ReviewSheet({
                 key={key}
                 type="button"
                 role="radio"
-                aria-checked={comp.review === key}
+                aria-checked={selected === key}
                 onClick={() => onPick(key)}
                 data-testid={`comp-review-choice-${key}`}
                 className="w-full min-h-11 flex items-start gap-3 p-3 text-left rounded-(--radius-md)
@@ -390,12 +526,12 @@ function ReviewSheet({
               >
                 <span
                   className={`mt-0.5 shrink-0 w-[18px] h-[18px] rounded-full border flex items-center justify-center ${
-                    comp.review === key
+                    selected === key
                       ? "border-(--color-accent) bg-(--color-accent) text-(--color-base)"
                       : "border-(--color-border-strong)"
                   }`}
                 >
-                  {comp.review === key && <Check size={12} />}
+                  {selected === key && <Check size={12} />}
                 </span>
                 <span className="flex flex-col gap-0.5 min-w-0">
                   <span className="text-[13px]">{COMP_REVIEW_LABELS[key]}</span>
@@ -423,13 +559,14 @@ function ReviewSheet({
   );
 }
 
-/** The nearest ancestor that scrolls vertically, which is what must hold still. */
-function scrollingAncestor(element: HTMLElement | null): HTMLElement | null {
+/** Every ancestor that scrolls vertically: everything that must hold still. */
+function scrollingAncestors(element: HTMLElement | null): HTMLElement[] {
+  const found: HTMLElement[] = [];
   for (let node = element?.parentElement ?? null; node; node = node.parentElement) {
     const { overflowY } = getComputedStyle(node);
     if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight) {
-      return node;
+      found.push(node);
     }
   }
-  return null;
+  return found;
 }
