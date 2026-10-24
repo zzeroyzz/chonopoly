@@ -407,7 +407,7 @@ test("skipping a comp moves the ARV", async ({ page }) => {
   // comp-4 is the most expensive per square foot, so skipping it pulls the
   // value down.
   await page.getByTestId("comp-review-comp-4").click();
-  await page.getByTestId("comp-review-comp-4-option-not_comparable_skip").click();
+  await page.getByTestId("comp-review-choice-not_comparable_skip").click();
 
   await expect(page.getByTestId("arv-value")).not.toHaveText(before ?? "");
 });
@@ -508,18 +508,31 @@ test("the Comps tab, its lock row, the confirm and the manual form fit 390px", a
 test.describe("on a touch screen", () => {
   test.use({ hasTouch: true, isMobile: true });
 
-  test("the review sheet sits above the bottom bar and holds the list still, at 390px", async ({
+  test("an answer shows on the button, saves on Save and next, and can be changed on Checked, at 390px", async ({
     page,
   }) => {
     // On a phone the sheet rendered inside the house page's sheet (a stacking
     // context), so the bottom bar painted over it, and it locked the body while
     // the app scrolls its own container, so a swipe moved the list behind it.
+    // Then a tap saved and swapped in the next house at once, so the answer
+    // was never seen, and a checked house could only be changed from a
+    // dropdown that opened off the screen.
     await stubComps(page, { unreviewed: true });
     await openCompsTab(page);
     const reviews: string[] = [];
     page.on("request", (req) => {
       if (req.method() === "PATCH" && /\/comps\/[^/?]+/.test(req.url())) reviews.push(req.postData() ?? "");
     });
+
+    const card = page.locator('[data-testid^="comp-review-card-"]');
+    const firstCard = await card.getAttribute("data-testid");
+    expect(firstCard).not.toBeNull();
+    const compId = firstCard!.replace("comp-review-card-", "");
+    const checkedBefore = Number(await page.getByTestId("comp-tab-done-count").textContent());
+
+    // Nothing is picked yet, so there is nothing to save, and the card says why.
+    await expect(page.getByTestId("comp-review-save")).toBeDisabled();
+    await expect(page.getByTestId("comp-review-save-hint")).toBeVisible();
 
     await page.getByTestId("comp-review-answer").tap();
     const sheet = page.getByTestId("comp-review-sheet");
@@ -537,6 +550,21 @@ test.describe("on a touch screen", () => {
       { x: barBox!.x + barBox!.width / 2, y: barBox!.y + barBox!.height / 2 }
     );
     expect(onTop).toBe("sheet");
+
+    // A swipe on the dimmed page is refused outright. iPhone Safari passes it
+    // to the page behind otherwise, whatever the overflow says.
+    const refused = await page.evaluate(() => {
+      const backdrop = document.querySelector('[aria-label="Close without answering"]');
+      if (!backdrop) return null;
+      const finger = (y: number) => new Touch({ identifier: 1, target: backdrop, clientX: 195, clientY: y });
+      backdrop.dispatchEvent(
+        new TouchEvent("touchstart", { touches: [finger(300)], bubbles: true, cancelable: true })
+      );
+      const move = new TouchEvent("touchmove", { touches: [finger(200)], bubbles: true, cancelable: true });
+      backdrop.dispatchEvent(move);
+      return move.defaultPrevented;
+    });
+    expect(refused).toBe(true);
 
     // A swipe on the sheet does not move the list behind it.
     const scrollerTop = () =>
@@ -556,11 +584,51 @@ test.describe("on a touch screen", () => {
     await page.waitForTimeout(300);
     expect(await scrollerTop()).toBe(before);
 
-    // Every choice is reachable, and choosing one closes the sheet and records it.
+    // Every choice is reachable: the last one is what a finger lands on.
     const last = sheet.locator('[role="radio"]').last();
     await last.scrollIntoViewIfNeeded();
-    await last.tap();
+    const lastBox = await last.boundingBox();
+    const landsOn = await page.evaluate(
+      ({ x, y }) => document.elementFromPoint(x, y)?.closest('[role="radio"]')?.getAttribute("data-testid"),
+      { x: lastBox!.x + lastBox!.width / 2, y: lastBox!.y + lastBox!.height / 2 }
+    );
+    expect(landsOn).toBe(await last.getAttribute("data-testid"));
+
+    // Picking only marks the answer: the sheet closes, the button shows it,
+    // and nothing is saved and nothing moves on yet.
+    await sheet.getByTestId("comp-review-choice-not_renovated_skip").tap();
     await expect(sheet).toHaveCount(0);
+    await expect(page.getByTestId("comp-review-answer")).toContainText("Not renovated");
+    await expect(card).toHaveAttribute("data-testid", firstCard!);
+    expect(reviews).toHaveLength(0);
+
+    // Save and next saves it and brings the next house.
+    await page.getByTestId("comp-review-save").tap();
     await expect.poll(() => reviews.length).toBe(1);
+    expect(JSON.parse(reviews[0]).review).toBe("not_renovated_skip");
+    await expect(card).not.toHaveAttribute("data-testid", firstCard!);
+    await expect(page.getByTestId("comp-review-answer")).toHaveText("Status");
+    await expect(page.getByTestId("comp-tab-done-count")).toHaveText(String(checkedBefore + 1));
+
+    // On Checked, the house shows its answer, and a wrong one can be changed.
+    await page.getByTestId("comp-tab-done").tap();
+    const answer = page.getByTestId(`comp-review-${compId}`);
+    await expect(answer).toContainText("Not renovated");
+    await answer.tap();
+    await expect(sheet.getByTestId("comp-review-choice-not_renovated_skip")).toHaveAttribute(
+      "aria-checked",
+      "true"
+    );
+    await sheet.getByTestId("comp-review-choice-not_comparable_skip").tap();
+    await expect.poll(() => reviews.length).toBe(2);
+    expect(JSON.parse(reviews[1]).review).toBe("not_comparable_skip");
+    await expect(answer).toContainText("Not comparable");
+    await expect(page.getByTestId(`comp-review-changed-${compId}`)).toHaveText(
+      "Changed to Not comparable."
+    );
+
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
+    ).toBe(true);
   });
 });
