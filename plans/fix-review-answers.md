@@ -120,3 +120,31 @@ Written by the same Claude that will build it. **It is not independent.**
 
 **Recommendation:** approve with option A, push for a preview, and merge after
 the owner checks it on his phone.
+
+## Outcome (2026-10-24)
+
+- **Picking an answer marks it.** The Status button then shows it in its
+  colour, for example "Not renovated, tap to change". **Save and next** saves
+  it (**Save and finish** on the last house). Save stays greyed until there
+  is an answer, with the line "Pick an answer to save this house and move to
+  the next."
+- **The sheet refuses swipes it cannot use.** A `touchmove` guard refuses any
+  swipe the sheet's own list cannot take, and every scrolling list above the
+  card is held, not only the nearest. The dimmed backdrop is `touch-none`.
+- **Checked houses use the same Status button and sheet.** A change saves at
+  once and says "Changed to Not comparable." under the button. Comps review no
+  longer uses a dropdown; `Dropdown` stays for sort and filter.
+- **Deliberate difference:** the sheet does not offer "Needs review", so a
+  checked house can't be sent back to Still to check. Picking the right answer
+  covers a mistake.
+- **Tests:**
+  - Jest: 660 pass, 19 of them new in `reviewAnswer.test.ts`.
+  - Playwright: 38 pass. The touch journey covers picking, the button showing
+    the pick, nothing saved until Save and next, the next house arriving,
+    Checked going up by one, and changing the answer on Checked. It also
+    checks that a swipe on the backdrop is refused.
+  - `tsc` and the build pass. Lint is unchanged: the one `CompsPanel` error is
+    on `main` too.
+- **Checked at 390px with screenshots:** nothing picked, the sheet open,
+  picked, and changed on Checked.
+- **Not done yet:** a real iPhone check. That needs a push for a Vercel preview.
